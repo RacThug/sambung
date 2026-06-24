@@ -1,0 +1,22 @@
+#!/bin/sh
+# Block direct pushes to protected branches. Work on a feature branch and open a PR.
+# Bypass in a genuine emergency with:  git push --no-verify
+#
+# Enabled by:  git config core.hooksPath .githooks   (run once per clone; see README)
+
+protected="main develop"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+	for branch in $protected; do
+		if [ "$remote_ref" = "refs/heads/$branch" ]; then
+			echo "✋ Direct push to '$branch' is blocked (Sambung rule: branch + PR only)."
+			echo "   Create a branch:   git switch -c m0/your-task"
+			echo "   Push it:           git push -u origin m0/your-task"
+			echo "   Then open a PR to '$branch'."
+			echo "   (Real emergency? git push --no-verify)"
+			exit 1
+		fi
+	done
+done
+
+exit 0

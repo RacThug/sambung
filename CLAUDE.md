@@ -119,9 +119,22 @@ For these: walk through the design, surface the edge cases, then let the owner d
 5. For boss fights / risky work → independent review (see Two-Session Review) before merge.
 6. Report, update the issue/milestone, log any architecture decision below.
 
-- **Branches:** `m2/booking-availability`, `m3/payment-webhook`, etc. Never commit straight to `main`.
 - **Commits:** imperative, scoped: `feat(booking): add hold expiry sweeper`. Small and frequent.
 - **Definition of done:** acceptance criteria met + tests for the logic + invariants upheld + a one-paragraph "what I did and why" in the PR.
+
+---
+
+## Git workflow (HARD RULE)
+
+**Never commit or push to `main` directly. Ever.** All work flows: branch → push → Pull Request → merge to `main`. Model = **GitHub Flow** (`main` is always deployable; no `develop`).
+
+1. Branch off `main`: `git switch -c m0/monorepo-setup` (name: `m<milestone>/<short-task>`, e.g. `m2/booking-availability`).
+2. Commit on the branch; push with `git push -u origin <branch>`.
+3. Open a PR into `main` (`gh pr create`), referencing the issue #.
+4. Merge the PR (squash). Delete the branch. `git switch main && git pull`.
+
+- **Enforcement:** a `pre-push` hook (`.githooks/pre-push`) blocks direct pushes to `main`/`develop`. After cloning, enable it once: `git config core.hooksPath .githooks`. (Server-side branch protection needs a public repo or GitHub Pro — skipped per invariant #8; the local hook is the free guard.)
+- **Emergency bypass** only, and say so out loud: `git push --no-verify`.
 
 ---
 
@@ -179,6 +192,7 @@ pnpm lint && pnpm typecheck
 - Add a heavy dependency or a paid service without flagging it first.
 - Implement a boss fight without explaining it first (EXPLAIN MODE).
 - Trust external input (HTTP, webhook, iCal) without validating it.
+- **Commit or push to `main` directly — always branch + PR (see Git workflow).**
 
 ---
 
@@ -188,6 +202,7 @@ pnpm lint && pnpm typecheck
 |------|----------|-----|----------|
 | 2026-06-24 | Repo = **private** GitHub repo `RacThug/sambung` | Portfolio project; go public when demo-ready | Yes (owner) |
 | 2026-06-24 | Docs live in `docs/` (`prd.md`, `db-design.md`, `architecture.md`) + index | AI- and human-navigable; one source of truth per subsystem | Yes (owner) |
+| 2026-06-24 | Git = **GitHub Flow**; never push to `main`, always branch + PR. Enforced by a local `pre-push` hook (`.githooks/`) | Server-side branch protection needs public repo / Pro (invariant #8). Local hook blocks accidental direct pushes, free, keeps repo private | Yes (owner) |
 
 *Append one row per architecture decision. Keep it terse.*
 
