@@ -37,12 +37,13 @@ A multi-tenant **direct-booking engine** + lightweight **channel manager** for B
 ## Getting started
 
 ```bash
-git config core.hooksPath .githooks   # one-time: enable the branch-protection hook
+git config core.hooksPath .githooks          # one-time: enable the git hooks
 pnpm install
-pnpm dev                 # web + api (turbo)
-pnpm --filter api prisma migrate dev
-pnpm --filter api db:seed
-pnpm lint && pnpm typecheck
+docker compose up -d                          # local Postgres (migrate/seed/db tests)
+pnpm dev                                       # web + api (turbo)
+pnpm --filter @sambung/db db:migrate          # apply migrations
+pnpm --filter @sambung/db db:seed             # 2 tenants, 3 properties, sample bookings
+pnpm lint && pnpm typecheck && pnpm test
 ```
 
 ## Contributing / Git workflow
@@ -56,5 +57,7 @@ git push -u origin m0/your-task
 gh pr create --base main       # open a PR, then squash-merge
 ```
 
-A `pre-push` hook blocks accidental direct pushes to `main`. Enable it once per clone with the
-`git config core.hooksPath .githooks` command above.
+A `pre-push` hook (1) blocks accidental direct pushes to `main`/`develop`, and (2) runs
+`pnpm lint && pnpm typecheck` as a local quality gate (our free replacement for cloud CI).
+Enable it once per clone with the `git config core.hooksPath .githooks` command above.
+DB-backed tests need Docker, so run `pnpm test` yourself before opening a PR.

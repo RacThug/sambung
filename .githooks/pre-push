@@ -1,11 +1,14 @@
 #!/bin/sh
-# Block direct pushes to protected branches. Work on a feature branch and open a PR.
+# 1) Block direct pushes to protected branches (branch + PR only).
+# 2) Run the local quality gate (lint + typecheck) — our free replacement for
+#    cloud CI (GitHub Actions is disabled; see issue #5).
 # Bypass in a genuine emergency with:  git push --no-verify
 #
 # Enabled by:  git config core.hooksPath .githooks   (run once per clone; see README)
 
 protected="main develop"
 
+# --- 1) Protected-branch guard ---
 while read -r local_ref local_sha remote_ref remote_sha; do
 	for branch in $protected; do
 		if [ "$remote_ref" = "refs/heads/$branch" ]; then
@@ -18,5 +21,18 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 		fi
 	done
 done
+
+# --- 2) Local quality gate (replaces cloud CI) ---
+# DB-backed tests need Docker, so they stay manual: run `pnpm test` yourself.
+echo "▶ pre-push: pnpm lint && pnpm typecheck ..."
+if ! pnpm lint; then
+	echo "✋ lint failed — fix it, or bypass with: git push --no-verify"
+	exit 1
+fi
+if ! pnpm typecheck; then
+	echo "✋ typecheck failed — fix it, or bypass with: git push --no-verify"
+	exit 1
+fi
+echo "✓ pre-push checks passed."
 
 exit 0
