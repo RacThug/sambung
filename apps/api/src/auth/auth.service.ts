@@ -6,7 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
-import type { AppUser, Tenant } from '@sambung/db';
+import { Prisma, type AppUser, type Tenant } from '@sambung/db';
 import type {
   AuthResponse,
   LoginRequest,
@@ -40,23 +40,35 @@ export class AuthService {
     }
     const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
 
-    // Tenant + owner are created together or not at all.
-    const { tenant, user } = await this.prisma.$transaction(async (tx) => {
-      const tenant = await tx.tenant.create({
-        data: { name: input.tenantName },
+    // The pre-check above is just UX fast-path; the citext UNIQUE on email is
+    // the real guard (two concurrent signups both pass the pre-check, then one
+    // loses at the constraint). Map that P2002 to 409 instead of a 500.
+    try {
+      // Tenant + owner are created together or not at all.
+      const { tenant, user } = await this.prisma.$transaction(async (tx) => {
+        const tenant = await tx.tenant.create({
+          data: { name: input.tenantName },
+        });
+        const user = await tx.appUser.create({
+          data: {
+            tenantId: tenant.id,
+            email: input.email,
+            passwordHash,
+            role: 'owner',
+          },
+        });
+        return { tenant, user };
       });
-      const user = await tx.appUser.create({
-        data: {
-          tenantId: tenant.id,
-          email: input.email,
-          passwordHash,
-          role: 'owner',
-        },
-      });
-      return { tenant, user };
-    });
-
-    return this.issue(user, tenant);
+      return this.issue(user, tenant);
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      ) {
+        throw new ConflictException('Email already registered');
+      }
+      throw err;
+    }
   }
 
   async login(

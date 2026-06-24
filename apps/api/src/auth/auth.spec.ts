@@ -100,6 +100,21 @@ describe('Auth (FR-AUTH-1)', () => {
     expect(dup.status).toBe(409);
   });
 
+  it('handles a concurrent duplicate signup as 409, never 500', async () => {
+    const addr = email();
+    const send = () =>
+      request(server())
+        .post('/api/auth/register')
+        .send({ tenantName: 'Race Co', email: addr, password: 'supersecret1' });
+    const [r1, r2] = await Promise.all([send(), send()]);
+    for (const r of [r1, r2]) {
+      const b = r.body as Partial<AuthResponse>;
+      if (b.tenant?.id) createdTenantIds.push(b.tenant.id);
+    }
+    // Exactly one wins (201); the other loses at the DB unique constraint → 409.
+    expect([r1.status, r2.status].sort((a, b) => a - b)).toEqual([201, 409]);
+  });
+
   it('rejects invalid input at the boundary (400)', async () => {
     await request(server())
       .post('/api/auth/register')
