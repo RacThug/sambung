@@ -1,0 +1,24 @@
+# Local dev Postgres for Sambung. Free, offline, disposable.
+# Start:  docker compose up -d
+# Stop:   docker compose down        (add -v to also wipe the data volume)
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sambung-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sambung
+      POSTGRES_PASSWORD: sambung
+      POSTGRES_DB: sambung
+    ports:
+      - "5432:5432"
+    volumes:
+      - sambung_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sambung -d sambung"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  sambung_pgdata:
