@@ -1,0 +1,3 @@
+/* Sambung web styles. Tailwind v4 + shared design tokens come from the
+   config package. (architecture.md §2 — packages/config holds presets.) */
+@import "@sambung/config/tailwind.css";

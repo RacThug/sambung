@@ -1,0 +1,15 @@
+// Sambung database schema.
+//
+// Placeholder — the real models (Tenant, User, UserProperty, Property, Unit,
+// Booking, ChannelConnection, Payment), the half-open daterange columns, and
+// the GiST EXCLUDE constraint (raw-SQL migration) land in M0 issue #3.
+// See docs/db-design.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
