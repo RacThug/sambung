@@ -37,9 +37,24 @@ A multi-tenant **direct-booking engine** + lightweight **channel manager** for B
 ## Getting started
 
 ```bash
+git config core.hooksPath .githooks   # one-time: enable the branch-protection hook
 pnpm install
 pnpm dev                 # web + api (turbo)
 pnpm --filter api prisma migrate dev
 pnpm --filter api db:seed
 pnpm lint && pnpm typecheck
 ```
+
+## Contributing / Git workflow
+
+Work happens on branches, never directly on `main` (GitHub Flow):
+
+```bash
+git switch -c m0/your-task     # branch off main: m<milestone>/<short-task>
+# ...commit your work...
+git push -u origin m0/your-task
+gh pr create --base main       # open a PR, then squash-merge
+```
+
+A `pre-push` hook blocks accidental direct pushes to `main`. Enable it once per clone with the
+`git config core.hooksPath .githooks` command above.
