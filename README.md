@@ -28,9 +28,10 @@ A multi-tenant **direct-booking engine** + lightweight **channel manager** for B
 
 ## Design docs
 
-- [`sambung-prd.md`](./sambung-prd.md) — product requirements & acceptance criteria
-- [`sambung-db-design.md`](./sambung-db-design.md) — schema, constraints, rationale
-- [`sambung-architecture.md`](./sambung-architecture.md) — FE/BE split, modules, data flows
+- [`docs/prd.md`](./docs/prd.md) — product requirements & acceptance criteria
+- [`docs/db-design.md`](./docs/db-design.md) — schema, constraints, rationale
+- [`docs/architecture.md`](./docs/architecture.md) — FE/BE split, modules, data flows
+- [`docs/README.md`](./docs/README.md) — documentation index
 - [`CLAUDE.md`](./CLAUDE.md) — engineering operating contract
 
 ## Getting started
