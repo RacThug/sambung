@@ -41,7 +41,8 @@ git config core.hooksPath .githooks          # one-time: enable the git hooks
 pnpm install
 docker compose up -d                          # local Postgres (migrate/seed/db tests)
 pnpm dev                                       # web + api (turbo)
-pnpm --filter @sambung/db db:migrate          # apply migrations
+pnpm --filter @sambung/db db:migrate          # apply migrations (incl. RLS policies)
+pnpm --filter @sambung/db db:setup-role       # create the non-owner app role (RLS)
 pnpm --filter @sambung/db db:seed             # 2 tenants, 3 properties, sample bookings
 pnpm lint && pnpm typecheck && pnpm test
 ```
