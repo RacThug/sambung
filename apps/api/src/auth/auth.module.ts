@@ -10,5 +10,7 @@ import { JwtAuthGuard } from './auth.guard';
   imports: [JwtModule.register({})],
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard],
+  // Export so other feature modules can guard their routes with JwtAuthGuard.
+  exports: [JwtAuthGuard, JwtModule],
 })
 export class AuthModule {}

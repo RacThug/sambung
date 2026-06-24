@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import type { AuthUser } from '../common/decorators/current-user.decorator';
+import { TenantContext } from '../common/tenant-context.service';
 
 // Shape of the signed access-token payload.
 interface AccessPayload {
@@ -16,12 +17,14 @@ interface AccessPayload {
   role: AuthUser['role'];
 }
 
-// Validates the access token from `Authorization: Bearer` and attaches req.user.
+// Validates the access token from `Authorization: Bearer`, attaches req.user,
+// and seeds the per-request TenantContext so services can scope by tenant_id.
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly tenantContext: TenantContext,
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -35,11 +38,13 @@ export class JwtAuthGuard implements CanActivate {
         header.slice(7),
         { secret: this.config.getOrThrow<string>('JWT_ACCESS_SECRET') },
       );
-      req.user = {
+      const user: AuthUser = {
         userId: payload.sub,
         tenantId: payload.tenantId,
         role: payload.role,
       };
+      req.user = user;
+      this.tenantContext.set(user);
       return true;
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
