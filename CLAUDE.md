@@ -173,11 +173,13 @@ For boss-fight / risky work, split implementation from review across two separat
 
 ```
 pnpm install
-pnpm dev                 # turbo: web + api
-pnpm --filter api test   # unit tests (focus: booking, payment, sync)
-pnpm --filter api prisma migrate dev
-pnpm --filter api db:seed   # 2 tenants, 3 properties, sample bookings
-pnpm lint && pnpm typecheck
+docker compose up -d                         # local Postgres (needed for migrate/seed/db tests)
+pnpm dev                                      # turbo: web + api
+pnpm lint && pnpm typecheck                  # whole workspace
+pnpm test                                    # turbo: api (jest) + db (vitest)
+pnpm --filter @sambung/db db:migrate         # create + apply a migration (dev)
+pnpm --filter @sambung/db db:seed            # 2 tenants, 3 properties, sample bookings (idempotent)
+pnpm --filter @sambung/db db:studio          # browse data
 ```
 
 ---
