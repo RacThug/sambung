@@ -1,0 +1,12 @@
+/* Sambung shared Tailwind v4 entry + design tokens.
+   Import this once from the web app: @import "@sambung/config/tailwind.css";
+   Tailwind v4 is CSS-first — theme tokens live here, no tailwind.config.js needed. */
+@import "tailwindcss";
+
+@theme {
+  /* Placeholder brand tokens — refine in M5 polish. */
+  --color-brand-50: #eff6ff;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-900: #1e3a8a;
+}
