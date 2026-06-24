@@ -11,6 +11,8 @@
  */
 import { z } from "zod";
 
+export * from "./auth";
+
 /** Booking lifecycle. Availability is derived from these rows. (db-design.md) */
 export const bookingStatusSchema = z.enum([
   "pending_payment",
