@@ -35,12 +35,7 @@ export class PropertiesService {
   }
 
   async get(id: string): Promise<PropertyResponse> {
-    const row = await this.repo.findByIdForTenant(id, this.tenant.tenantId);
-    // 404 (not 403) for another tenant's id — don't reveal that it exists.
-    if (!row) {
-      throw new NotFoundException('Property not found');
-    }
-    return this.toResponse(row);
+    return this.toResponse(await this.getOwnedOrThrow(id));
   }
 
   async create(dto: CreatePropertyRequest): Promise<PropertyResponse> {
@@ -81,10 +76,7 @@ export class PropertiesService {
     id: string,
     dto: PresignPhotoRequest,
   ): Promise<PresignPhotoResponse> {
-    const row = await this.repo.findByIdForTenant(id, this.tenant.tenantId);
-    if (!row) {
-      throw new NotFoundException('Property not found');
-    }
+    await this.getOwnedOrThrow(id);
     return this.storage.presignPhotoUpload({
       tenantId: this.tenant.tenantId,
       propertyId: id,
@@ -105,13 +97,7 @@ export class PropertiesService {
     dto: UpdatePhotosRequest,
   ): Promise<PropertyResponse> {
     // Existence first: a foreign property must 404 regardless of the body.
-    const existing = await this.repo.findByIdForTenant(
-      id,
-      this.tenant.tenantId,
-    );
-    if (!existing) {
-      throw new NotFoundException('Property not found');
-    }
+    await this.getOwnedOrThrow(id);
     const prefix = this.storage.photoKeyPrefix(this.tenant.tenantId, id);
     if (dto.keys.some((key) => !key.startsWith(prefix))) {
       throw new BadRequestException(
@@ -140,6 +126,18 @@ export class PropertiesService {
         `Cannot delete: ${n} future booking${n === 1 ? '' : 's'} - cancel them first`,
       );
     }
+  }
+
+  /**
+   * Tenant-scoped fetch; 404 (not 403) when the id is unknown OR belongs to
+   * another tenant - existence is hidden. (api-spec §1 tenancy)
+   */
+  private async getOwnedOrThrow(id: string): Promise<PropertyRow> {
+    const row = await this.repo.findByIdForTenant(id, this.tenant.tenantId);
+    if (!row) {
+      throw new NotFoundException('Property not found');
+    }
+    return row;
   }
 
   private toResponse(row: PropertyRow): PropertyResponse {

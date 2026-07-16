@@ -6,7 +6,7 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AuthResponse } from "@sambung/shared";
+import type { AuthResponse, PropertyResponse } from "@sambung/shared";
 import { routeTree } from "./router";
 
 // jsdom has no scrollTo; the router calls it on navigation (scroll restoration).
@@ -40,6 +40,30 @@ export function json(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/**
+ * One PropertyResponse factory for all tests: a new field on the contract
+ * means one edit here, not one per test file.
+ */
+export function propertyResponse(
+  overrides: Partial<PropertyResponse> = {},
+): PropertyResponse {
+  return {
+    id: "aaaaaaaa-0000-0000-0000-000000000001",
+    tenantId: authResponse().tenant.id,
+    name: "Seminyak Beach Villa",
+    address: "Jl. Kayu Aya, Seminyak",
+    latitude: null,
+    longitude: null,
+    description: null,
+    licenseNo: null,
+    photos: [],
+    verified: false,
+    publishable: false,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 export function authResponse(): AuthResponse {

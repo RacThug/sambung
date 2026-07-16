@@ -105,7 +105,7 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
       } catch (err) {
         patch({
           error:
-            err instanceof ApiError || err instanceof Error
+            err instanceof Error
               ? err.message
               : "Upload failed - please try again",
         });

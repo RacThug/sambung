@@ -3,7 +3,13 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { PropertyResponse } from "@sambung/shared";
 import { clearSession, setSession } from "../../lib/auth";
-import { authResponse, json, renderAt, stubFetch } from "../../test-utils";
+import {
+  authResponse,
+  json,
+  propertyResponse as property,
+  renderAt,
+  stubFetch,
+} from "../../test-utils";
 
 // The real PUT-to-storage is exercised by the API e2e suite against Garage;
 // here it resolves instantly so the tests cover the flow around it.
@@ -11,28 +17,10 @@ vi.mock("../../lib/upload", () => ({
   uploadToPresignedUrl: vi.fn(() => Promise.resolve()),
 }));
 
-const PROPERTY_ID = "aaaaaaaa-0000-0000-0000-000000000001";
+const PROPERTY_ID = property().id;
 
 function photo(key: string) {
   return { key, url: `http://photos.local/${key}` };
-}
-
-function property(overrides: Partial<PropertyResponse>): PropertyResponse {
-  return {
-    id: PROPERTY_ID,
-    tenantId: authResponse().tenant.id,
-    name: "Seminyak Beach Villa",
-    address: null,
-    latitude: null,
-    longitude: null,
-    description: null,
-    licenseNo: null,
-    photos: [],
-    verified: false,
-    publishable: false,
-    createdAt: "2026-07-01T00:00:00.000Z",
-    ...overrides,
-  };
 }
 
 /** GET returns `row`; PATCH echoes the sent keys back and records them. */
