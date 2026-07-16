@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  GetObjectCommand,
   PutBucketCorsCommand,
   PutBucketWebsiteCommand,
   PutObjectCommand,
@@ -16,6 +17,22 @@ import {
 
 /** Short-lived: the browser uploads immediately after asking. */
 const PRESIGN_EXPIRES_SECONDS = 300;
+
+/**
+ * Magic-byte checks per whitelisted type, against the object's first 12
+ * bytes. The presigned upload already pins the DECLARED content type
+ * cryptographically; this verifies the CONTENT is really that image format.
+ */
+const MAGIC_BYTES: Record<PhotoContentType, (head: Buffer) => boolean> = {
+  'image/jpeg': (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  'image/png': (b) =>
+    b
+      .subarray(0, 8)
+      .equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  'image/webp': (b) =>
+    b.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    b.subarray(8, 12).toString('ascii') === 'WEBP',
+};
 
 // S3-compatible object storage (architecture §3.6, #39). One client, one
 // contract - Garage (dev) or Cloudflare R2 (prod) purely by env config. The
@@ -93,6 +110,31 @@ export class StorageService {
   /** Public (anonymous-GET) URL the browser renders a stored photo from. */
   publicUrl(key: string): string {
     return `${this.publicBaseUrl}/${key}`;
+  }
+
+  /**
+   * True iff the object exists AND its first bytes are the image format its
+   * stored content type claims. "Trust no external input" applied to the
+   * storage side: a gallery may only reference keys that hold real images -
+   * a presigned-but-never-uploaded key or junk-bytes-as-jpeg both fail.
+   * One ranged GET (12 bytes), paid only for keys newly added to a gallery.
+   */
+  async isValidPhotoObject(key: string): Promise<boolean> {
+    try {
+      const res = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Range: 'bytes=0-11',
+        }),
+      );
+      const head = Buffer.from(await res.Body!.transformToByteArray());
+      const check =
+        MAGIC_BYTES[res.ContentType as PhotoContentType] ?? (() => false);
+      return head.length >= 12 && check(head);
+    } catch {
+      return false; // missing object or unreadable - either way, not linkable
+    }
   }
 
   /**

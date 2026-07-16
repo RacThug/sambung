@@ -81,11 +81,18 @@ describe('Property photos', () => {
       .send(body);
   }
 
+  // A real JFIF header: PATCH verifies magic bytes, so fixtures must open
+  // like an actual jpeg (declared type alone no longer earns a gallery slot).
+  const JPEG_BYTES = Buffer.from([
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+    0x01, 0x00, 0x00, 0x01,
+  ]);
+
   /** Presign + PUT real bytes to Garage; returns the persisted-ready key. */
   async function uploadPhoto(
     token: string,
     propertyId: string,
-    bytes = Buffer.from('test'),
+    bytes = JPEG_BYTES,
   ): Promise<string> {
     const res = await presign(token, propertyId, {
       contentType: 'image/jpeg',
@@ -226,7 +233,7 @@ describe('Property photos', () => {
 
   describe('presigned PUT against real Garage (plan-B trigger check)', () => {
     it('uploads bytes end-to-end and they are readable back', async () => {
-      const bytes = Buffer.from('fake-jpeg-bytes');
+      const bytes = JPEG_BYTES;
       const key = await uploadPhoto(tokenA, propA.id, bytes);
       const got = await s3.send(
         new GetObjectCommand({ Bucket: bucket, Key: key }),
@@ -367,6 +374,32 @@ describe('Property photos', () => {
 
     it("404s another tenant's property even with a valid-shaped body", async () => {
       await patchPhotos(tokenA, propB.id, []).expect(404);
+    });
+
+    it('rejects a key that was presigned but never uploaded (400)', async () => {
+      const res = await presign(tokenA, propA.id).expect(201);
+      const { key } = bodyOf<PresignPhotoResponse>(res);
+      const patch = await patchPhotos(tokenA, propA.id, [key]).expect(400);
+      expect(JSON.stringify(patch.body)).toContain('Not an uploaded image');
+    });
+
+    it('rejects an upload whose bytes are not the image they claim (400)', async () => {
+      // Correct declared type, correct size, real upload - but the content
+      // is not a jpeg. Magic-byte verification at PATCH is the last gate.
+      const junk = Buffer.from('<html>not-an-image</html>');
+      const res = await presign(tokenA, propA.id, {
+        contentType: 'image/jpeg',
+        size: junk.length,
+      }).expect(201);
+      const { uploadUrl, key } = bodyOf<PresignPhotoResponse>(res);
+      uploadedKeys.push(key);
+      const put = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/jpeg' },
+        body: junk,
+      });
+      expect(put.ok).toBe(true); // storage accepts it - the PATCH must not
+      await patchPhotos(tokenA, propA.id, [key]).expect(400);
     });
   });
 });

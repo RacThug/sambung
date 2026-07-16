@@ -97,11 +97,30 @@ export class PropertiesService {
     dto: UpdatePhotosRequest,
   ): Promise<PropertyResponse> {
     // Existence first: a foreign property must 404 regardless of the body.
-    await this.getOwnedOrThrow(id);
+    const existing = await this.getOwnedOrThrow(id);
     const prefix = this.storage.photoKeyPrefix(this.tenant.tenantId, id);
     if (dto.keys.some((key) => !key.startsWith(prefix))) {
       throw new BadRequestException(
         'Every photo key must belong to this property',
+      );
+    }
+    // Keys NEW to the gallery must reference a real uploaded image (exists +
+    // magic bytes) - presign alone mints a key, it doesn't earn a slot here.
+    // Keys already persisted were verified when first added; reorders are free.
+    const known = new Set(existing.photos);
+    const rejected = (
+      await Promise.all(
+        dto.keys
+          .filter((key) => !known.has(key))
+          .map(async (key) => ({
+            key,
+            ok: await this.storage.isValidPhotoObject(key),
+          })),
+      )
+    ).filter((r) => !r.ok);
+    if (rejected.length > 0) {
+      throw new BadRequestException(
+        `Not an uploaded image: ${rejected.map((r) => r.key).join(', ')}`,
       );
     }
     const row = await this.repo.update(id, this.tenant.tenantId, {
