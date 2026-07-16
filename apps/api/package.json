@@ -31,6 +31,7 @@
     "@sambung/shared": "workspace:*",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
+    "nestjs-cls": "^6.2.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^3.24.1"

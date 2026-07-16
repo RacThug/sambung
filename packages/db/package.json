@@ -18,6 +18,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:create": "prisma migrate dev --create-only",
     "db:reset": "prisma migrate reset",
+    "db:setup-role": "tsx prisma/setup-app-role.ts",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio"
   },

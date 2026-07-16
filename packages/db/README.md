@@ -58,10 +58,27 @@ A test (in `apps/api` or `packages/db`) that asserts:
 
 I'll review the migration + test against this checklist, then a fresh reviewer does the Two-Session Review before merge.
 
+## Tenant isolation (RLS) — boss fight #5
+
+Defense-in-depth lives at the DB layer too. Row-Level Security policies (in the
+`rls_tenant_isolation` migration) scope every tenant-owned table by
+`current_setting('app.tenant_id')` — **fail-closed**: no GUC → zero rows.
+
+Two database identities:
+- **owner** (`sambung`, `DATABASE_URL`) — migrations, seed, and system ops
+  (auth/registration creates a tenant *before* a tenant context exists). Bypasses RLS.
+- **app role** (`sambung_app`, `APP_DATABASE_URL`) — runtime tenant-scoped queries.
+  Non-owner, so RLS applies. The API's `TenantPrismaService` connects as this role
+  and sets `app.tenant_id` per transaction (parameterized `set_config`).
+
+After `db:migrate`, run **`db:setup-role`** once to create the app role + grants
+(roles aren't portable schema, so they live in a script, not a migration).
+
 ## Commands
 ```
 pnpm --filter @sambung/db db:generate       # regenerate client after schema edits
 pnpm --filter @sambung/db db:migrate        # create + apply a migration (dev)
+pnpm --filter @sambung/db db:setup-role     # create the non-owner app role (RLS)
 pnpm --filter @sambung/db db:studio         # browse data
 pnpm --filter @sambung/db db:reset          # drop + replay all migrations
 ```
