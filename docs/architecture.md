@@ -38,7 +38,7 @@ sambung/
 
 **Teaching point — `packages/shared` is the contract.** Request/response types and zod schemas live here. `api` validates incoming data against the zod schema; `web` imports the *same* types so a wrong field name is a compile error, not a runtime surprise. One source of truth for the API shape.
 
-**Teaching point — `web` may import `shared`, never `db`.** This enforces §1 at the dependency level: the frontend physically cannot import Prisma. Boundaries you can *accidentally* cross aren't boundaries.
+**Teaching point — `web` may import `shared`, never `db`.** This enforces §1 at the dependency level: the frontend physically cannot import the DB client. Boundaries you can *accidentally* cross aren't boundaries.
 
 ---
 
