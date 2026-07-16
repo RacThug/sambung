@@ -2,7 +2,7 @@
 
 > **Audience:** you (RacThug), building this to sharpen engineering.
 > **Approach:** SQL-first. We design the data model, constraints, and integrity rules in raw PostgreSQL — because that's where you *see* the engineering. Mapping to Prisma/TypeORM comes after and is mechanical.
-> **Target:** PostgreSQL 14+ (Supabase / Neon). Uses `daterange`, GiST exclusion constraints, `citext`.
+> **Target:** PostgreSQL 14+ (Docker on the VPS; Supabase/Neon as free fallback). Uses `daterange`, GiST exclusion constraints, `citext`.
 
 ---
 
