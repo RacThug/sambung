@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 export * from "./auth";
+export * from "./photo";
 export * from "./property";
 
 /** Booking lifecycle. Availability is derived from these rows. (db-design.md) */

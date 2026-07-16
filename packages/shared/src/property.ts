@@ -43,6 +43,8 @@ export const propertyResponseSchema = z.object({
   longitude: z.number().nullable(),
   description: z.string().nullable(),
   licenseNo: z.string().nullable(),
+  /** Gallery, in order: storage key + public URL per photo (#39). */
+  photos: z.array(z.object({ key: z.string(), url: z.string() })),
   /** Derived: license present (FR-PROP-3). Never stored - see isVerified. */
   verified: z.boolean(),
   /** Derived: public page can render complete (FR-PROP-1 AC) - see isPublishable. */

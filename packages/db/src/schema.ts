@@ -95,6 +95,10 @@ export const property = pgTable(
     description: text("description"),
     // NIB / KBLI 55193 → drives the "Verified" badge
     licenseNo: text("license_no"),
+    // Ordered object-storage keys (`<tenant_id>/<property_id>/<uuid>.<ext>`),
+    // array order = gallery order. Bytes live in S3-compatible storage (#39);
+    // the row stores only keys. Publishability needs at least one.
+    photos: text("photos").array().notNull().default(sql`'{}'::text[]`),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [
