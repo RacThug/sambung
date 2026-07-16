@@ -124,7 +124,7 @@ Fields: `name` (required, 2-160), `address?`, `latitude?`/`longitude?` (valid ra
 **Guarded:** if any unit under it has a *future occupying* booking → `409` naming the count. Deleting live inventory must be an explicit two-step (cancel bookings first). Same rule for `DELETE /units/:id`.
 
 ### 4.5 Photos - M1 (#39, architecture §3.6)
-- `POST /properties/:id/photos/presign` body `{ contentType, size }` → 201 `{ uploadUrl, key, expiresInSeconds }`. Validates: content type in `image/jpeg|png|webp`, `size ≤ 5 MB`, property ownership. Key is tenant-prefixed (`<tenantId>/<propertyId>/<uuid>`). Browser PUTs bytes directly to storage (MinIO dev / R2 prod) - the API never proxies bytes.
+- `POST /properties/:id/photos/presign` body `{ contentType, size }` → 201 `{ uploadUrl, key, expiresInSeconds }`. Validates: content type in `image/jpeg|png|webp`, `size ≤ 5 MB`, property ownership. Key is tenant-prefixed (`<tenantId>/<propertyId>/<uuid>`). Browser PUTs bytes directly to storage (Garage dev / R2 prod) - the API never proxies bytes.
 - `PATCH /properties/:id/photos` body `{ keys: string[] }` (ordered, all must carry the caller's tenant prefix) → 200. Persist + reorder + delete in one idempotent set-operation. Orphaned objects are GC'd out-of-band (deferred).
 
 ### 4.6 Units - M1

@@ -86,7 +86,7 @@ Violating any of these is a bug **even if tests pass**:
 - **FE:** Vite + React + TypeScript + Tailwind. TanStack Router (typed routes, zod-validated search params). TanStack Query for server state (not Redux). i18n EN/ID/中文.
 - **BE:** NestJS + TypeScript. Drizzle (drizzle-orm + drizzle-kit + pg; exclusion constraint + RLS live as hand-written SQL in the migration - drift-safe, kit diffs snapshots not the DB). `@nestjs/schedule` for cron.
 - **DB:** PostgreSQL 14+.
-- **Storage:** S3-compatible - MinIO (dev, docker compose) / Cloudflare R2 free tier (prod). Photo uploads via presigned PUT URLs.
+- **Storage:** S3-compatible - Garage (dev, docker compose) / Cloudflare R2 free tier (prod). Photo uploads via presigned PUT URLs.
 - **Mono:** pnpm workspaces + Turborepo.
 - **Deploy:** single VPS - Caddy (auto-TLS, serves the SPA, proxies `/api`) + Docker Compose (api + Postgres). Same origin, so the refresh cookie stays first-party. (Architecture doc §7.)
 - **Layering (BE):** controller (HTTP only) → service (logic, transactions) → repository (Drizzle). Thin controllers, fat services, dumb repositories.
@@ -231,6 +231,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 | 2026-07-16 | Photos = S3-compatible storage: MinIO (dev) + Cloudflare R2 free tier (prod), presigned PUT uploads (#39) | Dev/prod parity via one client; R2 is forever-free with zero egress; card-on-file caveat flagged | Yes (owner) |
 | 2026-07-16 | Composite FKs enforce the `tenant_id` denormalization (property→unit→booking/channel_connection) (#40) | Wrong tenant_id under RLS = silent cross-tenant leak; make it unrepresentable | Yes (owner) |
 | 2026-07-16 | ORM = **Drizzle** (drizzle-orm + drizzle-kit + pg), replacing Prisma; migrations re-baselined (#41) | Owner preference + SQL-first fit: composite FKs modeled natively; hand-written SQL is drift-immune (kit diffs snapshots, not the DB); no query-engine binary | Yes (owner) |
+| 2026-07-16 | Dev/fallback object storage = **Garage**, replacing MinIO in the photos decision (#39); prod stays R2 | MinIO community edition retired upstream (archived Apr 2026, source-only, no patches); Garage is actively maintained, lightweight, built for small self-hosted. SeaweedFS = documented plan B | Yes (owner) |
 
 *Append one row per architecture decision. Keep it terse.*
 
