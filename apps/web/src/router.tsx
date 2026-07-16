@@ -3,13 +3,19 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  redirect,
 } from "@tanstack/react-router";
 import { HomePage } from "./features/public-booking/home-page";
 import { PropertyPage } from "./features/public-booking/property-page";
 import { propertySearchSchema } from "./features/public-booking/property-search";
-import { DashboardPage } from "./features/dashboard/dashboard-page";
+import { LoginPage } from "./features/auth/login-page";
+import { loginSearchSchema } from "./features/auth/login-search";
+import { AppShell } from "./features/dashboard/app-shell";
+import { PropertiesPage } from "./features/properties/properties-page";
+import { PropertyEditPage } from "./features/properties/property-edit-page";
+import { ensureSession, getAccessToken } from "./lib/auth";
 
-// Two faces, one SPA: public funnel + (auth-guarded, later) dashboard.
+// Two faces, one SPA: public funnel + auth-guarded dashboard.
 // (architecture.md §4.2)
 const rootRoute = createRootRoute({
   component: Outlet,
@@ -31,17 +37,59 @@ const propertyRoute = createRoute({
   component: PropertyPage,
 });
 
-const dashboardRoute = createRoute({
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  validateSearch: loginSearchSchema,
+  // Already authed → straight to the dashboard. (page-spec §3.4)
+  beforeLoad: () => {
+    if (getAccessToken()) {
+      throw redirect({ to: "/app" });
+    }
+  },
+  component: LoginPage,
+});
+
+// Auth guard for everything under /app: no token in memory → one silent
+// refresh → otherwise bounce to /login carrying the intended URL. (page-spec §2)
+const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/app",
-  component: DashboardPage,
+  beforeLoad: async ({ location }) => {
+    if (!(await ensureSession())) {
+      throw redirect({ to: "/login", search: { next: location.href } });
+    }
+  },
+  component: AppShell,
+});
+
+// Dashboard home. Properties for now; the unified calendar takes over in M2.
+const appIndexRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/",
+  beforeLoad: () => {
+    throw redirect({ to: "/app/properties" });
+  },
+});
+
+const propertiesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "properties",
+  component: PropertiesPage,
+});
+
+const propertyEditRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "properties/$propertyId",
+  component: PropertyEditPage,
 });
 
 // Exported for tests: they build routers with a memory history over the same tree.
 export const routeTree = rootRoute.addChildren([
   homeRoute,
   propertyRoute,
-  dashboardRoute,
+  loginRoute,
+  appRoute.addChildren([appIndexRoute, propertiesRoute, propertyEditRoute]),
 ]);
 
 export const router = createRouter({ routeTree });
