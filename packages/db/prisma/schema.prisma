@@ -1,9 +1,16 @@
 // Sambung database schema. See docs/db-design.md for the full rationale.
 //
-// Everything Prisma CAN express lives here. What it cannot - the GiST EXCLUDE
-// constraint that prevents overlapping bookings (boss fight #1), and the
+// Everything Prisma CAN express lives here - including the composite-FK
+// TARGET indexes (@@unique([id, tenantId]) on Property/Unit). What it cannot
+// express - the GiST EXCLUDE constraint (boss fight #1) and the three
 // composite tenant-consistency FKs (db-design §4.5, issue #40) - is added by
-// hand in the migration SQL. See packages/db/README.md.
+// hand in migration SQL.
+//
+// CAUTION (drift): Prisma models FKs, so `db:migrate` WILL propose
+// DROP CONSTRAINT lines for the three composite FKs in any newly generated
+// migration - hand-delete them before applying. The tenant-consistency tests
+// fail loudly if the FKs vanish, and the pre-push hook runs them whenever
+// prisma/ changes. See packages/db/README.md.
 
 generator client {
   provider        = "prisma-client-js"
@@ -106,6 +113,9 @@ model Property {
   units Unit[]
   staff UserProperty[]
 
+  // Composite-FK target for unit_property_tenant_fk (tenant_consistency_fks
+  // migration, issue #40). Modeled here so Prisma doesn't drift-drop it.
+  @@unique([id, tenantId], map: "property_id_tenant_uniq")
   @@map("property")
 }
 
@@ -136,6 +146,10 @@ model Unit {
   bookings Booking[]
   channels ChannelConnection[]
 
+  // Composite-FK target for booking_unit_tenant_fk and
+  // channel_connection_unit_tenant_fk (issue #40). Modeled so Prisma
+  // doesn't drift-drop it.
+  @@unique([id, tenantId], map: "unit_id_tenant_uniq")
   @@map("unit")
 }
 

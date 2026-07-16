@@ -9,10 +9,14 @@
 -- tenant_id disagrees with its parent is a constraint violation (23503).
 --
 -- Notes:
---   * Additive only. The Prisma-managed single-column FKs stay; Prisma cannot
---     model a second, composite FK over an existing relation, so (like the
---     no_overlap exclusion constraint) these live in hand-written SQL and
---     cause no drift.
+--   * Additive only. The Prisma-managed single-column FKs stay.
+--   * DRIFT WARNING: the two UNIQUE targets ARE modeled in schema.prisma
+--     (@@unique with matching map names), so they don't drift. The three
+--     composite FKs are NOT expressible in Prisma (it can't model a second,
+--     composite FK over an existing relation): any future generated migration
+--     will propose DROP CONSTRAINT lines for them - hand-delete those before
+--     applying. The tenant-consistency tests fail loudly if the FKs vanish,
+--     and the pre-push hook runs them whenever prisma/ changes.
 --   * FK checks run with table-owner rights and bypass RLS, so the non-owner
 --     app role (sambung_app) can still insert rows normally.
 --   * The FK targets need real unique indexes: (id, tenant_id) is logically

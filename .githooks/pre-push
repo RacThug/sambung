@@ -23,7 +23,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 done
 
 # --- 2) Local quality gate (replaces cloud CI) ---
-# DB-backed tests need Docker, so they stay manual: run `pnpm test` yourself.
+# DB-backed tests need Docker, so they normally stay manual: run `pnpm test`
+# yourself. Exception below: pushes touching prisma/ run the db tests.
 echo "▶ pre-push: pnpm lint && pnpm typecheck ..."
 if ! pnpm lint; then
 	echo "✋ lint failed — fix it, or bypass with: git push --no-verify"
@@ -33,6 +34,20 @@ if ! pnpm typecheck; then
 	echo "✋ typecheck failed — fix it, or bypass with: git push --no-verify"
 	exit 1
 fi
+
+# --- 3) DB-constraint canary ---
+# The hand-written SQL guards (no_overlap exclusion, composite tenant FKs) can
+# be drift-dropped by a generated Prisma migration (packages/db/README.md).
+# If this push touches packages/db/prisma/, prove the constraints still bite.
+if git diff --name-only origin/main...HEAD 2>/dev/null | grep -q "^packages/db/prisma/"; then
+	echo "▶ pre-push: packages/db/prisma changed — running db tests (needs Docker Postgres) ..."
+	if ! pnpm --filter @sambung/db test; then
+		echo "✋ db tests failed — did a generated migration drop the hand-written constraints?"
+		echo "   See packages/db/README.md §hand-written SQL. Bypass only in emergency: git push --no-verify"
+		exit 1
+	fi
+fi
+
 echo "✓ pre-push checks passed."
 
 exit 0

@@ -4,11 +4,12 @@ Prisma schema, migrations, and client for Sambung. **Imported only by `apps/api`
 
 ## Why some integrity rules are hand-written SQL
 
-Prisma's schema language cannot express three things this project depends on. They are added **by hand** in the migration SQL, and Prisma leaves them alone (it doesn't track CHECK/EXCLUDE constraints), so they won't cause drift:
+Prisma's schema language cannot express three things this project depends on. They are added **by hand** in the migration SQL:
 
-1. **The `no_overlap` GiST exclusion constraint** — the real double-booking guard (boss fight #1).
-2. **CHECK constraints** — `check_out > check_in`, and `>= 0` on money columns.
+1. **The `no_overlap` GiST exclusion constraint** — the real double-booking guard (boss fight #1). Prisma doesn't track EXCLUDE constraints, so it never drifts.
+2. **CHECK constraints** — `check_out > check_in`, and `>= 0` on money columns. Also untracked by Prisma; no drift.
 3. **Composite tenant-consistency FKs** (`tenant_consistency_fks` migration, issue #40) - `booking (unit_id, tenant_id) → unit (id, tenant_id)`, plus `unit → property` and `channel_connection → unit`. They make the denormalized `tenant_id` (db-design §4.5) self-enforcing; Prisma can't model a second, composite FK over an existing relation. FK checks bypass RLS, so the `sambung_app` role is unaffected.
+   **⚠ Drift hazard - read before running `db:migrate`:** unlike CHECK/EXCLUDE, Prisma DOES track FKs, so any newly generated migration will contain `DROP CONSTRAINT` lines for these three FKs. **Hand-delete those lines** from the generated SQL before applying. Their unique targets (`property_id_tenant_uniq`, `unit_id_tenant_uniq`) are modeled in `schema.prisma` via `@@unique(..., map: ...)` and don't drift. Two backstops if the DROPs slip through: the tenant-consistency tests fail, and the pre-push hook runs the db tests whenever `packages/db/prisma/` changes.
 4. (Partial indexes, if we ever want them — currently `@@unique` covers the iCal dedupe because Postgres treats NULLs as distinct.)
 
 Extensions (`btree_gist`, `citext`) **are** declared in `schema.prisma` and created automatically by Prisma's migration.

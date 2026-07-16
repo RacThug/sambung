@@ -78,6 +78,25 @@ describe("tenant-consistency composite FKs", () => {
     ).rejects.toThrow(/channel_connection_unit_tenant_fk|foreign key|23503/i);
   });
 
+  it("rejects flipping an existing booking's tenant_id to another tenant (UPDATE path)", async () => {
+    const booking = await prisma.booking.create({
+      data: {
+        tenantId: tenantA,
+        unitId: unitA,
+        source: "direct",
+        status: "cancelled", // cancelled: exempt from no_overlap, still FK-checked
+        checkIn: d("2026-09-01"),
+        checkOut: d("2026-09-03"),
+      },
+    });
+    await expect(
+      prisma.booking.update({
+        where: { id: booking.id },
+        data: { tenantId: tenantB },
+      }),
+    ).rejects.toThrow(/booking_unit_tenant_fk|foreign key|23503/i);
+  });
+
   it("control: consistent tenant_id inserts still work end-to-end", async () => {
     await expect(
       prisma.booking.create({
