@@ -1,46 +1,25 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
-import {
-  createMemoryHistory,
-  createRouter,
-  RouterProvider,
-} from "@tanstack/react-router";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { routeTree } from "./router";
+import { cleanup, screen } from "@testing-library/react";
 import { propertySearchSchema } from "./features/public-booking/property-search";
+import { loginSearchSchema } from "./features/auth/login-search";
+import { clearSession, setSession } from "./lib/auth";
+import { authResponse, json, renderAt, stubFetch } from "./test-utils";
 
-// Renders the real route tree at a given URL, the same way main.tsx does -
-// only the history is swapped for an in-memory one so no browser is needed.
-function renderAt(url: string) {
-  const router = createRouter({
-    routeTree,
-    history: createMemoryHistory({ initialEntries: [url] }),
-  });
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  render(
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>,
-  );
-}
+beforeEach(() => {
+  clearSession();
+  stubFetch({});
+});
 
-// jsdom has no scrollTo; the router calls it on navigation (scroll restoration).
-window.scrollTo = () => {};
-
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("route tree", () => {
   it("renders the home page at /", async () => {
     renderAt("/");
     expect(await screen.findByText("Sambung")).toBeInTheDocument();
-  });
-
-  it("renders the dashboard at /app", async () => {
-    renderAt("/app");
-    expect(await screen.findByText("Dashboard")).toBeInTheDocument();
   });
 
   it("renders the property page at /p/$slug with typed params and dates", async () => {
@@ -54,6 +33,67 @@ describe("route tree", () => {
     renderAt("/p/villa-sunset?from=not-a-date&to=2026-08-05");
     expect(await screen.findByText("villa-sunset")).toBeInTheDocument();
     expect(screen.queryByText(/not-a-date/)).not.toBeInTheDocument();
+  });
+
+  it("renders the login page at /login", async () => {
+    renderAt("/login");
+    expect(
+      await screen.findByText("Sign in to your dashboard"),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("auth guard (/app/*)", () => {
+  it("bounces to /login with ?next when no session can be restored", async () => {
+    // The guard's one silent refresh fails → redirect. (page-spec §2)
+    stubFetch({
+      "POST /api/auth/refresh": () => json({ statusCode: 401 }, 401),
+    });
+    const router = renderAt("/app/properties");
+    expect(
+      await screen.findByText("Sign in to your dashboard"),
+    ).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/login");
+    expect(router.state.location.search).toEqual({ next: "/app/properties" });
+  });
+
+  it("restores the session via refresh and renders the dashboard shell", async () => {
+    stubFetch({
+      "POST /api/auth/refresh": () => json(authResponse()),
+      "GET /api/properties": () => json([]),
+    });
+    renderAt("/app/properties");
+    expect(await screen.findByText("Test Tenant")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Add your first property"),
+    ).toBeInTheDocument();
+  });
+
+  it("redirects /app to the properties list", async () => {
+    setSession(authResponse());
+    stubFetch({ "GET /api/properties": () => json([]) });
+    const router = renderAt("/app");
+    await screen.findByText("Properties");
+    expect(router.state.location.pathname).toBe("/app/properties");
+  });
+
+  it("redirects an already-authed visitor away from /login", async () => {
+    setSession(authResponse());
+    stubFetch({ "GET /api/properties": () => json([]) });
+    const router = renderAt("/login");
+    await screen.findByText("Test Tenant");
+    expect(router.state.location.pathname).toBe("/app/properties");
+  });
+
+  it("skips the login form when the refresh cookie still holds a session", async () => {
+    // No token in memory (fresh reload), but /auth/refresh succeeds.
+    stubFetch({
+      "POST /api/auth/refresh": () => json(authResponse()),
+      "GET /api/properties": () => json([]),
+    });
+    const router = renderAt("/login");
+    await screen.findByText("Test Tenant");
+    expect(router.state.location.pathname).toBe("/app/properties");
   });
 });
 
@@ -72,5 +112,20 @@ describe("propertySearchSchema", () => {
 
   it("accepts missing params", () => {
     expect(propertySearchSchema.parse({})).toEqual({});
+  });
+});
+
+describe("loginSearchSchema", () => {
+  it("keeps same-app paths", () => {
+    expect(loginSearchSchema.parse({ next: "/app/properties" })).toEqual({
+      next: "/app/properties",
+    });
+  });
+
+  it("drops absolute URLs and protocol-relative paths (open redirect)", () => {
+    expect(loginSearchSchema.parse({ next: "https://evil.example" })).toEqual(
+      {},
+    );
+    expect(loginSearchSchema.parse({ next: "//evil.example" })).toEqual({});
   });
 });

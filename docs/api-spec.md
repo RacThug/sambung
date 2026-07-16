@@ -118,7 +118,7 @@ Tenant-scoped list, `createdAt` ascending. Empty tenant → `[]` (never other te
 `404` for another tenant's id or an unknown id (indistinguishable). `400` malformed UUID.
 
 ### 4.3 `POST /properties` → 201 · `PATCH /properties/:id` → 200 - M1
-Fields: `name` (required, 2-160), `address?`, `latitude?`/`longitude?` (valid ranges), `description?`, `licenseNo?` (NIB). Response includes derived `verified: boolean` - true iff `licenseNo` is non-empty (FR-PROP-3). A public page needs ≥1 photo + ≥1 unit with a price to render "complete" (FR-PROP-1 AC) - the API exposes `publishable: boolean` computed from that rule.
+Fields: `name` (required, 2-160), `address?`, `latitude?`/`longitude?` (valid ranges), `description?`, `licenseNo?` (NIB). Response includes derived `verified: boolean` - true iff `licenseNo` is non-empty (FR-PROP-3). A public page needs ≥1 photo + ≥1 unit with a price **above zero** to render "complete" (FR-PROP-1 AC) - the API exposes `publishable: boolean` computed from that rule. A zero-rupiah unit is storable (§4.6) but never counts toward publishability: it's a placeholder, not a sellable listing.
 
 ### 4.4 `DELETE /properties/:id` → 204 - M1
 **Guarded:** if any unit under it has a *future occupying* booking → `409` naming the count. Deleting live inventory must be an explicit two-step (cancel bookings first). Same rule for `DELETE /units/:id`.
@@ -129,7 +129,7 @@ Fields: `name` (required, 2-160), `address?`, `latitude?`/`longitude?` (valid ra
 
 ### 4.6 Units - M1
 `POST /properties/:id/units` → 201, `GET /properties/:id/units` → 200, `PATCH /units/:id` → 200.
-Fields: `name`, `basePriceIdr` (int ≥ 0), `maxGuests` (int ≥ 1, default 2), `minStay` (nights, int ≥ 1, default 1). The DB CHECKs mirror these bounds - a bypassed app check still cannot store garbage.
+Fields: `name`, `basePriceIdr` (int ≥ 0; a 0 price is storable but keeps the property unpublishable - §4.3), `maxGuests` (int ≥ 1, default 2), `minStay` (nights, int ≥ 1, default 1). The DB CHECKs mirror these bounds - a bypassed app check still cannot store garbage.
 
 ### 4.7 `GET /public/properties/:slug` → 200 - M1 (no auth)
 Public page payload: property (name, address, description, `verified`, photos as public URLs) + its units (name, `basePriceIdr`, `maxGuests`, `minStay`). No PII, no license number value (only the boolean), no tenant internals. `404` unknown slug.

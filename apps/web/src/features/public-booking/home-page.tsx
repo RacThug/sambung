@@ -1,13 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import type { HealthResponse } from "@sambung/shared";
-import { apiGet } from "../../lib/api-client";
+import { api } from "../../lib/api-client";
 
 // Scaffold landing page. Proves the full wire: React Query → API client →
 // NestJS /api/health → shared contract type. Real booking funnel lands in M1/M2.
 export function HomePage() {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["health"],
-    queryFn: () => apiGet<HealthResponse>("/health"),
+    queryFn: () => api.get<HealthResponse>("/health"),
   });
 
   return (
