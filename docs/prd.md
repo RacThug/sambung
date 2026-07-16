@@ -21,11 +21,12 @@ Small-to-mid Bali accommodation owners (villas, guesthouses, homestays) are sque
 It forces demonstration of the hard skills clients pay for: **multi-tenancy, calendar/availability logic, third-party sync, payment integration, role-based access, and a polished public-facing booking flow.** It is complex enough to be impressive, but — because it's a showcase, not a live 24/7 product — the complexity is an asset rather than a maintenance burden.
 
 ### 1.3 Cost constraint (hard requirement)
-v1 must be buildable and demoable with **zero recurring paid dependencies**:
+v1 must be buildable and demoable with **no paid third-party services**; the single allowed recurring cost is one cheap VPS (~$5/mo) that hosts everything:
 - OTA sync via **iCal** (free, industry-standard for small operators)
 - Payments via **Midtrans/Xendit sandbox** (test mode, free)
-- DB on **Supabase or Neon free tier**
-- Hosting on **Vercel + Railway/Render free tiers**
+- Hosting + DB on **one VPS** (Caddy + Docker Compose: SPA, API, PostgreSQL) - architecture doc §7
+- Photos on **Cloudflare R2 free tier** (10 GB, zero egress; needs a card on file, stays $0) - MinIO in docker compose for dev
+- Free-tier fallback (Vercel + Railway/Render + Neon) stays documented, but is not the default
 
 ---
 
@@ -140,6 +141,8 @@ Each requirement has an ID and acceptance criteria so it maps cleanly to a GitHu
 
 ## 6. Architecture & tech stack
 
+> **Where this section and [`architecture.md`](./architecture.md) differ, the architecture doc wins** (final stack: Vite + React SPA + TanStack Router, single-VPS deploy - not Next.js/Vercel). This section is the original sketch, kept for history.
+
 Aligns with your existing stack (Next.js + NestJS + TypeScript monorepo, PostgreSQL).
 
 ### 6.1 Monorepo layout
@@ -189,9 +192,7 @@ Payment           id, booking_id, provider, amount, status, raw_payload(jsonb)
 > Availability is *derived* from `Booking` rows (incl. imported + manual blocks) rather than stored separately — single source of truth, fewer sync bugs.
 
 ### 6.4 Deployment
-- `web` → Vercel.
-- `api` → Railway / Render / Fly.io free tier.
-- `db` → Supabase / Neon.
+- Single VPS: Caddy (auto-TLS, static `web`, reverse proxy `/api`) + Docker Compose (`api`, PostgreSQL). Architecture doc §7.
 - Seed script with 2 demo tenants, 3 properties, sample bookings → instant demo state.
 
 ---
@@ -216,7 +217,7 @@ Each phase = one sprint in `workplan.md`. Ship M1–M3 first if you need a demo 
 - **Demoable:** owner adds property → guest books + pays (sandbox) → dates block on an external calendar, live, in <5 min.
 - **Proves to clients:** multi-tenancy, third-party integration, payment handling, RBAC, i18n, clean public UX.
 - **Clean repo:** README with architecture diagram + the "why" behind each major decision (this is what senior reviewers actually read).
-- **No paid dependency** required to run it.
+- **No paid third-party service** required to run it; total running cost = one ~$5/mo VPS.
 
 ---
 

@@ -29,7 +29,7 @@ sambung/
 │   └── api/                 # NestJS — REST API + scheduler + webhooks
 ├── packages/
 │   ├── shared/              # shared TS types + zod schemas (the FE⇄BE contract)
-│   ├── db/                  # Prisma schema + migrations + client  (imported ONLY by api)
+│   ├── db/                  # Drizzle schema + migrations + client  (imported ONLY by api)
 │   └── config/              # eslint / tsconfig / tailwind presets
 ├── pnpm-workspace.yaml
 ├── turbo.json
@@ -38,7 +38,7 @@ sambung/
 
 **Teaching point — `packages/shared` is the contract.** Request/response types and zod schemas live here. `api` validates incoming data against the zod schema; `web` imports the *same* types so a wrong field name is a compile error, not a runtime surprise. One source of truth for the API shape.
 
-**Teaching point — `web` may import `shared`, never `db`.** This enforces §1 at the dependency level: the frontend physically cannot import Prisma. Boundaries you can *accidentally* cross aren't boundaries.
+**Teaching point — `web` may import `shared`, never `db`.** This enforces §1 at the dependency level: the frontend physically cannot import the DB client. Boundaries you can *accidentally* cross aren't boundaries.
 
 ---
 
@@ -50,7 +50,7 @@ Every request flows through three layers. Keep each honest:
 ```
 Controller  → HTTP only: parse, validate (zod/DTO), return. No logic.
 Service     → business rules, transactions, the boss fights.
-Repository  → Prisma queries. No business rules.
+Repository  → Drizzle queries. No business rules.
 ```
 Thin controllers, fat services, dumb repositories. The most common junior mistake is logic leaking into controllers; resist it.
 
@@ -119,6 +119,10 @@ GET  /public/units/:id/calendar.ics                 → export feed (paste back 
 POST /webhooks/payment/:provider   → idempotent (payment_event dedupe) → confirm
 ```
 
+### 3.6 Object storage (photos)
+
+S3-compatible API as the contract, backend swapped by env config: **MinIO** in docker compose for dev, **Cloudflare R2 free tier** in prod (10 GB, zero egress; activation needs a card on file, stays $0 — flagged per invariant #8; fallback: MinIO on the VPS, identical code path). Uploads use **presigned PUT URLs**: the API validates content type, size, and tenant ownership at presign time, then the browser talks to storage directly — the API never proxies bytes and the SPA never sees credentials. (Issue #39.)
+
 ---
 
 ## 4. Frontend (Vite + React SPA)
@@ -127,7 +131,7 @@ POST /webhooks/payment/:provider   → idempotent (payment_event dedupe) → con
 ```
 web/src/
 ├── main.tsx
-├── router.tsx               React Router v6
+├── router.tsx               TanStack Router (typed route tree)
 ├── lib/
 │   ├── api-client.ts        fetch wrapper: base URL, attaches access token, refresh-on-401
 │   └── query.ts             React Query (TanStack) client
@@ -149,7 +153,7 @@ Most "state" here is *server* state (bookings, availability). React Query handle
 - **Access token:** short-lived (~15 min), kept **in memory** (a module variable / context), attached as `Authorization: Bearer`.
 - **Refresh token:** **httpOnly, Secure cookie** scoped to the API domain — JS can't read it, so XSS can't steal it.
 - On a `401`, `api-client` silently calls `/auth/refresh`, retries once.
-- Cross-domain caveat (web on Vercel, api on Railway = different origins): cookie needs `SameSite=None; Secure`, and CORS must allow credentials. Document this — it's a real gotcha and shows you understand browser security.
+- Same-origin in production (§7): Caddy serves the SPA and proxies `/api` on one domain, so the refresh cookie is plain first-party (`SameSite=Lax` works) and no CORS-with-credentials is needed. If web and api ever split origins (e.g. SPA moves to a CDN), the cookie needs `SameSite=None; Secure` and CORS must allow credentials - a real gotcha worth understanding either way.
 
 > Avoid putting tokens in `localStorage`. It's readable by any script → XSS = full account takeover. Naming this trade-off in your README is a senior signal.
 
@@ -174,8 +178,12 @@ Most "state" here is *server* state (bookings, availability). React Query handle
 ```
 @Cron 30m → for each channel_connection:
   fetch import_ical_url → parse VEVENTs (node-ical)
-  upsert booking by (channel_connection_id, external_uid), source=channel, status=confirmed
-  uids in DB but ABSENT from feed → status=cancelled   (an OTA cancellation)
+  parse unhealthy? → last_status=error, STOP (never reconcile a broken feed)
+  per VEVENT, inside a savepoint:
+    upsert booking by (channel_connection_id, external_uid), source=channel, status=confirmed
+    ├─ exclusion violation (23P01) → record sync_conflict, continue  (db-design §4.8)
+    └─ ok → close any open conflict for that uid
+  uids in DB but ABSENT from the healthy feed → status=cancelled   (an OTA cancellation)
   update last_synced_at + last_status
 Export: GET .../calendar.ics → build feed from confirmed bookings (ics lib)
 ```
@@ -200,12 +208,23 @@ For the portfolio, tier 1–2 + a README note "in production I'd SSR the public 
 ---
 
 ## 7. Deployment topology
+
+Everything runs on **one small VPS** - the project's single recurring cost (~$5/mo, CLAUDE.md invariant #8 as amended):
+
 ```
-web  → Vercel / Netlify   (static SPA on CDN — cheap, scales free)
-api  → Railway / Render / Fly.io   (always-on — needed for cron)  ← the only running cost
-db   → Supabase / Neon    (Postgres free tier)
+                     ┌───────────────── VPS ─────────────────┐
+Internet ── :443 ──► │ Caddy (auto-TLS)                       │
+                     │   ├─ /*      → static SPA build (web)  │
+                     │   └─ /api/*  → NestJS api (Docker)     │
+                     │                 └─► PostgreSQL (Docker)│
+                     └────────────────────────────────────────┘
 ```
-Only the API must stay awake (for the schedulers). Everything else is static or managed. Zero recurring paid dependency holds.
+
+- **Why a VPS, not free PaaS tiers:** the schedulers (§3.4) need an always-on process. Free tiers sleep on idle - cron silently stops firing, and the first request after sleep cold-starts for ~30-60s, which is exactly what you don't want mid-demo.
+- **Why one origin:** the SPA and `/api` share a domain, so the refresh cookie is first-party (§4.4). No `SameSite=None`, no CORS credential dance.
+- **Ops you own (and can showcase):** Docker Compose for api + Postgres, Caddy auto-TLS, nightly `pg_dump` copied off the box, ssh-key-only login + firewall + unattended upgrades.
+- **Photos live off-box:** Cloudflare R2 (prod) / MinIO (dev) — see §3.6. Zero egress keeps serving free, and the tiny VPS disk + backup stay lean.
+- **Documented fallback (free, weaker):** SPA on Vercel/Netlify + api on Railway/Render + db on Neon - zero cost, but sleeping cron and cross-origin cookies.
 
 ---
 
@@ -221,8 +240,8 @@ Only the API must stay awake (for the schedulers). Everything else is static or 
 ---
 
 ## 9. Open decisions
-1. **ORM:** Prisma (recommended) vs TypeORM. Exclusion constraint is raw SQL in a migration either way.
-2. **Routing lib:** React Router (familiar) vs TanStack Router (typed, newer).
+1. **ORM:** decided 2026-07-16 - Drizzle, replacing Prisma (#41; see CLAUDE.md ADR log). Exclusion constraint + RLS stay hand-written SQL in the migration.
+2. **Routing lib:** decided 2026-07-16 - TanStack Router (typed routes, zod-validated search params; see CLAUDE.md ADR log).
 3. **UI kit:** shadcn/ui-style (copy-in components) vs build from Tailwind primitives.
 4. **Validation sharing:** zod schemas in `packages/shared` consumed by both sides (recommended).
 
@@ -239,3 +258,4 @@ Only the API must stay awake (for the schedulers). Everything else is static or 
 | React Query over Redux | Right tool for server state; avoiding over-engineering |
 | In-memory access + httpOnly refresh | Browser security / XSS-resistant auth |
 | Tiered SEO answer | Pragmatic trade-off reasoning |
+| Single-VPS deploy (Caddy + Compose) | Running a real box: TLS, reverse proxy, backups, hardening |

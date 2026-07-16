@@ -77,17 +77,19 @@ Violating any of these is a bug **even if tests pass**:
 5. **The exclusion constraint is the real overlap guard.** App checks are for UX, not correctness. (DB doc §4.3)
 6. **Money is integer rupiah (`bigint`), never float.**
 7. **Integration points are idempotent** — iCal imports by `external_uid`, webhooks by `payment_event`.
-8. **No paid recurring dependencies.** iCal (free), Midtrans/Xendit sandbox, free-tier DB/hosting only. Flag anything that would cost money.
+8. **No paid third-party services.** iCal (free), Midtrans/Xendit sandbox. The one allowed recurring cost is a single cheap VPS (~$5/mo) hosting web + api + db. Flag anything else that would cost money.
 
 ---
 
 ## Stack & conventions
 
-- **FE:** Vite + React + TypeScript + Tailwind. React Router. TanStack Query for server state (not Redux). i18n EN/ID/中文.
-- **BE:** NestJS + TypeScript. Prisma (exclusion constraint via raw-SQL migration). `@nestjs/schedule` for cron.
+- **FE:** Vite + React + TypeScript + Tailwind. TanStack Router (typed routes, zod-validated search params). TanStack Query for server state (not Redux). i18n EN/ID/中文.
+- **BE:** NestJS + TypeScript. Drizzle (drizzle-orm + drizzle-kit + pg; exclusion constraint + RLS live as hand-written SQL in the migration - drift-safe, kit diffs snapshots not the DB). `@nestjs/schedule` for cron.
 - **DB:** PostgreSQL 14+.
+- **Storage:** S3-compatible - MinIO (dev, docker compose) / Cloudflare R2 free tier (prod). Photo uploads via presigned PUT URLs.
 - **Mono:** pnpm workspaces + Turborepo.
-- **Layering (BE):** controller (HTTP only) → service (logic, transactions) → repository (Prisma). Thin controllers, fat services, dumb repositories.
+- **Deploy:** single VPS - Caddy (auto-TLS, serves the SPA, proxies `/api`) + Docker Compose (api + Postgres). Same origin, so the refresh cookie stays first-party. (Architecture doc §7.)
+- **Layering (BE):** controller (HTTP only) → service (logic, transactions) → repository (Drizzle). Thin controllers, fat services, dumb repositories.
 - **Shared contract:** request/response types + zod schemas live in `packages/shared`; both sides import them.
 - **Auth:** access token in memory + `Authorization: Bearer`; refresh token in httpOnly Secure cookie. Never `localStorage`.
 - **Naming:** tables/columns `snake_case`; TS `camelCase`; types/components `PascalCase`. Files `kebab-case`.
@@ -177,7 +179,8 @@ docker compose up -d                         # local Postgres (needed for migrat
 pnpm dev                                      # turbo: web + api
 pnpm lint && pnpm typecheck                  # whole workspace
 pnpm test                                    # turbo: api (jest) + db (vitest)
-pnpm --filter @sambung/db db:migrate         # create + apply a migration (dev)
+pnpm --filter @sambung/db db:generate        # diff schema.ts -> new SQL migration
+pnpm --filter @sambung/db db:migrate         # apply pending migrations
 pnpm --filter @sambung/db db:seed            # 2 tenants, 3 properties, sample bookings (idempotent)
 pnpm --filter @sambung/db db:studio          # browse data
 ```
@@ -221,6 +224,13 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 | 2026-06-24 | Repo = **private** GitHub repo `RacThug/sambung` | Portfolio project; go public when demo-ready | Yes (owner) |
 | 2026-06-24 | Docs live in `docs/` (`prd.md`, `db-design.md`, `architecture.md`) + index | AI- and human-navigable; one source of truth per subsystem | Yes (owner) |
 | 2026-06-24 | Git = **GitHub Flow**; never push to `main`, always branch + PR. Enforced by a local `pre-push` hook (`.githooks/`) | Server-side branch protection needs public repo / Pro (invariant #8). Local hook blocks accidental direct pushes, free, keeps repo private | Yes (owner) |
+| 2026-07-16 | DB = **PostgreSQL**, reaffirmed vs MySQL | Exclusion constraint + RLS are load-bearing (boss fights #1, #5) and already merged; MySQL has neither. Learning the Postgres delta is the point | Yes (owner) |
+| 2026-07-16 | Routing = **TanStack Router**, replacing React Router | Typed routes + zod-validated search params fit the URL-driven booking funnel; pairs with TanStack Query. Swap cost near zero (2 files) | Yes (owner) |
+| 2026-07-16 | Deploy = **single VPS** (Caddy + Docker Compose: SPA + api + Postgres); amends invariant #8 | Cron needs an always-on process (free tiers sleep); one origin kills cross-site cookie/CORS complexity; ops skills = portfolio value | Yes (owner) |
+| 2026-07-16 | iCal conflict policy: per-VEVENT savepoints, `sync_conflict` inbox, never auto-cancel a confirmed booking, reconcile only on healthy parse (#38) | The exclusion constraint rejects real-world overbookings; a human must pick the loser; a truncated feed must never mass-cancel | Yes (owner) |
+| 2026-07-16 | Photos = S3-compatible storage: MinIO (dev) + Cloudflare R2 free tier (prod), presigned PUT uploads (#39) | Dev/prod parity via one client; R2 is forever-free with zero egress; card-on-file caveat flagged | Yes (owner) |
+| 2026-07-16 | Composite FKs enforce the `tenant_id` denormalization (property→unit→booking/channel_connection) (#40) | Wrong tenant_id under RLS = silent cross-tenant leak; make it unrepresentable | Yes (owner) |
+| 2026-07-16 | ORM = **Drizzle** (drizzle-orm + drizzle-kit + pg), replacing Prisma; migrations re-baselined (#41) | Owner preference + SQL-first fit: composite FKs modeled natively; hand-written SQL is drift-immune (kit diffs snapshots, not the DB); no query-engine binary | Yes (owner) |
 
 *Append one row per architecture decision. Keep it terse.*
 
@@ -228,7 +238,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 ## Project Facts *(this is the part that changes)*
 
-- **Stage**: Greenfield. Design docs complete (PRD + DB + architecture); **no app code yet**. Next up: M0 monorepo setup.
+- **Stage**: M0 in progress. Done: monorepo, DB schema + RLS migrations, seed script, auth (signup → tenant + owner, JWT session), local pre-push quality gate. Web app is scaffold-only. Next: finish M0, then M1 (inventory).
 - **Repo**: `RacThug/sambung` (private).
 - **Tracking**: GitHub **Issues + Milestones** (M0–M5).
 - **Key documents** (read the relevant one before touching that area):
