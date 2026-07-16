@@ -9,12 +9,13 @@ import {
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { PhotosSection } from "./photos-section";
 import { VerifiedBadge } from "./verified-badge";
 
 const route = getRouteApi("/app/properties/$propertyId");
 
-// The property workbench (page-spec §4.5). This is the details tab; photos
-// (#39), units (#45) and channels (M4) dock alongside it later.
+// The property workbench (page-spec §4.5): details + photos; units (#45) and
+// channels (M4) dock alongside them later.
 export function PropertyEditPage() {
   const { propertyId } = route.useParams();
   const { data: property, isLoading } = useQuery({
@@ -48,7 +49,8 @@ export function PropertyEditPage() {
       {/* key: remount the form when the server row changes identity */}
       <DetailsForm key={property.id} property={property} />
 
-      <PlaceholderSection title="Photos" note="Photo uploads arrive with #39." />
+      <PhotosSection property={property} />
+
       <PlaceholderSection title="Units" note="Unit management arrives with #45." />
 
       <DangerZone property={property} />

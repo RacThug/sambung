@@ -12,8 +12,11 @@ import { routeTree } from "./router";
 // jsdom has no scrollTo; the router calls it on navigation (scroll restoration).
 window.scrollTo = () => {};
 
-/** Stub responses keyed by "METHOD /api/path". Unmatched requests 404. */
-export type FetchStubs = Record<string, () => Response>;
+/**
+ * Stub responses keyed by "METHOD /api/path". Unmatched requests 404.
+ * Handlers receive the RequestInit so tests can assert on request bodies.
+ */
+export type FetchStubs = Record<string, (init?: RequestInit) => Response>;
 
 export function stubFetch(stubs: FetchStubs) {
   const calls: string[] = [];
@@ -25,7 +28,7 @@ export function stubFetch(stubs: FetchStubs) {
       calls.push(key);
       const handler = stubs[key];
       return Promise.resolve(
-        handler ? handler() : new Response(null, { status: 404 }),
+        handler ? handler(init) : new Response(null, { status: 404 }),
       );
     },
   );
