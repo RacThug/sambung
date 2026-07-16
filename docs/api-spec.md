@@ -53,8 +53,8 @@ Sources: `direct | airbnb | booking_com | vrbo | manual_block`. Transitions outs
 | 9 | `POST /properties` | Create property | M1 | PROP-1 |
 | 10 | `PATCH /properties/:id` | Update (incl. `licenseNo` → badge) | M1 | PROP-1/3 |
 | 11 | `DELETE /properties/:id` | Delete (guarded) | M1 | PROP-1 |
-| 12 | `POST /properties/:id/photos/presign` | Presigned photo upload | M1 | PROP-1 |
-| 13 | `PATCH /properties/:id/photos` | Persist/reorder photo keys | M1 | PROP-1 |
+| 12 | `POST /properties/:id/photos/presign` | Presigned photo upload | **Built** | PROP-1 |
+| 13 | `PATCH /properties/:id/photos` | Persist/reorder photo keys | **Built** | PROP-1 |
 | 14 | `POST /properties/:id/units` | Create unit | M1 | PROP-2 |
 | 15 | `GET /properties/:id/units` | List units | M1 | PROP-2 |
 | 16 | `PATCH /units/:id` · `DELETE /units/:id` | Update/delete unit (guarded) | M1 | PROP-2 |
@@ -123,9 +123,11 @@ Fields: `name` (required, 2-160), `address?`, `latitude?`/`longitude?` (valid ra
 ### 4.4 `DELETE /properties/:id` → 204 - M1
 **Guarded:** if any unit under it has a *future occupying* booking → `409` naming the count. Deleting live inventory must be an explicit two-step (cancel bookings first). Same rule for `DELETE /units/:id`.
 
-### 4.5 Photos - M1 (#39, architecture §3.6)
-- `POST /properties/:id/photos/presign` body `{ contentType, size }` → 201 `{ uploadUrl, key, expiresInSeconds }`. Validates: content type in `image/jpeg|png|webp`, `size ≤ 5 MB`, property ownership. Key is tenant-prefixed (`<tenantId>/<propertyId>/<uuid>`). Browser PUTs bytes directly to storage (Garage dev / R2 prod) - the API never proxies bytes.
-- `PATCH /properties/:id/photos` body `{ keys: string[] }` (ordered, all must carry the caller's tenant prefix) → 200. Persist + reorder + delete in one idempotent set-operation. Orphaned objects are GC'd out-of-band (deferred).
+### 4.5 Photos - **Built** (#39, architecture §3.6)
+Shared types: `packages/shared/src/photo.ts` (`presignPhotoRequestSchema`, `presignPhotoResponseSchema`, `updatePhotosRequestSchema`).
+- `POST /properties/:id/photos/presign` body `{ contentType, size }` → 201 `{ uploadUrl, key, expiresInSeconds }`. Validates: content type in `image/jpeg|png|webp`, `size ≤ 5 MB`, property ownership. Key is tenant-prefixed (`<tenantId>/<propertyId>/<uuid>.<ext>`). Browser PUTs bytes directly to storage (Garage dev / R2 prod) - the API never proxies bytes. Content type **and** length are signed headers: an upload that doesn't repeat them exactly fails at the storage layer (403), test-proven against Garage.
+- `PATCH /properties/:id/photos` body `{ keys: string[] }` (ordered, ≤ 30, all must carry the caller's `<tenantId>/<propertyId>/` prefix - a key for another tenant OR another own property → 400) → 200 full `PropertyResponse`. Persist + reorder + delete in one idempotent set-operation. Orphaned objects are GC'd out-of-band (deferred).
+- `PropertyResponse` carries `photos: [{ key, url }]` (order = gallery order, url = `STORAGE_PUBLIC_BASE_URL/<key>`); `publishable` counts these photos.
 
 ### 4.6 Units - M1
 `POST /properties/:id/units` → 201, `GET /properties/:id/units` → 200, `PATCH /units/:id` → 200.
