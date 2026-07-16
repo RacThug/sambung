@@ -105,7 +105,7 @@ Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · *
   - **Photos:** file picker → presign (api #12) → browser `PUT` to storage → persist/reorder keys (api #13). Progress per file; type/size errors from presign shown pre-upload.
   - **Units:** inline CRUD → api #14/#16; per-unit price/guests/min-stay.
   - Per-unit **channels** section (M4): connect (api #28), list + status (api #29), disconnect (api #30 - shows "n imported bookings kept"), **Sync now** (api #31), copy **export .ics URL** (api #34) with "paste this into the OTA" helper (flow 4.1 step 5).
-  - Link out: "view public page" → `/p/:slug` (+ `publishable` checklist when incomplete: needs ≥1 photo + ≥1 priced unit).
+  - Link out: "view public page" → `/p/:slug` (+ `publishable` checklist when incomplete: needs ≥1 photo + ≥1 unit priced above zero).
   - Delete property → api #11; **409 path renders the reason** ("n future bookings - cancel them first").
 - **States:** tab-level loading/saving · upload progress/failure per photo · unit delete 409 (same future-bookings guard).
 
