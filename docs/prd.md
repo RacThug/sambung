@@ -25,6 +25,7 @@ v1 must be buildable and demoable with **no paid third-party services**; the sin
 - OTA sync via **iCal** (free, industry-standard for small operators)
 - Payments via **Midtrans/Xendit sandbox** (test mode, free)
 - Hosting + DB on **one VPS** (Caddy + Docker Compose: SPA, API, PostgreSQL) - architecture doc §7
+- Photos on **Cloudflare R2 free tier** (10 GB, zero egress; needs a card on file, stays $0) - MinIO in docker compose for dev
 - Free-tier fallback (Vercel + Railway/Render + Neon) stays documented, but is not the default
 
 ---

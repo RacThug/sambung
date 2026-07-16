@@ -147,6 +147,17 @@ create unique index booking_external_uid_uniq
 create index booking_unit_status_idx on booking (unit_id, status);
 create index booking_tenant_idx on booking (tenant_id);
 
+-- Tenant consistency: make the denormalized tenant_id (§4.5) self-enforcing.
+-- A child whose tenant_id disagrees with its parent chain is unrepresentable.
+alter table property add constraint property_id_tenant_uniq unique (id, tenant_id);
+alter table unit     add constraint unit_property_tenant_fk
+  foreign key (property_id, tenant_id) references property (id, tenant_id) on delete cascade;
+alter table unit     add constraint unit_id_tenant_uniq unique (id, tenant_id);
+alter table booking  add constraint booking_unit_tenant_fk
+  foreign key (unit_id, tenant_id) references unit (id, tenant_id) on delete cascade;
+alter table channel_connection add constraint channel_connection_unit_tenant_fk
+  foreign key (unit_id, tenant_id) references unit (id, tenant_id) on delete cascade;
+
 -- Payments ------------------------------------------------------------------
 create type payment_status as enum ('pending', 'paid', 'failed');
 
@@ -212,6 +223,8 @@ You *could* reach a booking's tenant via `booking → unit → property → tena
 
 **Why:** (1) Row-Level Security policies become trivial and fast — `using (tenant_id = current_tenant())` with no joins. (2) Every tenant-scoped query filters on one indexed column. The cost is a consistency obligation: when you insert a booking you must set the same `tenant_id` as its unit. That's a deliberate denormalization for security and performance — name it as such in your README, because reviewers respect a *justified* denormalization and frown on an accidental one.
 
+**Update (2026-07-16): the obligation is now structural, not app-enforced.** The composite FKs in §3 (`booking (unit_id, tenant_id) → unit (id, tenant_id)`, and likewise `unit → property` and `channel_connection → unit`) make a mismatched `tenant_id` a constraint violation instead of what it would otherwise be under RLS: a row silently visible to the *wrong* tenant and invisible to the right one. Note FK checks run with table-owner rights and bypass RLS, so the tenant-scoped app role keeps working. (Issue #40; `user_property` has no `tenant_id` column, so cross-tenant staff assignment is revisited when staff invites land.)
+
 ### 4.6 Money as integer rupiah, never float
 `bigint` minor units. IDR has no sub-unit in practice, so integer rupiah is clean. Floats lose pennies to rounding and must never touch money. This is a one-line decision that signals you've been burned before (or learned from people who were).
 
@@ -221,6 +234,16 @@ Two places where the outside world will deliver the same thing twice:
 - **Payment webhooks:** providers guarantee *at-least-once* delivery, so duplicates happen. `payment_event` records each `provider_event_id` once; a duplicate hits the unique constraint and is safely ignored before you mutate booking state.
 
 Idempotency is the single most important habit for integration code. Build it in from line one.
+
+### 4.8 When the outside world double-sells: sync conflicts
+
+The exclusion constraint doesn't care where a booking came from — an imported VEVENT that overlaps an existing occupying booking is rejected too. That rejection is *correct* (a real overbooking happened out there), but the sync engine must expect it rather than crash:
+
+- Each VEVENT upserts inside a **savepoint**; an exclusion violation (SQLSTATE `23P01`) records a row in **`sync_conflict`** and the cycle continues. `sync_conflict` is an ops inbox, not an availability source — invariant #3 is untouched.
+- **Never auto-cancel a confirmed booking.** Money and a guest are attached; a human picks the loser, cancels one side in the app, and the next cycle imports cleanly and closes the conflict. Conflicts against a `pending_payment` hold usually self-heal within one cycle (15-min TTL).
+- **Reconcile only on a healthy parse.** The "UID absent from feed → cancelled" rule must never run on a truncated/empty/errored feed — that would mass-cancel real bookings. Unhealthy fetch → connection status `error`, nothing else changes.
+
+Design + DDL land with M4 (issue #38).
 
 ---
 
@@ -256,3 +279,5 @@ Encoding status as an enum + transitions you enforce in code (not arbitrary upda
 | Integer money | Financial data hygiene |
 | `external_uid` / `payment_event` | Idempotency for integrations & webhooks |
 | Status enum + FSM | Modeling state explicitly |
+| Composite FKs on denormalized columns | Making invalid states unrepresentable |
+| `sync_conflict` inbox | Integrations fail partially; design for it |

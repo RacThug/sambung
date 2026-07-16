@@ -86,6 +86,7 @@ Violating any of these is a bug **even if tests pass**:
 - **FE:** Vite + React + TypeScript + Tailwind. TanStack Router (typed routes, zod-validated search params). TanStack Query for server state (not Redux). i18n EN/ID/中文.
 - **BE:** NestJS + TypeScript. Prisma (exclusion constraint via raw-SQL migration). `@nestjs/schedule` for cron.
 - **DB:** PostgreSQL 14+.
+- **Storage:** S3-compatible - MinIO (dev, docker compose) / Cloudflare R2 free tier (prod). Photo uploads via presigned PUT URLs.
 - **Mono:** pnpm workspaces + Turborepo.
 - **Deploy:** single VPS - Caddy (auto-TLS, serves the SPA, proxies `/api`) + Docker Compose (api + Postgres). Same origin, so the refresh cookie stays first-party. (Architecture doc §7.)
 - **Layering (BE):** controller (HTTP only) → service (logic, transactions) → repository (Prisma). Thin controllers, fat services, dumb repositories.
@@ -225,6 +226,9 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 | 2026-07-16 | DB = **PostgreSQL**, reaffirmed vs MySQL | Exclusion constraint + RLS are load-bearing (boss fights #1, #5) and already merged; MySQL has neither. Learning the Postgres delta is the point | Yes (owner) |
 | 2026-07-16 | Routing = **TanStack Router**, replacing React Router | Typed routes + zod-validated search params fit the URL-driven booking funnel; pairs with TanStack Query. Swap cost near zero (2 files) | Yes (owner) |
 | 2026-07-16 | Deploy = **single VPS** (Caddy + Docker Compose: SPA + api + Postgres); amends invariant #8 | Cron needs an always-on process (free tiers sleep); one origin kills cross-site cookie/CORS complexity; ops skills = portfolio value | Yes (owner) |
+| 2026-07-16 | iCal conflict policy: per-VEVENT savepoints, `sync_conflict` inbox, never auto-cancel a confirmed booking, reconcile only on healthy parse (#38) | The exclusion constraint rejects real-world overbookings; a human must pick the loser; a truncated feed must never mass-cancel | Yes (owner) |
+| 2026-07-16 | Photos = S3-compatible storage: MinIO (dev) + Cloudflare R2 free tier (prod), presigned PUT uploads (#39) | Dev/prod parity via one client; R2 is forever-free with zero egress; card-on-file caveat flagged | Yes (owner) |
+| 2026-07-16 | Composite FKs enforce the `tenant_id` denormalization (property→unit→booking/channel_connection) (#40) | Wrong tenant_id under RLS = silent cross-tenant leak; make it unrepresentable | Yes (owner) |
 
 *Append one row per architecture decision. Keep it terse.*
 
