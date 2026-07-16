@@ -1,8 +1,9 @@
 // Sambung database schema. See docs/db-design.md for the full rationale.
 //
-// Everything Prisma CAN express lives here. The ONE thing it cannot — the GiST
-// EXCLUDE constraint that prevents overlapping bookings (boss fight #1) — is
-// added by hand in the migration SQL. See packages/db/README.md.
+// Everything Prisma CAN express lives here. What it cannot - the GiST EXCLUDE
+// constraint that prevents overlapping bookings (boss fight #1), and the
+// composite tenant-consistency FKs (db-design §4.5, issue #40) - is added by
+// hand in the migration SQL. See packages/db/README.md.
 
 generator client {
   provider        = "prisma-client-js"

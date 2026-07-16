@@ -8,7 +8,8 @@ Prisma's schema language cannot express three things this project depends on. Th
 
 1. **The `no_overlap` GiST exclusion constraint** — the real double-booking guard (boss fight #1).
 2. **CHECK constraints** — `check_out > check_in`, and `>= 0` on money columns.
-3. (Partial indexes, if we ever want them — currently `@@unique` covers the iCal dedupe because Postgres treats NULLs as distinct.)
+3. **Composite tenant-consistency FKs** (`tenant_consistency_fks` migration, issue #40) - `booking (unit_id, tenant_id) → unit (id, tenant_id)`, plus `unit → property` and `channel_connection → unit`. They make the denormalized `tenant_id` (db-design §4.5) self-enforcing; Prisma can't model a second, composite FK over an existing relation. FK checks bypass RLS, so the `sambung_app` role is unaffected.
+4. (Partial indexes, if we ever want them — currently `@@unique` covers the iCal dedupe because Postgres treats NULLs as distinct.)
 
 Extensions (`btree_gist`, `citext`) **are** declared in `schema.prisma` and created automatically by Prisma's migration.
 
