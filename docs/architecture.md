@@ -29,7 +29,7 @@ sambung/
 │   └── api/                 # NestJS — REST API + scheduler + webhooks
 ├── packages/
 │   ├── shared/              # shared TS types + zod schemas (the FE⇄BE contract)
-│   ├── db/                  # Prisma schema + migrations + client  (imported ONLY by api)
+│   ├── db/                  # Drizzle schema + migrations + client  (imported ONLY by api)
 │   └── config/              # eslint / tsconfig / tailwind presets
 ├── pnpm-workspace.yaml
 ├── turbo.json
@@ -50,7 +50,7 @@ Every request flows through three layers. Keep each honest:
 ```
 Controller  → HTTP only: parse, validate (zod/DTO), return. No logic.
 Service     → business rules, transactions, the boss fights.
-Repository  → Prisma queries. No business rules.
+Repository  → Drizzle queries. No business rules.
 ```
 Thin controllers, fat services, dumb repositories. The most common junior mistake is logic leaking into controllers; resist it.
 

@@ -1,7 +1,7 @@
 # Sambung — Database Design (teaching edition)
 
 > **Audience:** you (RacThug), building this to sharpen engineering.
-> **Approach:** SQL-first. We design the data model, constraints, and integrity rules in raw PostgreSQL — because that's where you *see* the engineering. Mapping to Prisma/TypeORM comes after and is mechanical.
+> **Approach:** SQL-first. We design the data model, constraints, and integrity rules in raw PostgreSQL — because that's where you *see* the engineering. Mapping to Drizzle comes after and is mechanical.
 > **Target:** PostgreSQL 14+ (Supabase / Neon). Uses `daterange`, GiST exclusion constraints, `citext`.
 
 ---
@@ -240,7 +240,7 @@ Encoding status as an enum + transitions you enforce in code (not arbitrary upda
 
 ## 6. Open decisions (your call)
 1. **Hold strategy:** pessimistic + TTL sweeper (recommended) vs optimistic.
-2. **ORM mapping:** Prisma (cleaner DX; note: native exclusion constraints need a raw-SQL migration) vs TypeORM (NestJS-native; same raw-SQL caveat). Either way, the exclusion constraint is hand-written SQL in a migration — ORMs don't model it.
+2. **ORM mapping:** decided 2026-07-16 - Drizzle (#41, replacing Prisma). Composite FKs, CHECKs, and the partial unique index are modeled in `schema.ts`; the exclusion constraint and RLS policies stay hand-written SQL in the migration - drift-immune, because drizzle-kit diffs schema snapshots, never the database.
 3. **RLS now or later:** ship app-layer tenant guard first; add Postgres RLS as defense-in-depth + a portfolio talking point.
 
 ---

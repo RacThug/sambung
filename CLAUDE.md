@@ -84,10 +84,10 @@ Violating any of these is a bug **even if tests pass**:
 ## Stack & conventions
 
 - **FE:** Vite + React + TypeScript + Tailwind. React Router. TanStack Query for server state (not Redux). i18n EN/ID/中文.
-- **BE:** NestJS + TypeScript. Prisma (exclusion constraint via raw-SQL migration). `@nestjs/schedule` for cron.
+- **BE:** NestJS + TypeScript. Drizzle (drizzle-orm + drizzle-kit + pg; exclusion constraint + RLS live as hand-written SQL in the migration - drift-safe, kit diffs snapshots not the DB). `@nestjs/schedule` for cron.
 - **DB:** PostgreSQL 14+.
 - **Mono:** pnpm workspaces + Turborepo.
-- **Layering (BE):** controller (HTTP only) → service (logic, transactions) → repository (Prisma). Thin controllers, fat services, dumb repositories.
+- **Layering (BE):** controller (HTTP only) → service (logic, transactions) → repository (Drizzle). Thin controllers, fat services, dumb repositories.
 - **Shared contract:** request/response types + zod schemas live in `packages/shared`; both sides import them.
 - **Auth:** access token in memory + `Authorization: Bearer`; refresh token in httpOnly Secure cookie. Never `localStorage`.
 - **Naming:** tables/columns `snake_case`; TS `camelCase`; types/components `PascalCase`. Files `kebab-case`.
