@@ -1,21 +1,24 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { prisma } from "../src/index";
+import { eq } from "drizzle-orm";
+import { closeDb, db } from "../src/index";
+import { booking, property, tenant, unit } from "../src/schema";
+import { expectDbError } from "./helpers";
 
-// Each test maps to one decision in the no_overlap constraint (db-design §4.3):
+// Each test maps to one decision in the booking_no_overlap constraint
+// (db-design §4.3):
 //   - overlap rejected / different-unit allowed  → the "unit_id WITH =" part
 //   - changeover allowed                          → the "[)" half-open bound
 //   - cancelled doesn't block / pending blocks    → the "WHERE status IN (...)"
-
-const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
 let tenantId: string;
 let propertyId: string;
 
 async function makeUnit(name = "Unit") {
-  const unit = await prisma.unit.create({
-    data: { tenantId, propertyId, name, basePriceIdr: 500_000n },
-  });
-  return unit.id;
+  const [row] = await db
+    .insert(unit)
+    .values({ tenantId, propertyId, name, basePriceIdr: 500_000n })
+    .returning({ id: unit.id });
+  return row.id;
 }
 
 function book(
@@ -24,40 +27,44 @@ function book(
   from: string,
   to: string,
 ) {
-  return prisma.booking.create({
-    data: {
-      tenantId,
-      unitId,
-      source: "direct",
-      status,
-      checkIn: d(from),
-      checkOut: d(to),
-    },
+  return db.insert(booking).values({
+    tenantId,
+    unitId,
+    source: "direct",
+    status,
+    checkIn: from,
+    checkOut: to,
   });
 }
 
 beforeAll(async () => {
-  const tenant = await prisma.tenant.create({ data: { name: "Test Tenant" } });
-  tenantId = tenant.id;
-  const property = await prisma.property.create({
-    data: { tenantId, name: "Test Villa" },
-  });
-  propertyId = property.id;
+  const [t] = await db
+    .insert(tenant)
+    .values({ name: "Test Tenant" })
+    .returning({ id: tenant.id });
+  tenantId = t.id;
+  const [p] = await db
+    .insert(property)
+    .values({ tenantId, name: "Test Villa" })
+    .returning({ id: property.id });
+  propertyId = p.id;
 });
 
 afterAll(async () => {
   // Cascade removes the property, units, and bookings created under this tenant.
-  await prisma.tenant.delete({ where: { id: tenantId } }).catch(() => {});
-  await prisma.$disconnect();
+  await db.delete(tenant).where(eq(tenant.id, tenantId));
+  await closeDb();
 });
 
 describe("booking_no_overlap exclusion constraint", () => {
   it("rejects two overlapping occupying bookings on the same unit", async () => {
     const u = await makeUnit();
     await book(u, "confirmed", "2026-07-10", "2026-07-13");
-    await expect(
+    await expectDbError(
       book(u, "confirmed", "2026-07-12", "2026-07-15"),
-    ).rejects.toThrow(/exclusion|no_overlap|23P01/i);
+      "23P01",
+      "booking_no_overlap",
+    );
   });
 
   it("allows a changeover: [10,13) and [13,16) do not overlap (half-open)", async () => {
@@ -88,17 +95,21 @@ describe("booking_no_overlap exclusion constraint", () => {
   it("treats a pending_payment hold as occupying", async () => {
     const u = await makeUnit();
     await book(u, "pending_payment", "2026-07-10", "2026-07-13");
-    await expect(
+    await expectDbError(
       book(u, "confirmed", "2026-07-12", "2026-07-15"),
-    ).rejects.toThrow(/exclusion|no_overlap|23P01/i);
+      "23P01",
+      "booking_no_overlap",
+    );
   });
 });
 
 describe("check constraints", () => {
   it("rejects an inverted stay (check_out <= check_in)", async () => {
     const u = await makeUnit();
-    await expect(
+    await expectDbError(
       book(u, "confirmed", "2026-07-13", "2026-07-10"),
-    ).rejects.toThrow(/check|stay_nonempty|23514/i);
+      "23514",
+      "booking_stay_nonempty",
+    );
   });
 });

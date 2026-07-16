@@ -14,7 +14,7 @@ A multi-tenant **direct-booking engine** + lightweight **channel manager** for B
 | Layer | Tech |
 |-------|------|
 | Frontend | Vite + React + TypeScript + Tailwind, React Router, TanStack Query, i18n (EN/ID/中文) |
-| Backend | NestJS + TypeScript, Prisma, `@nestjs/schedule` |
+| Backend | NestJS + TypeScript, Drizzle, `@nestjs/schedule` |
 | Database | PostgreSQL 14+ (half-open `daterange`, exclusion constraint for overlap safety) |
 | Monorepo | pnpm workspaces + Turborepo |
 
