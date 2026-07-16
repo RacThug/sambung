@@ -3,18 +3,20 @@ import type { Server } from 'node:http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
+import { inArray } from 'drizzle-orm';
 import { ClsService } from 'nestjs-cls';
 import request from 'supertest';
+import { property, tenant } from '@sambung/db';
 import type { AuthResponse } from '@sambung/shared';
 import { AppModule } from '../app.module';
-import { PrismaService } from '../prisma/prisma.service';
-import { TenantPrismaService } from '../prisma/tenant-prisma.service';
+import { DbService } from '../db/db.service';
+import { TenantDbService } from '../db/tenant-db.service';
 
 // Tenant isolation (FR-AUTH-3, boss fight #5) — app-layer proof against a real DB.
 describe('Tenant isolation (properties)', () => {
   let app: INestApplication;
-  let prisma: PrismaService;
-  let tenantDb: TenantPrismaService;
+  let dbs: DbService;
+  let tenantDb: TenantDbService;
   let cls: ClsService;
   const createdTenantIds: string[] = [];
 
@@ -47,27 +49,27 @@ describe('Tenant isolation (properties)', () => {
     app.setGlobalPrefix('api');
     app.use(cookieParser());
     await app.init();
-    prisma = app.get(PrismaService);
-    tenantDb = app.get(TenantPrismaService);
+    dbs = app.get(DbService);
+    tenantDb = app.get(TenantDbService);
     cls = app.get(ClsService);
 
     const a = await registerTenant('Tenant A');
     const b = await registerTenant('Tenant B');
     tokenA = a.accessToken;
     tenantAId = a.tenant.id;
-    propA = await prisma.property.create({
-      data: { tenantId: a.tenant.id, name: 'A Villa' },
-    });
-    propB = await prisma.property.create({
-      data: { tenantId: b.tenant.id, name: 'B Villa' },
-    });
+    [propA] = await dbs.db
+      .insert(property)
+      .values({ tenantId: a.tenant.id, name: 'A Villa' })
+      .returning({ id: property.id });
+    [propB] = await dbs.db
+      .insert(property)
+      .values({ tenantId: b.tenant.id, name: 'B Villa' })
+      .returning({ id: property.id });
   });
 
   afterAll(async () => {
     if (createdTenantIds.length) {
-      await prisma.tenant.deleteMany({
-        where: { id: { in: createdTenantIds } },
-      });
+      await dbs.db.delete(tenant).where(inArray(tenant.id, createdTenantIds));
     }
     await app.close();
   });
@@ -109,7 +111,7 @@ describe('Tenant isolation (properties)', () => {
         tenantId: tenantAId,
         role: 'owner',
       });
-      return tenantDb.client.property.findMany({}); // no `where`
+      return tenantDb.run((tx) => tx.select().from(property)); // no `where`
     });
     expect(props.length).toBeGreaterThan(0);
     expect(props.every((p) => p.tenantId === tenantAId)).toBe(true);

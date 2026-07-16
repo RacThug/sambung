@@ -1,5 +1,5 @@
 // Imported FIRST in main.ts so DATABASE_URL + JWT secrets are in process.env
-// before any module (e.g. @sambung/db's PrismaClient) is evaluated.
+// before any module (e.g. @sambung/db's shared pg pool) is evaluated.
 try {
   process.loadEnvFile();
 } catch {

@@ -3,15 +3,17 @@ import type { Server } from 'node:http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
+import { inArray } from 'drizzle-orm';
 import request from 'supertest';
+import { tenant } from '@sambung/db';
 import type { AuthResponse, MeResponse } from '@sambung/shared';
 import { AppModule } from '../app.module';
-import { PrismaService } from '../prisma/prisma.service';
+import { DbService } from '../db/db.service';
 
 // Integration test for FR-AUTH-1 — runs against the real database.
 describe('Auth (FR-AUTH-1)', () => {
   let app: INestApplication;
-  let prisma: PrismaService;
+  let dbs: DbService;
   const createdTenantIds: string[] = [];
 
   const email = () => `auth-test+${randomUUID()}@test.dev`;
@@ -41,14 +43,12 @@ describe('Auth (FR-AUTH-1)', () => {
     app.setGlobalPrefix('api');
     app.use(cookieParser());
     await app.init();
-    prisma = app.get(PrismaService);
+    dbs = app.get(DbService);
   });
 
   afterAll(async () => {
     if (createdTenantIds.length) {
-      await prisma.tenant.deleteMany({
-        where: { id: { in: createdTenantIds } },
-      });
+      await dbs.db.delete(tenant).where(inArray(tenant.id, createdTenantIds));
     }
     await app.close();
   });

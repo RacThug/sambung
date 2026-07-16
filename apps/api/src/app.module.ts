@@ -4,7 +4,7 @@ import { ClsModule } from 'nestjs-cls';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CommonModule } from './common/common.module';
-import { PrismaModule } from './prisma/prisma.module';
+import { DbModule } from './db/db.module';
 import { AuthModule } from './auth/auth.module';
 import { PropertiesModule } from './properties/properties.module';
 
@@ -15,7 +15,7 @@ import { PropertiesModule } from './properties/properties.module';
     // the guard can seed TenantContext and services can read it ambiently.
     ClsModule.forRoot({ global: true, middleware: { mount: true } }),
     CommonModule,
-    PrismaModule,
+    DbModule,
     AuthModule,
     PropertiesModule,
   ],
