@@ -6,6 +6,7 @@ import {
   type PropertyResponse,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
+import { issuesToFieldErrors } from "../../lib/forms";
 import { VerifiedBadge } from "./verified-badge";
 
 // Inventory home: list + create (FR-PROP-1, page-spec §4.4). Editing happens
@@ -111,7 +112,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     const parsed = createPropertyRequestSchema.safeParse({ name });
     if (!parsed.success) {
-      setFieldErrors({ name: parsed.error.issues[0]?.message ?? "Invalid" });
+      setFieldErrors(issuesToFieldErrors(parsed.error.issues));
       return;
     }
     setFieldErrors({});

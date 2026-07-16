@@ -4,6 +4,7 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { loginRequestSchema, type AuthResponse } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { setSession } from "../../lib/auth";
+import { issuesToFieldErrors } from "../../lib/forms";
 
 const route = getRouteApi("/login");
 
@@ -29,11 +30,7 @@ export function LoginPage() {
     e.preventDefault();
     const parsed = loginRequestSchema.safeParse({ email, password });
     if (!parsed.success) {
-      const errors: Record<string, string> = {};
-      for (const issue of parsed.error.issues) {
-        errors[issue.path.join(".")] ??= issue.message;
-      }
-      setFieldErrors(errors);
+      setFieldErrors(issuesToFieldErrors(parsed.error.issues));
       return;
     }
     setFieldErrors({});

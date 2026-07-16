@@ -66,8 +66,7 @@ export function renderAt(url: string) {
   });
   render(
     <QueryClientProvider client={queryClient}>
-      {/* Route tree types are registered against the app's own router. */}
-      <RouterProvider router={router as never} />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
   return router;

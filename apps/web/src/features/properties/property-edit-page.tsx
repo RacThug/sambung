@@ -8,6 +8,7 @@ import {
   type UpdatePropertyRequest,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
+import { issuesToFieldErrors } from "../../lib/forms";
 import { VerifiedBadge } from "./verified-badge";
 
 const route = getRouteApi("/app/properties/$propertyId");
@@ -97,11 +98,7 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
       licenseNo: form.licenseNo || null,
     });
     if (!parsed.success) {
-      const errors: Record<string, string> = {};
-      for (const issue of parsed.error.issues) {
-        errors[issue.path.join(".")] ??= issue.message;
-      }
-      setFieldErrors(errors);
+      setFieldErrors(issuesToFieldErrors(parsed.error.issues));
       return;
     }
     setFieldErrors({});

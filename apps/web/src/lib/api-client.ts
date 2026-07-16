@@ -64,7 +64,13 @@ async function request<T>(
       res = await send(method, path, body);
     }
     if (res.status === 401) {
+      // Second 401: the session is gone for real - log out to /login,
+      // remembering where the user was. (page-spec §2)
       clearSession();
+      if (window.location.pathname.startsWith("/app")) {
+        const next = window.location.pathname + window.location.search;
+        window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+      }
     }
   }
 

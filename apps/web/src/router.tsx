@@ -13,7 +13,7 @@ import { loginSearchSchema } from "./features/auth/login-search";
 import { AppShell } from "./features/dashboard/app-shell";
 import { PropertiesPage } from "./features/properties/properties-page";
 import { PropertyEditPage } from "./features/properties/property-edit-page";
-import { ensureSession, getAccessToken } from "./lib/auth";
+import { ensureSession } from "./lib/auth";
 
 // Two faces, one SPA: public funnel + auth-guarded dashboard.
 // (architecture.md §4.2)
@@ -41,9 +41,11 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
   validateSearch: loginSearchSchema,
-  // Already authed → straight to the dashboard. (page-spec §3.4)
-  beforeLoad: () => {
-    if (getAccessToken()) {
+  // Already authed → straight to the dashboard (page-spec §3.4). ensureSession
+  // (not just the in-memory token) so a reload with a live refresh cookie
+  // skips the form too.
+  beforeLoad: async () => {
+    if (await ensureSession()) {
       throw redirect({ to: "/app" });
     }
   },

@@ -84,6 +84,17 @@ describe("auth guard (/app/*)", () => {
     await screen.findByText("Test Tenant");
     expect(router.state.location.pathname).toBe("/app/properties");
   });
+
+  it("skips the login form when the refresh cookie still holds a session", async () => {
+    // No token in memory (fresh reload), but /auth/refresh succeeds.
+    stubFetch({
+      "POST /api/auth/refresh": () => json(authResponse()),
+      "GET /api/properties": () => json([]),
+    });
+    const router = renderAt("/login");
+    await screen.findByText("Test Tenant");
+    expect(router.state.location.pathname).toBe("/app/properties");
+  });
 });
 
 describe("propertySearchSchema", () => {
