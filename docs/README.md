@@ -9,6 +9,7 @@ subsystem it's working on before proposing changes.
 | [`prd.md`](./prd.md) | …deciding *what* to build or whether something is in scope | Why the project exists, requirements, acceptance criteria, milestones |
 | [`db-design.md`](./db-design.md) | …writing a migration, query, or anything touching data integrity | Schema, `daterange`/GiST exclusion constraint, integrity rules (SQL-first, teaching edition) |
 | [`architecture.md`](./architecture.md) | …wiring FE↔BE, adding a module, or moving data across the stack | FE/BE split, module layout, data flows, the API boundary |
+| [`api-spec.md`](./api-spec.md) | …adding or changing an endpoint | Every REST endpoint M0–M5: path, shapes, behavior, errors, conventions |
 
 ## How these relate
 
