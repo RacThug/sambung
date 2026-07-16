@@ -121,7 +121,7 @@ POST /webhooks/payment/:provider   → idempotent (payment_event dedupe) → con
 
 ### 3.6 Object storage (photos)
 
-S3-compatible API as the contract, backend swapped by env config: **MinIO** in docker compose for dev, **Cloudflare R2 free tier** in prod (10 GB, zero egress; activation needs a card on file, stays $0 — flagged per invariant #8; fallback: MinIO on the VPS, identical code path). Uploads use **presigned PUT URLs**: the API validates content type, size, and tenant ownership at presign time, then the browser talks to storage directly — the API never proxies bytes and the SPA never sees credentials. (Issue #39.)
+S3-compatible API as the contract, backend swapped by env config: **Garage** in docker compose for dev, **Cloudflare R2 free tier** in prod (10 GB, zero egress; activation needs a card on file, stays $0 — flagged per invariant #8; fallback: Garage on the VPS, identical code path). Uploads use **presigned PUT URLs**: the API validates content type, size, and tenant ownership at presign time, then the browser talks to storage directly — the API never proxies bytes and the SPA never sees credentials. (Issue #39; Garage replaced the retired MinIO CE per the ADR log.)
 
 ---
 
@@ -223,7 +223,7 @@ Internet ── :443 ──► │ Caddy (auto-TLS)                       │
 - **Why a VPS, not free PaaS tiers:** the schedulers (§3.4) need an always-on process. Free tiers sleep on idle - cron silently stops firing, and the first request after sleep cold-starts for ~30-60s, which is exactly what you don't want mid-demo.
 - **Why one origin:** the SPA and `/api` share a domain, so the refresh cookie is first-party (§4.4). No `SameSite=None`, no CORS credential dance.
 - **Ops you own (and can showcase):** Docker Compose for api + Postgres, Caddy auto-TLS, nightly `pg_dump` copied off the box, ssh-key-only login + firewall + unattended upgrades.
-- **Photos live off-box:** Cloudflare R2 (prod) / MinIO (dev) — see §3.6. Zero egress keeps serving free, and the tiny VPS disk + backup stay lean.
+- **Photos live off-box:** Cloudflare R2 (prod) / Garage (dev) — see §3.6. Zero egress keeps serving free, and the tiny VPS disk + backup stay lean.
 - **Documented fallback (free, weaker):** SPA on Vercel/Netlify + api on Railway/Render + db on Neon - zero cost, but sleeping cron and cross-origin cookies.
 
 ---
