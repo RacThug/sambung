@@ -84,12 +84,12 @@ Violating any of these is a bug **even if tests pass**:
 ## Stack & conventions
 
 - **FE:** Vite + React + TypeScript + Tailwind. TanStack Router (typed routes, zod-validated search params). TanStack Query for server state (not Redux). i18n EN/ID/中文.
-- **BE:** NestJS + TypeScript. Prisma (exclusion constraint via raw-SQL migration). `@nestjs/schedule` for cron.
+- **BE:** NestJS + TypeScript. Drizzle (drizzle-orm + drizzle-kit + pg; exclusion constraint + RLS live as hand-written SQL in the migration - drift-safe, kit diffs snapshots not the DB). `@nestjs/schedule` for cron.
 - **DB:** PostgreSQL 14+.
 - **Storage:** S3-compatible - MinIO (dev, docker compose) / Cloudflare R2 free tier (prod). Photo uploads via presigned PUT URLs.
 - **Mono:** pnpm workspaces + Turborepo.
 - **Deploy:** single VPS - Caddy (auto-TLS, serves the SPA, proxies `/api`) + Docker Compose (api + Postgres). Same origin, so the refresh cookie stays first-party. (Architecture doc §7.)
-- **Layering (BE):** controller (HTTP only) → service (logic, transactions) → repository (Prisma). Thin controllers, fat services, dumb repositories.
+- **Layering (BE):** controller (HTTP only) → service (logic, transactions) → repository (Drizzle). Thin controllers, fat services, dumb repositories.
 - **Shared contract:** request/response types + zod schemas live in `packages/shared`; both sides import them.
 - **Auth:** access token in memory + `Authorization: Bearer`; refresh token in httpOnly Secure cookie. Never `localStorage`.
 - **Naming:** tables/columns `snake_case`; TS `camelCase`; types/components `PascalCase`. Files `kebab-case`.
@@ -179,7 +179,8 @@ docker compose up -d                         # local Postgres (needed for migrat
 pnpm dev                                      # turbo: web + api
 pnpm lint && pnpm typecheck                  # whole workspace
 pnpm test                                    # turbo: api (jest) + db (vitest)
-pnpm --filter @sambung/db db:migrate         # create + apply a migration (dev)
+pnpm --filter @sambung/db db:generate        # diff schema.ts -> new SQL migration
+pnpm --filter @sambung/db db:migrate         # apply pending migrations
 pnpm --filter @sambung/db db:seed            # 2 tenants, 3 properties, sample bookings (idempotent)
 pnpm --filter @sambung/db db:studio          # browse data
 ```
@@ -229,6 +230,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 | 2026-07-16 | iCal conflict policy: per-VEVENT savepoints, `sync_conflict` inbox, never auto-cancel a confirmed booking, reconcile only on healthy parse (#38) | The exclusion constraint rejects real-world overbookings; a human must pick the loser; a truncated feed must never mass-cancel | Yes (owner) |
 | 2026-07-16 | Photos = S3-compatible storage: MinIO (dev) + Cloudflare R2 free tier (prod), presigned PUT uploads (#39) | Dev/prod parity via one client; R2 is forever-free with zero egress; card-on-file caveat flagged | Yes (owner) |
 | 2026-07-16 | Composite FKs enforce the `tenant_id` denormalization (property→unit→booking/channel_connection) (#40) | Wrong tenant_id under RLS = silent cross-tenant leak; make it unrepresentable | Yes (owner) |
+| 2026-07-16 | ORM = **Drizzle** (drizzle-orm + drizzle-kit + pg), replacing Prisma; migrations re-baselined (#41) | Owner preference + SQL-first fit: composite FKs modeled natively; hand-written SQL is drift-immune (kit diffs snapshots, not the DB); no query-engine binary | Yes (owner) |
 
 *Append one row per architecture decision. Keep it terse.*
 

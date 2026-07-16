@@ -29,7 +29,7 @@ sambung/
 │   └── api/                 # NestJS — REST API + scheduler + webhooks
 ├── packages/
 │   ├── shared/              # shared TS types + zod schemas (the FE⇄BE contract)
-│   ├── db/                  # Prisma schema + migrations + client  (imported ONLY by api)
+│   ├── db/                  # Drizzle schema + migrations + client  (imported ONLY by api)
 │   └── config/              # eslint / tsconfig / tailwind presets
 ├── pnpm-workspace.yaml
 ├── turbo.json
@@ -50,7 +50,7 @@ Every request flows through three layers. Keep each honest:
 ```
 Controller  → HTTP only: parse, validate (zod/DTO), return. No logic.
 Service     → business rules, transactions, the boss fights.
-Repository  → Prisma queries. No business rules.
+Repository  → Drizzle queries. No business rules.
 ```
 Thin controllers, fat services, dumb repositories. The most common junior mistake is logic leaking into controllers; resist it.
 
@@ -240,7 +240,7 @@ Internet ── :443 ──► │ Caddy (auto-TLS)                       │
 ---
 
 ## 9. Open decisions
-1. **ORM:** decided - Prisma (in use since M0; exclusion constraint via raw-SQL migration).
+1. **ORM:** decided 2026-07-16 - Drizzle, replacing Prisma (#41; see CLAUDE.md ADR log). Exclusion constraint + RLS stay hand-written SQL in the migration.
 2. **Routing lib:** decided 2026-07-16 - TanStack Router (typed routes, zod-validated search params; see CLAUDE.md ADR log).
 3. **UI kit:** shadcn/ui-style (copy-in components) vs build from Tailwind primitives.
 4. **Validation sharing:** zod schemas in `packages/shared` consumed by both sides (recommended).
