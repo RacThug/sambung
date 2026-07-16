@@ -106,10 +106,12 @@ export class PropertiesRepository {
    * pending_payment|confirmed; "future" = check_out > today (half-open stays:
    * an in-house guest still counts, today's checkout doesn't).
    *
-   * Best-effort guard, not a correctness invariant: under READ COMMITTED a
-   * booking committed between the count and the delete still gets cascaded.
-   * The FK cascade keeps the DB consistent either way; closing that window
-   * would need SERIALIZABLE and M2's booking flow to opt in.
+   * The FOR UPDATE locks make the guard sound, not best-effort: an INSERT
+   * referencing a locked row takes FOR KEY SHARE on it, which conflicts with
+   * FOR UPDATE. Locking the property row blocks new units appearing under it
+   * mid-delete; locking its unit rows blocks new bookings on them. A booking
+   * insert racing this delete therefore waits, and if the delete wins it fails
+   * its FK instead of being silently cascaded away.
    */
   deleteWithGuard(
     id: string,
@@ -120,8 +122,15 @@ export class PropertiesRepository {
         .select({ id: property.id })
         .from(property)
         .where(and(eq(property.id, id), eq(property.tenantId, tenantId)))
-        .limit(1);
+        .limit(1)
+        .for('update');
       if (!found.length) return { found: false };
+
+      await tx
+        .select({ id: unit.id })
+        .from(unit)
+        .where(eq(unit.propertyId, id))
+        .for('update');
 
       const [{ futureBookings }] = await tx
         .select({ futureBookings: count() })
