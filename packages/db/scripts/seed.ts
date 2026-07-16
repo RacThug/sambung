@@ -34,8 +34,13 @@ const U_SURF = "bbbbbbbb-0000-0000-0000-000000000003";
 const U_RIVER = "bbbbbbbb-0000-0000-0000-000000000004";
 const CC_AIRBNB = "cccccccc-0000-0000-0000-000000000001";
 
-// NOTE: placeholder, NOT a real hash. Real password hashing arrives with auth (#5).
-const FAKE_HASH = "seed:not-a-real-hash";
+// bcrypt("sambung123", 12 rounds) - matches the auth service's BCRYPT_ROUNDS,
+// so seeded owners can log into the dashboard. Precomputed constant: keeps the
+// seed deterministic and this package free of a bcrypt dependency. Dev/demo
+// only; the password is intentionally public.
+const DEMO_PASSWORD = "sambung123";
+const DEMO_PASSWORD_HASH =
+  "$2b$12$l/JDRuTK3RV2ZPO5tKDPrOJ7DvutHzlXTbFqTUgwFrO4GI1HPts.y";
 
 async function main() {
   await db.transaction(async (tx) => {
@@ -59,13 +64,13 @@ async function main() {
       {
         tenantId: T1,
         email: "owner@balibreeze.test",
-        passwordHash: FAKE_HASH,
+        passwordHash: DEMO_PASSWORD_HASH,
         role: "owner",
       },
       {
         tenantId: T2,
         email: "owner@ubudretreats.test",
-        passwordHash: FAKE_HASH,
+        passwordHash: DEMO_PASSWORD_HASH,
         role: "owner",
       },
     ]);
@@ -206,6 +211,9 @@ async function main() {
   };
   console.log(
     `Seeded: ${await n(tenant)} tenants, ${await n(property)} properties, ${await n(unit)} units, ${await n(booking)} bookings, ${await n(payment)} payments.`,
+  );
+  console.log(
+    `Demo logins: owner@balibreeze.test / owner@ubudretreats.test - password "${DEMO_PASSWORD}"`,
   );
 }
 
