@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -7,10 +8,14 @@ import {
   isPublishable,
   isVerified,
   type CreatePropertyRequest,
+  type PresignPhotoRequest,
+  type PresignPhotoResponse,
   type PropertyResponse,
+  type UpdatePhotosRequest,
   type UpdatePropertyRequest,
 } from '@sambung/shared';
 import { TenantContext } from '../common/tenant-context.service';
+import { StorageService } from '../storage/storage.service';
 import {
   PropertiesRepository,
   type PropertyRow,
@@ -21,6 +26,7 @@ export class PropertiesService {
   constructor(
     private readonly repo: PropertiesRepository,
     private readonly tenant: TenantContext,
+    private readonly storage: StorageService,
   ) {}
 
   async list(): Promise<PropertyResponse[]> {
@@ -29,12 +35,7 @@ export class PropertiesService {
   }
 
   async get(id: string): Promise<PropertyResponse> {
-    const row = await this.repo.findByIdForTenant(id, this.tenant.tenantId);
-    // 404 (not 403) for another tenant's id — don't reveal that it exists.
-    if (!row) {
-      throw new NotFoundException('Property not found');
-    }
-    return this.toResponse(row);
+    return this.toResponse(await this.getOwnedOrThrow(id));
   }
 
   async create(dto: CreatePropertyRequest): Promise<PropertyResponse> {
@@ -65,6 +66,72 @@ export class PropertiesService {
     return this.toResponse(row);
   }
 
+  /**
+   * Presign a photo upload (api-spec §4.5). Ownership is validated here -
+   * presigning is the moment credentials-by-proxy are handed out, so a 404
+   * for a foreign property must happen before any URL is signed. Nothing is
+   * persisted: the key only enters the gallery via updatePhotos.
+   */
+  async presignPhoto(
+    id: string,
+    dto: PresignPhotoRequest,
+  ): Promise<PresignPhotoResponse> {
+    await this.getOwnedOrThrow(id);
+    return this.storage.presignPhotoUpload({
+      tenantId: this.tenant.tenantId,
+      propertyId: id,
+      contentType: dto.contentType,
+      size: dto.size,
+    });
+  }
+
+  /**
+   * Whole-set photo update: persist + reorder + delete in one idempotent
+   * operation (api-spec §4.5). Every key must carry this property's
+   * `<tenantId>/<propertyId>/` prefix - a key minted for another tenant OR
+   * another of the caller's own properties is rejected, so galleries can
+   * never reference objects they don't own.
+   */
+  async updatePhotos(
+    id: string,
+    dto: UpdatePhotosRequest,
+  ): Promise<PropertyResponse> {
+    // Existence first: a foreign property must 404 regardless of the body.
+    const existing = await this.getOwnedOrThrow(id);
+    const prefix = this.storage.photoKeyPrefix(this.tenant.tenantId, id);
+    if (dto.keys.some((key) => !key.startsWith(prefix))) {
+      throw new BadRequestException(
+        'Every photo key must belong to this property',
+      );
+    }
+    // Keys NEW to the gallery must reference a real uploaded image (exists +
+    // magic bytes) - presign alone mints a key, it doesn't earn a slot here.
+    // Keys already persisted were verified when first added; reorders are free.
+    const known = new Set(existing.photos);
+    const rejected = (
+      await Promise.all(
+        dto.keys
+          .filter((key) => !known.has(key))
+          .map(async (key) => ({
+            key,
+            ok: await this.storage.isValidPhotoObject(key),
+          })),
+      )
+    ).filter((r) => !r.ok);
+    if (rejected.length > 0) {
+      throw new BadRequestException(
+        `Not an uploaded image: ${rejected.map((r) => r.key).join(', ')}`,
+      );
+    }
+    const row = await this.repo.update(id, this.tenant.tenantId, {
+      photos: dto.keys,
+    });
+    if (!row) {
+      throw new NotFoundException('Property not found');
+    }
+    return this.toResponse(row);
+  }
+
   async remove(id: string): Promise<void> {
     const result = await this.repo.deleteWithGuard(id, this.tenant.tenantId);
     if (!result.found) {
@@ -80,14 +147,31 @@ export class PropertiesService {
     }
   }
 
+  /**
+   * Tenant-scoped fetch; 404 (not 403) when the id is unknown OR belongs to
+   * another tenant - existence is hidden. (api-spec §1 tenancy)
+   */
+  private async getOwnedOrThrow(id: string): Promise<PropertyRow> {
+    const row = await this.repo.findByIdForTenant(id, this.tenant.tenantId);
+    if (!row) {
+      throw new NotFoundException('Property not found');
+    }
+    return row;
+  }
+
   private toResponse(row: PropertyRow): PropertyResponse {
-    const { pricedUnitCount, createdAt, ...columns } = row;
+    const { pricedUnitCount, createdAt, photos, ...columns } = row;
     return {
       ...columns,
+      photos: photos.map((key) => ({
+        key,
+        url: this.storage.publicUrl(key),
+      })),
       verified: isVerified(row.licenseNo),
-      // TODO(#39): photoCount is 0 until photo storage lands - no property is
-      // publishable before it can show a photo, which is exactly the rule.
-      publishable: isPublishable({ photoCount: 0, pricedUnitCount }),
+      publishable: isPublishable({
+        photoCount: photos.length,
+        pricedUnitCount,
+      }),
       createdAt: createdAt.toISOString(),
     };
   }

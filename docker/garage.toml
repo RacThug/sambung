@@ -1,0 +1,26 @@
+# Garage config for LOCAL DEV ONLY (mounted by docker-compose.yml).
+# Secrets here are intentionally public dev values - never reuse in prod.
+# Prod uses Cloudflare R2; this file never leaves the laptop. (Issue #39)
+
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+rpc_public_addr = "127.0.0.1:3901"
+rpc_secret = "88a54cd53e0798b7f1de62b0a4bd6dbd7d9f6a2f5b0c1e3d4f5a6b7c8d9e0f1a"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+root_domain = ".s3.garage.localhost"
+
+# Serves website-enabled buckets anonymously - how the browser loads photos in
+# dev: http://sambung-photos.web.garage.localhost:3902/<key>. Browsers resolve
+# *.localhost to loopback, so no hosts-file entry is needed.
+[s3_web]
+bind_addr = "[::]:3902"
+root_domain = ".web.garage.localhost"
+index = "index.html"

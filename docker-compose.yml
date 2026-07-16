@@ -1,6 +1,6 @@
-# Local dev Postgres for Sambung. Free, offline, disposable.
+# Local dev services for Sambung. Free, offline, disposable.
 # Start:  docker compose up -d
-# Stop:   docker compose down        (add -v to also wipe the data volume)
+# Stop:   docker compose down        (add -v to also wipe the data volumes)
 services:
   db:
     image: postgres:16-alpine
@@ -20,5 +20,30 @@ services:
       timeout: 5s
       retries: 10
 
+  # S3-compatible object storage for photos (issue #39). Same contract as prod
+  # (Cloudflare R2) - the API is configured purely by env, so swapping backends
+  # is a .env change. --single-node skips cluster layout setup; --default-bucket
+  # creates the key + bucket below on first boot. Dev-only credentials,
+  # intentionally public (same story as the Postgres user above).
+  # No healthcheck: the image is a bare static binary (no shell to probe with).
+  garage:
+    image: dxflrs/garage:v2.3.0
+    container_name: sambung-garage
+    restart: unless-stopped
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_DEFAULT_ACCESS_KEY: GKdec0dedbadc0ffee5ca1ab1edeadbeef
+      GARAGE_DEFAULT_SECRET_KEY: 6fc41d55e29f4d5cbb3b3f5b6f36f0e8ab1794a9d0c8e2b5f4a3d2c1b0e9f8a7
+      GARAGE_DEFAULT_BUCKET: sambung-photos
+    ports:
+      - "3900:3900" # S3 API (presigned PUTs from the browser)
+      - "3902:3902" # web endpoint (anonymous photo GETs in dev)
+    volumes:
+      - ./docker/garage.toml:/etc/garage.toml:ro
+      - sambung_garage_meta:/var/lib/garage/meta
+      - sambung_garage_data:/var/lib/garage/data
+
 volumes:
   sambung_pgdata:
+  sambung_garage_meta:
+  sambung_garage_data:

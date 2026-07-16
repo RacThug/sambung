@@ -13,9 +13,10 @@ A multi-tenant **direct-booking engine** + lightweight **channel manager** for B
 
 | Layer | Tech |
 |-------|------|
-| Frontend | Vite + React + TypeScript + Tailwind, React Router, TanStack Query, i18n (EN/ID/中文) |
+| Frontend | Vite + React + TypeScript + Tailwind, TanStack Router, TanStack Query, i18n (EN/ID/中文) |
 | Backend | NestJS + TypeScript, Drizzle, `@nestjs/schedule` |
 | Database | PostgreSQL 14+ (half-open `daterange`, exclusion constraint for overlap safety) |
+| Storage | S3-compatible: Garage (dev, docker compose) / Cloudflare R2 (prod), presigned uploads |
 | Monorepo | pnpm workspaces + Turborepo |
 
 ## Core invariants
@@ -39,7 +40,7 @@ A multi-tenant **direct-booking engine** + lightweight **channel manager** for B
 ```bash
 git config core.hooksPath .githooks          # one-time: enable the git hooks
 pnpm install
-docker compose up -d                          # local Postgres (migrate/seed/db tests)
+docker compose up -d                          # local Postgres + Garage (photos storage)
 pnpm dev                                       # web + api (turbo)
 pnpm --filter @sambung/db db:migrate          # apply migrations (incl. RLS policies)
 pnpm --filter @sambung/db db:setup-role       # create the non-owner app role (RLS)

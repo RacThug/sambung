@@ -1,26 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
-import type { PropertyResponse } from "@sambung/shared";
 import { clearSession, setSession } from "../../lib/auth";
-import { authResponse, json, renderAt, stubFetch } from "../../test-utils";
-
-function property(overrides: Partial<PropertyResponse>): PropertyResponse {
-  return {
-    id: "aaaaaaaa-0000-0000-0000-000000000001",
-    tenantId: authResponse().tenant.id,
-    name: "Seminyak Beach Villa",
-    address: "Jl. Kayu Aya, Seminyak",
-    latitude: null,
-    longitude: null,
-    description: null,
-    licenseNo: null,
-    verified: false,
-    publishable: false,
-    createdAt: "2026-07-01T00:00:00.000Z",
-    ...overrides,
-  };
-}
+import {
+  authResponse,
+  json,
+  propertyResponse as property,
+  renderAt,
+  stubFetch,
+} from "../../test-utils";
 
 beforeEach(() => {
   setSession(authResponse());

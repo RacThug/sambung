@@ -6,14 +6,17 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AuthResponse } from "@sambung/shared";
+import type { AuthResponse, PropertyResponse } from "@sambung/shared";
 import { routeTree } from "./router";
 
 // jsdom has no scrollTo; the router calls it on navigation (scroll restoration).
 window.scrollTo = () => {};
 
-/** Stub responses keyed by "METHOD /api/path". Unmatched requests 404. */
-export type FetchStubs = Record<string, () => Response>;
+/**
+ * Stub responses keyed by "METHOD /api/path". Unmatched requests 404.
+ * Handlers receive the RequestInit so tests can assert on request bodies.
+ */
+export type FetchStubs = Record<string, (init?: RequestInit) => Response>;
 
 export function stubFetch(stubs: FetchStubs) {
   const calls: string[] = [];
@@ -25,7 +28,7 @@ export function stubFetch(stubs: FetchStubs) {
       calls.push(key);
       const handler = stubs[key];
       return Promise.resolve(
-        handler ? handler() : new Response(null, { status: 404 }),
+        handler ? handler(init) : new Response(null, { status: 404 }),
       );
     },
   );
@@ -37,6 +40,30 @@ export function json(body: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/**
+ * One PropertyResponse factory for all tests: a new field on the contract
+ * means one edit here, not one per test file.
+ */
+export function propertyResponse(
+  overrides: Partial<PropertyResponse> = {},
+): PropertyResponse {
+  return {
+    id: "aaaaaaaa-0000-0000-0000-000000000001",
+    tenantId: authResponse().tenant.id,
+    name: "Seminyak Beach Villa",
+    address: "Jl. Kayu Aya, Seminyak",
+    latitude: null,
+    longitude: null,
+    description: null,
+    licenseNo: null,
+    photos: [],
+    verified: false,
+    publishable: false,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    ...overrides,
+  };
 }
 
 export function authResponse(): AuthResponse {

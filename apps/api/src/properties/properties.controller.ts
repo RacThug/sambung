@@ -12,9 +12,14 @@ import {
 } from '@nestjs/common';
 import {
   createPropertyRequestSchema,
+  presignPhotoRequestSchema,
+  updatePhotosRequestSchema,
   updatePropertyRequestSchema,
   type CreatePropertyRequest,
+  type PresignPhotoRequest,
+  type PresignPhotoResponse,
   type PropertyResponse,
+  type UpdatePhotosRequest,
   type UpdatePropertyRequest,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -59,5 +64,23 @@ export class PropertiesController {
   @HttpCode(204)
   remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.properties.remove(id);
+  }
+
+  @Post(':id/photos/presign')
+  presignPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(presignPhotoRequestSchema))
+    dto: PresignPhotoRequest,
+  ): Promise<PresignPhotoResponse> {
+    return this.properties.presignPhoto(id, dto);
+  }
+
+  @Patch(':id/photos')
+  updatePhotos(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(updatePhotosRequestSchema))
+    dto: UpdatePhotosRequest,
+  ): Promise<PropertyResponse> {
+    return this.properties.updatePhotos(id, dto);
   }
 }

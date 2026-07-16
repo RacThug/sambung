@@ -73,6 +73,7 @@ create table property (
   longitude   double precision,
   description text,
   license_no  text,        -- NIB / KBLI 55193 → drives the "Verified" badge
+  photos      text[] not null default '{}',  -- ordered storage keys; bytes live in S3-compatible storage (#39)
   created_at  timestamptz not null default now()
 );
 

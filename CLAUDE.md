@@ -232,6 +232,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 | 2026-07-16 | Composite FKs enforce the `tenant_id` denormalization (property→unit→booking/channel_connection) (#40) | Wrong tenant_id under RLS = silent cross-tenant leak; make it unrepresentable | Yes (owner) |
 | 2026-07-16 | ORM = **Drizzle** (drizzle-orm + drizzle-kit + pg), replacing Prisma; migrations re-baselined (#41) | Owner preference + SQL-first fit: composite FKs modeled natively; hand-written SQL is drift-immune (kit diffs snapshots, not the DB); no query-engine binary | Yes (owner) |
 | 2026-07-16 | Dev/fallback object storage = **Garage**, replacing MinIO in the photos decision (#39); prod stays R2 | MinIO community edition retired upstream (archived Apr 2026, source-only, no patches); Garage is actively maintained, lightweight, built for small self-hosted. SeaweedFS = documented plan B | Yes (owner) |
+| 2026-07-16 | **Dev-fixture credentials may be committed** (Garage keypair + rpc_secret in compose/`garage.toml`/`.env.example`, like the Postgres `sambung/sambung`); "secrets never leak" reads as credentials that guard something real. Prod secrets live only in the VPS env, never in the repo | Fresh clone must work with `.env.example` values (#39 AC); localhost-only, loudly annotated. Real risk is pattern drift, mitigated by comments + gitignored `.env` | Yes (owner) |
 
 *Append one row per architecture decision. Keep it terse.*
 
@@ -239,7 +240,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 ## Project Facts *(this is the part that changes)*
 
-- **Stage**: M1 (inventory) in progress. Done: M0 (monorepo, DB schema + RLS migrations, seed with demo logins, auth API, local pre-push quality gate) + property CRUD with `verified`/`publishable`, dashboard list/edit pages, and SPA session plumbing incl. `/login` (#44). Next: units (#45), photos (#39), public property page (#46), `/register` (#63).
+- **Stage**: M1 (inventory) in progress. Done: M0 (monorepo, DB schema + RLS migrations, seed with demo logins, auth API, local pre-push quality gate) + property CRUD with `verified`/`publishable`, dashboard list/edit pages, SPA session plumbing incl. `/login` (#44) + photo pipeline: Garage in compose, presigned uploads, gallery on the edit page (#39). Next: units (#45), public property page (#46), `/register` (#63).
 - **Repo**: `RacThug/sambung` (private).
 - **Tracking**: GitHub **Issues + Milestones** (M0–M5).
 - **Key documents** (read the relevant one before touching that area):
