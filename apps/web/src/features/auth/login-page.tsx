@@ -30,6 +30,9 @@ export function LoginPage() {
     e.preventDefault();
     const parsed = loginRequestSchema.safeParse({ email, password });
     if (!parsed.success) {
+      // A submit that never reaches the server must also retire the previous
+      // server error - a stale 401 would outlive the corrected input.
+      login.reset();
       setFieldErrors(issuesToFieldErrors(parsed.error.issues));
       return;
     }

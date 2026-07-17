@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, screen } from "@testing-library/react";
+import type { RegisterRequest } from "@sambung/shared";
 import { clearSession } from "../../lib/auth";
 import {
   authResponse,
@@ -10,14 +11,17 @@ import {
   stubFetch,
 } from "../../test-utils";
 
-function fillForm(overrides: Partial<Record<string, string>> = {}) {
-  fireEvent.change(screen.getByLabelText("Business name"), {
+// Labels matched by prefix: once a field error renders inside the <label>,
+// the accessible name becomes "Email Email already registered" and an exact
+// match stops finding the input.
+function fillForm(overrides: Partial<RegisterRequest> = {}) {
+  fireEvent.change(screen.getByLabelText(/^Business name/), {
     target: { value: overrides.tenantName ?? "Bali Villas Co" },
   });
-  fireEvent.change(screen.getByLabelText("Email"), {
+  fireEvent.change(screen.getByLabelText(/^Email/), {
     target: { value: overrides.email ?? "owner@test.dev" },
   });
-  fireEvent.change(screen.getByLabelText("Password"), {
+  fireEvent.change(screen.getByLabelText(/^Password/), {
     target: { value: overrides.password ?? "s3cret-pass" },
   });
 }
@@ -127,6 +131,36 @@ describe("register page (§3.4)", () => {
       "email",
     );
     expect(router.state.location.pathname).toBe("/register");
+  });
+
+  it("clears a stale 409 when a resubmit fails client-side validation", async () => {
+    stubFetch({
+      "POST /api/auth/register": () =>
+        json(
+          {
+            statusCode: 409,
+            message: "Email already registered",
+            error: "Conflict",
+          },
+          409,
+        ),
+    });
+    renderAt("/register");
+
+    await screen.findByText("Create your owner account");
+    fillForm();
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    await screen.findByText("Email already registered");
+
+    // The user retypes the email but gets it wrong; the old 409 no longer
+    // describes what's in the field and must give way to the zod message.
+    fillForm({ email: "not-an-email" });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    expect(await screen.findByText(/invalid email/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText("Email already registered"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows a generic retry message for other server errors", async () => {

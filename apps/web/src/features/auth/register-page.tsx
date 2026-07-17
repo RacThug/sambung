@@ -40,6 +40,9 @@ export function RegisterPage() {
       password,
     });
     if (!parsed.success) {
+      // A submit that never reaches the server must also retire the previous
+      // server error - a stale 409 would misdescribe the retyped email.
+      register.reset();
       setFieldErrors(issuesToFieldErrors(parsed.error.issues));
       return;
     }
