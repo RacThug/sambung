@@ -75,14 +75,17 @@ function guardTx(tx: DbTx, active: ActiveTx): DbTx {
 // tenant.
 //
 // Callers MUST have a principal: `run` throws without one rather than querying
-// with the GUC unset. That is not belt-and-braces, it is the only sane answer -
-// RLS does NOT reliably fail closed there. set_config(..., is_local => true)
-// reverts to the GUC's *reset* value, which for a custom GUC already set once
-// on this session is the empty string, not NULL, so a no-principal query
-// returns nothing on a cold connection but errors 22P02 ('invalid input syntax
-// for type uuid: ""') on a pooled one that has served a request before (#74).
-// Two different failures depending on which connection the pool hands you is
-// not a design; throwing is.
+// with the GUC unset. A request that reached a tenant-scoped query with no
+// tenant is a bug, and it should say so here rather than three calls later as
+// an empty result the caller reads as "no data".
+//
+// RLS is the second layer, not the first, and it does now genuinely fail closed
+// on any connection - the policies compare against nullif(current_setting(...),
+// ''), so both the unset (NULL) and reset ('') cases filter every row (#74,
+// migration 0002). Before that they cast the GUC directly, which errored 22P02
+// on a pooled connection that had already served a request: set_config(...,
+// is_local => true) reverts to the GUC's *reset* value, and for a custom GUC
+// already set once on that session the reset value is '' rather than unset.
 //
 // Work that legitimately has no principal does NOT belong here:
 //   crosses tenants (the M2 hold sweeper) → DbService, the owner connection.

@@ -72,3 +72,14 @@ pnpm --filter @sambung/db db:reset         # drop everything, replay migrations,
 pnpm --filter @sambung/db db:studio        # browse data
 pnpm --filter @sambung/db test             # constraint/RLS integration tests (needs Docker)
 ```
+
+Copy `.env.example` to `.env` first — the tests need **two** connections. `DATABASE_URL` is the
+owner (migrations, seed, and the constraint tests); `APP_DATABASE_URL` is the non-owner role, and
+it is the only way to exercise the RLS policies, because the owner is exempt from them. Run
+`db:setup-role` before `test`, or the app role won't exist.
+
+| Test file | Seam it guards |
+|---|---|
+| `overlap.test.ts` | `booking_no_overlap` — one test per clause of the exclusion constraint |
+| `tenant-consistency.test.ts` | the composite FKs that make a wrong `tenant_id` unrepresentable |
+| `rls.test.ts` | all 9 RLS policies: scoping, `WITH CHECK`, and fail-closed on a **warm** connection (#74) |
