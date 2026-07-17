@@ -1,25 +1,31 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
-import { loginRequestSchema, type AuthResponse } from "@sambung/shared";
+import {
+  registerRequestSchema,
+  type AuthResponse,
+  type RegisterRequest,
+} from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { setSession } from "../../lib/auth";
 import { issuesToFieldErrors } from "../../lib/forms";
 
-const route = getRouteApi("/login");
+const route = getRouteApi("/register");
 
-// Owner session start (page-spec §3.4). On success the access token goes to
-// memory and we return to ?next (the URL the auth guard bounced from) or /app.
-export function LoginPage() {
+// Signup creates the tenant + owner atomically and starts the session in one
+// step - no second login (page-spec §3.4, FR-AUTH-1). Mirrors LoginPage:
+// token to memory, then return to ?next or /app.
+export function RegisterPage() {
   const navigate = useNavigate();
   const { next } = route.useSearch();
+  const [tenantName, setTenantName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
-  const login = useMutation({
-    mutationFn: (body: { email: string; password: string }) =>
-      api.post<AuthResponse>("/auth/login", body),
+  const register = useMutation({
+    mutationFn: (body: RegisterRequest) =>
+      api.post<AuthResponse>("/auth/register", body),
     onSuccess: (auth) => {
       setSession(auth);
       void navigate({ to: next ?? "/app" });
@@ -28,29 +34,53 @@ export function LoginPage() {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const parsed = loginRequestSchema.safeParse({ email, password });
+    const parsed = registerRequestSchema.safeParse({
+      tenantName,
+      email,
+      password,
+    });
     if (!parsed.success) {
       setFieldErrors(issuesToFieldErrors(parsed.error.issues));
       return;
     }
     setFieldErrors({});
-    login.mutate(parsed.data);
+    register.mutate(parsed.data);
   }
 
-  // 401 is "wrong email or password" - never say which (no account oracle).
+  // 409 = duplicate email, so it belongs on the email field (api-spec §3.1);
+  // anything else gets a generic retry line.
+  const emailTaken =
+    register.error instanceof ApiError && register.error.status === 409;
+  const emailError = emailTaken
+    ? "Email already registered"
+    : fieldErrors.email;
   const submitError =
-    login.error instanceof ApiError && login.error.status === 401
-      ? "Invalid email or password"
-      : login.error
-        ? "Something went wrong - please try again"
-        : null;
+    register.error && !emailTaken
+      ? "Something went wrong - please try again"
+      : null;
 
   return (
     <main className="mx-auto max-w-sm p-8">
       <h1 className="text-2xl font-bold text-brand-600">Sambung</h1>
-      <p className="mt-1 text-gray-600">Sign in to your dashboard</p>
+      <p className="mt-1 text-gray-600">Create your owner account</p>
 
       <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">
+            Business name
+          </span>
+          <input
+            type="text"
+            autoComplete="organization"
+            value={tenantName}
+            onChange={(e) => setTenantName(e.target.value)}
+            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+          />
+          {fieldErrors.tenantName && (
+            <p className="mt-1 text-sm text-red-600">{fieldErrors.tenantName}</p>
+          )}
+        </label>
+
         <label className="block">
           <span className="text-sm font-medium text-gray-700">Email</span>
           <input
@@ -60,8 +90,8 @@ export function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
             className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
           />
-          {fieldErrors.email && (
-            <p className="mt-1 text-sm text-red-600">{fieldErrors.email}</p>
+          {emailError && (
+            <p className="mt-1 text-sm text-red-600">{emailError}</p>
           )}
         </label>
 
@@ -69,7 +99,7 @@ export function LoginPage() {
           <span className="text-sm font-medium text-gray-700">Password</span>
           <input
             type="password"
-            autoComplete="current-password"
+            autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
@@ -83,21 +113,17 @@ export function LoginPage() {
 
         <button
           type="submit"
-          disabled={login.isPending}
+          disabled={register.isPending}
           className="w-full rounded-md bg-brand-600 px-4 py-2 font-medium text-white disabled:opacity-50"
         >
-          {login.isPending ? "Signing in…" : "Sign in"}
+          {register.isPending ? "Creating account…" : "Create account"}
         </button>
       </form>
 
       <p className="mt-4 text-sm text-gray-600">
-        New to Sambung?{" "}
-        <Link
-          to="/register"
-          search={{ next }}
-          className="text-brand-600 underline"
-        >
-          Create an account
+        Already have an account?{" "}
+        <Link to="/login" search={{ next }} className="text-brand-600 underline">
+          Sign in
         </Link>
       </p>
     </main>
