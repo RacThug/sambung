@@ -78,9 +78,12 @@ describe("units section (§4.5)", () => {
     fireEvent.change(await screen.findByLabelText("New unit name"), {
       target: { value: "Garden Room 2" },
     });
-    fireEvent.change(screen.getByLabelText("New unit price per night in rupiah"), {
-      target: { value: "1200000" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("New unit price per night in rupiah"),
+      {
+        target: { value: "1200000" },
+      },
+    );
     fireEvent.click(screen.getByRole("button", { name: "Add unit" }));
 
     await waitFor(() => expect(posted).toBeDefined());
@@ -104,9 +107,12 @@ describe("units section (§4.5)", () => {
 
     const name = await screen.findByLabelText("New unit name");
     fireEvent.change(name, { target: { value: "Garden Room 2" } });
-    fireEvent.change(screen.getByLabelText("New unit price per night in rupiah"), {
-      target: { value: "1200000" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("New unit price per night in rupiah"),
+      {
+        target: { value: "1200000" },
+      },
+    );
     fireEvent.keyDown(name, { key: "Enter" });
 
     await waitFor(() =>
@@ -138,9 +144,12 @@ describe("units section (§4.5)", () => {
     fireEvent.change(await screen.findByLabelText("New unit name"), {
       target: { value: "Cheap" },
     });
-    fireEvent.change(screen.getByLabelText("New unit price per night in rupiah"), {
-      target: { value: "-1" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("New unit price per night in rupiah"),
+      {
+        target: { value: "-1" },
+      },
+    );
     fireEvent.click(screen.getByRole("button", { name: "Add unit" }));
 
     expect(
@@ -167,14 +176,68 @@ describe("units section (§4.5)", () => {
     fireEvent.change(await screen.findByLabelText("New unit name"), {
       target: { value: "Garden Room 1" },
     });
-    fireEvent.change(screen.getByLabelText("New unit price per night in rupiah"), {
-      target: { value: "1200000" },
-    });
+    fireEvent.change(
+      screen.getByLabelText("New unit price per night in rupiah"),
+      {
+        target: { value: "1200000" },
+      },
+    );
     fireEvent.click(screen.getByRole("button", { name: "Add unit" }));
 
     expect(
       await screen.findByText(/already exists in this property/i),
     ).toBeInTheDocument();
+  });
+
+  // A 404/500 arrives as an ApiError whose `message` is a plain string, so
+  // fieldErrors is {} and a non-ApiError fallback never fires. Relying on those
+  // alone rendered NOTHING: "Saving…" flashed and the click looked ignored.
+  it("surfaces a save error that maps to no field (unit deleted in another tab)", async () => {
+    stubEditPage({
+      [`PATCH /api/units/${unitResponse().id}`]: () =>
+        json({ statusCode: 404, message: "Unit not found" }, 404),
+    });
+    renderAt(editUrl);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Edit price per night in rupiah"), {
+      target: { value: "999000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Unit not found")).toBeInTheDocument();
+  });
+
+  it("surfaces a network failure on save", async () => {
+    stubEditPage();
+    // Unmatched routes 404 by default, so fail the PATCH at the transport layer.
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+      init?.method === "PATCH"
+        ? Promise.reject(new TypeError("Failed to fetch"))
+        : (realFetch as typeof fetch)(input, init),
+    );
+    renderAt(editUrl);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(
+      await screen.findByText(/something went wrong/i),
+    ).toBeInTheDocument();
+  });
+
+  // Enter bubbles from the Cancel button too, and onSubmit's preventDefault
+  // would suppress its click - so the row would save instead of cancelling.
+  it("cancels rather than saves when Enter is pressed on Cancel", async () => {
+    const calls = stubEditPage();
+    renderAt(editUrl);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const cancel = screen.getByRole("button", { name: "Cancel" });
+    fireEvent.keyDown(cancel, { key: "Enter" });
+
+    expect(calls).not.toContain(`PATCH /api/units/${unitResponse().id}`);
   });
 
   it("edits a unit in place and PATCHes it", async () => {
@@ -196,7 +259,10 @@ describe("units section (§4.5)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(patched).toBeDefined());
-    expect(patched).toMatchObject({ name: "Garden Room 1", basePriceIdr: 999_000 });
+    expect(patched).toMatchObject({
+      name: "Garden Room 1",
+      basePriceIdr: 999_000,
+    });
   });
 
   // ADR-0002: the message names a count and offers no false escape. The row

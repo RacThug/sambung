@@ -52,7 +52,10 @@ export class PropertiesRepository {
         // Grouping by the PK lets Postgres accept the ungrouped property
         // columns (functional dependency).
         .groupBy(property.id)
-        .orderBy(asc(property.createdAt)),
+        // id breaks created_at ties, which are not hypothetical: now() is the
+        // TRANSACTION timestamp, so rows inserted together tie and an UPDATE
+        // can move one in heap order. Same reason as units.repository.
+        .orderBy(asc(property.createdAt), asc(property.id)),
     );
   }
 

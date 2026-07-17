@@ -263,7 +263,11 @@ Two changes, and both are load-bearing ([ADR-0002](adr/0002-deleting-inventory-n
 Two traps worth remembering, because both fail silently:
 
 1. **There are two FKs from `booking` to `unit`** - the plain `unit_id` and the `(unit_id, tenant_id)` composite from §4.5. Change one and leave the other on `cascade`, and the survivor deletes the booking first; the remaining check then passes against zero rows. The guard looks installed and does nothing.
-2. **`no action`, not `restrict`.** They differ in *when* they check, not whether. `restrict` fires immediately and would break deleting a tenant, which legitimately cascades `tenant → property → unit → booking`. `no action` defers to end-of-statement, by which time `booking.tenant_id`'s own cascade has removed those rows, and passes. Account closure keeps working; deleting a unit out from under live history does not.
+2. **`no action` vs `restrict` is a tie-break, not a mechanism** - and the folklore here is wrong. The usual story is *"`restrict` fires immediately, `no action` defers, so `restrict` would break deleting a tenant"* (which legitimately cascades `tenant → property → unit → booking`). It doesn't. Measured on PG 16.14 with both FKs swapped to `RESTRICT`: deleting a unit that has bookings still errors `23503`, **and deleting a tenant still succeeds**. Both are non-deferrable AFTER-row triggers checked at end of statement, so the tenant cascade has already removed the bookings before either check runs.
+
+   The real difference is narrower: `NO ACTION`'s check **can** be deferred (`DEFERRABLE INITIALLY DEFERRED`); `RESTRICT`'s never can. These constraints aren't deferrable, so the two are equivalent here. `no action` wins only because it's Postgres's default (and what drizzle-kit emits) and keeps deferral available later. **The load-bearing change is `cascade` → not-`cascade`** - don't let the tie-break distract from it.
+
+   *Worth internalizing:* this comment previously asserted the folklore, in six places, and every test still passed - because they proved account closure works (true under both) rather than the claim itself. A test that passes under the hypothesis *and* its negation isn't evidence for either.
 
 `payment.booking_id` stays `cascade` on purpose: a booking can now only disappear via tenant deletion, where losing the ledger along with the account is the intent.
 

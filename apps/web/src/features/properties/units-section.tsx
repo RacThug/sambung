@@ -99,7 +99,8 @@ function UnitRow({ unit, onEdit }: { unit: UnitResponse; onEdit: () => void }) {
   const queryClient = useQueryClient();
   const remove = useMutation({
     mutationFn: () => api.delete(`/units/${unit.id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["properties"] }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["properties"] }),
   });
 
   // The 409 says why ("this unit has 14 bookings…"); render the server's own
@@ -147,7 +148,9 @@ function UnitRow({ unit, onEdit }: { unit: UnitResponse; onEdit: () => void }) {
               disabled={remove.isPending}
               onClick={() => {
                 if (
-                  window.confirm(`Delete "${unit.name}"? This cannot be undone.`)
+                  window.confirm(
+                    `Delete "${unit.name}"? This cannot be undone.`,
+                  )
                 ) {
                   remove.mutate();
                 }
@@ -216,15 +219,38 @@ function UnitFormRow({
       }
     },
     onError: (error) => {
-      if (!(error instanceof ApiError)) return;
       // A duplicate name is the only 409 this form can raise, and zod can't
       // catch it (it needs the other rows) - so it arrives from the server and
       // still belongs against the field that caused it, not in a stray banner.
       setFieldErrors(
-        error.status === 409 ? { name: error.message } : error.fieldErrors,
+        error instanceof ApiError && error.status === 409
+          ? { name: error.message }
+          : error instanceof ApiError
+            ? error.fieldErrors
+            : {},
       );
     },
   });
+
+  /**
+   * Whatever the per-field errors above won't account for.
+   *
+   * Derived from the error rather than read back off fieldErrors, which lags a
+   * submit behind. Without this a 404 (someone deleted this unit in another
+   * tab) or a 500 renders NOTHING: both arrive as an ApiError whose `message`
+   * is a plain string, so `fieldErrors` is `{}`, and a non-ApiError fallback
+   * never fires. "Saving…" flashes and the click looks ignored.
+   */
+  const formError = (() => {
+    const error = save.error;
+    if (!error) return null;
+    if (!(error instanceof ApiError)) {
+      return "Something went wrong - please try again";
+    }
+    if (error.status === 409) return null; // on the name field
+    if (Object.keys(error.fieldErrors).length > 0) return null; // per field
+    return error.message;
+  })();
 
   function onSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
@@ -258,93 +284,106 @@ function UnitFormRow({
       )}
     </td>
   );
-  const set = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setForm((f) => ({ ...f, [field]: e.target.value }));
+  const set =
+    (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+      setForm((f) => ({ ...f, [field]: e.target.value }));
 
   return (
-    <tr
-      // A <form> can't wrap <tr>s without breaking table layout, so the row
-      // handles Enter itself. Keeping it is not a nicety: adding 8 rooms is
-      // meant to be 8 Enters, which is the entire case for an inline table over
-      // a dialog (ADR-0001 makes bulk entry the common path).
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onSubmit(e);
-      }}
-      className={
-        unit
-          ? "border-b border-gray-100 bg-brand-50/40"
-          : "border-t border-gray-200"
-      }
-    >
-      {cell(
-        "name",
-        <input
-          ref={nameRef}
-          value={form.name}
-          onChange={set("name")}
-          placeholder="Garden Room 1"
-          aria-label={label("name")}
-          className={cellInput}
-        />,
-      )}
-      {cell(
-        "basePriceIdr",
-        <input
-          inputMode="numeric"
-          value={form.basePriceIdr}
-          onChange={set("basePriceIdr")}
-          placeholder="1200000"
-          aria-label={label("price per night in rupiah")}
-          className={cellInput}
-        />,
-      )}
-      {cell(
-        "maxGuests",
-        <input
-          inputMode="numeric"
-          value={form.maxGuests}
-          onChange={set("maxGuests")}
-          aria-label={label("maximum guests")}
-          className={cellInput}
-        />,
-      )}
-      {cell(
-        "minStay",
-        <input
-          inputMode="numeric"
-          value={form.minStay}
-          onChange={set("minStay")}
-          aria-label={label("minimum stay in nights")}
-          className={cellInput}
-        />,
-      )}
-      <td className="py-2 align-top">
-        <div className="flex justify-end gap-1 whitespace-nowrap">
-          {unit && (
+    <>
+      <tr
+        // A <form> can't wrap <tr>s without breaking table layout, so the row
+        // handles Enter itself. Keeping it is not a nicety: adding 8 rooms is
+        // meant to be 8 Enters, which is the entire case for an inline table over
+        // a dialog (ADR-0001 makes bulk entry the common path).
+        //
+        // Inputs only. Enter on Cancel must cancel: keydown bubbles from the
+        // button too, and onSubmit's preventDefault would suppress its click, so
+        // the row would save instead - the exact opposite of what was asked.
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && e.target instanceof HTMLInputElement) {
+            onSubmit(e);
+          }
+        }}
+        className={
+          unit
+            ? "border-b border-gray-100 bg-brand-50/40"
+            : "border-t border-gray-200"
+        }
+      >
+        {cell(
+          "name",
+          <input
+            ref={nameRef}
+            value={form.name}
+            onChange={set("name")}
+            placeholder="Garden Room 1"
+            aria-label={label("name")}
+            className={cellInput}
+          />,
+        )}
+        {cell(
+          "basePriceIdr",
+          <input
+            inputMode="numeric"
+            value={form.basePriceIdr}
+            onChange={set("basePriceIdr")}
+            placeholder="1200000"
+            aria-label={label("price per night in rupiah")}
+            className={cellInput}
+          />,
+        )}
+        {cell(
+          "maxGuests",
+          <input
+            inputMode="numeric"
+            value={form.maxGuests}
+            onChange={set("maxGuests")}
+            aria-label={label("maximum guests")}
+            className={cellInput}
+          />,
+        )}
+        {cell(
+          "minStay",
+          <input
+            inputMode="numeric"
+            value={form.minStay}
+            onChange={set("minStay")}
+            aria-label={label("minimum stay in nights")}
+            className={cellInput}
+          />,
+        )}
+        <td className="py-2 align-top">
+          <div className="flex justify-end gap-1 whitespace-nowrap">
+            {unit && (
+              <button
+                type="button"
+                onClick={onDone}
+                className="rounded px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+            )}
             <button
               type="button"
-              onClick={onDone}
-              className="rounded px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+              disabled={save.isPending}
+              onClick={onSubmit}
+              className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
             >
-              Cancel
+              {save.isPending ? "Saving…" : unit ? "Save" : "Add unit"}
             </button>
-          )}
-          <button
-            type="button"
-            disabled={save.isPending}
-            onClick={onSubmit}
-            className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {save.isPending ? "Saving…" : unit ? "Save" : "Add unit"}
-          </button>
-        </div>
-        {save.isError && !(save.error instanceof ApiError) && (
-          <p className="mt-1 text-right text-xs text-red-600">
-            Something went wrong - please try again
-          </p>
-        )}
-      </td>
-    </tr>
+          </div>
+        </td>
+      </tr>
+      {formError && (
+        <tr>
+          <td colSpan={5} className="pb-2">
+            <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
+              {formError}
+            </p>
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 

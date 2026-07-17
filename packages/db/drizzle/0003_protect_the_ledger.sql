@@ -15,12 +15,24 @@
 -- it deletes the booking first, so the other's check passes against zero rows.
 -- A guard that looks installed and does nothing.
 --
--- `no action`, not `restrict`: they differ in WHEN they check, not whether.
--- `restrict` fires immediately and would break deleting a tenant, which
--- legitimately cascades tenant -> property -> unit -> booking. `no action`
--- defers to end-of-statement, by which time the tenant cascade has already
--- removed the bookings via booking.tenant_id, and passes. Account closure keeps
--- working; deleting a unit out from under live history does not.
+-- `no action` rather than `restrict`, but NOT for the reason usually given.
+-- The folklore is "restrict fires immediately, no action defers, so restrict
+-- would break deleting a tenant" (which legitimately cascades tenant ->
+-- property -> unit -> booking). That is false. Measured on PG 16.14, with both
+-- FKs swapped to RESTRICT:
+--
+--   delete the unit (has bookings)  -> ERROR 23503   (same as no action)
+--   delete the tenant (closure)     -> DELETE 1      (cascade completed)
+--
+-- Both are non-deferrable AFTER-row triggers checked at end of statement, so
+-- the tenant cascade has already removed the bookings before either check runs.
+-- The real difference is narrower than the folklore: NO ACTION's check CAN be
+-- deferred (DEFERRABLE INITIALLY DEFERRED); RESTRICT's can never be. These
+-- constraints are not deferrable, so the two are equivalent here.
+--
+-- `no action` wins on tie-break only: it is Postgres's default and what
+-- drizzle-kit emits from schema.ts, and it keeps deferral available if a future
+-- migration ever needs it. The load-bearing change is cascade -> not-cascade.
 --
 -- payment.booking_id stays CASCADE deliberately: a booking can now only vanish
 -- via tenant deletion, where losing the ledger along with the account is intent.

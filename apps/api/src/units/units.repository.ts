@@ -49,7 +49,12 @@ export class UnitsRepository {
         .where(
           and(eq(unit.propertyId, propertyId), eq(unit.tenantId, tenantId)),
         )
-        .orderBy(asc(unit.createdAt)),
+        // id is a tiebreaker, not decoration: created_at defaults to now(),
+        // which is the TRANSACTION timestamp, so every unit inserted in one
+        // transaction ties - the seed does exactly that. Postgres is then free
+        // to return tied rows in heap order, and an UPDATE rewrites the row to
+        // a new position, so editing a unit made the list visibly reorder.
+        .orderBy(asc(unit.createdAt), asc(unit.id)),
     );
   }
 

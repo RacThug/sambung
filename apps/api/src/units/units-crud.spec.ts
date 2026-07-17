@@ -3,7 +3,8 @@ import type { Server } from 'node:http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
+import { ClsService } from 'nestjs-cls';
 import request from 'supertest';
 import { booking, payment, tenant, unit } from '@sambung/db';
 import {
@@ -14,11 +15,17 @@ import {
 } from '@sambung/shared';
 import { AppModule } from '../app.module';
 import { DbService } from '../db/db.service';
+import { TenantContext } from '../common/tenant-context.service';
+import { TenantDbService } from '../db/tenant-db.service';
+import { UnitsRepository } from './units.repository';
+import { UnitsService } from './units.service';
 
 // Unit CRUD (FR-PROP-2, api-spec §4.6) over real HTTP + DB.
 describe('Unit CRUD', () => {
   let app: INestApplication;
   let dbs: DbService;
+  let cls: ClsService;
+  let tenantCtx: TenantContext;
   const createdTenantIds: string[] = [];
 
   const server = () => app.getHttpServer() as Server;
@@ -64,6 +71,8 @@ describe('Unit CRUD', () => {
     app.use(cookieParser());
     await app.init();
     dbs = app.get(DbService);
+    cls = app.get(ClsService);
+    tenantCtx = app.get(TenantContext);
 
     const res = await request(server())
       .post('/api/auth/register')
@@ -349,6 +358,83 @@ describe('Unit CRUD', () => {
         .delete(`/api/units/${randomUUID()}`)
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(404);
+    });
+  });
+
+  // The guard is only sound if its lock, count and delete share ONE
+  // transaction: a lock released before the count guards nothing, and every
+  // HTTP test above passes either way. These pin the unit of work itself.
+  // (Twin of the same block in properties-crud.spec.ts.) The spies call
+  // through - they instrument, they don't fake.
+  describe('DELETE /api/units/:id — the guard is one unit of work', () => {
+    afterEach(() => jest.restoreAllMocks());
+
+    /** Run fn as tenant A's owner, the way a request would. */
+    const asOwner = <T>(fn: () => Promise<T>): Promise<T> =>
+      cls.run(() => {
+        tenantCtx.set({ userId: 'test', tenantId: tenantAId, role: 'owner' });
+        return fn();
+      });
+
+    it('takes the lock, counts and deletes in one transaction, lock first', async () => {
+      const created = await createUnit({
+        name: 'Unit Of Work',
+        basePriceIdr: 500_000,
+      });
+      const repo = app.get(UnitsRepository);
+      const tenantDb = app.get(TenantDbService);
+
+      const calls: string[] = [];
+      const xids: string[] = [];
+      // Joins the ambient transaction if there is one, opens its own if not -
+      // so three identical ids prove one transaction, and differing ids prove
+      // the guard has come apart.
+      const record = async (name: string) => {
+        calls.push(name);
+        xids.push(
+          await tenantDb.run(async (tx) => {
+            const r = await tx.execute(sql`select pg_current_xact_id() as id`);
+            return String((r.rows[0] as { id: string | number }).id);
+          }),
+        );
+      };
+
+      // A second real repository over the same TenantDbService singleton, so
+      // the pass-through joins the ambient transaction exactly as the original
+      // would.
+      const real = new UnitsRepository(tenantDb, tenantCtx);
+
+      jest.spyOn(repo, 'lockForDelete').mockImplementation(async (id) => {
+        await record('lockForDelete');
+        return real.lockForDelete(id);
+      });
+      jest.spyOn(repo, 'countBookings').mockImplementation(async (id) => {
+        await record('countBookings');
+        return real.countBookings(id);
+      });
+      jest.spyOn(repo, 'delete').mockImplementation(async (id) => {
+        await record('delete');
+        return real.delete(id);
+      });
+
+      await asOwner(() => app.get(UnitsService).remove(created.id));
+
+      // Order: the lock must precede the count, or the count is a TOCTOU read.
+      expect(calls).toEqual(['lockForDelete', 'countBookings', 'delete']);
+      // Identity: all three in the same transaction, so the lock still holds.
+      expect(new Set(xids).size).toBe(1);
+    });
+
+    it('refuses to take the lock outside a unit of work', async () => {
+      const created = await createUnit({
+        name: 'Lock Guard',
+        basePriceIdr: 500_000,
+      });
+      const repo = app.get(UnitsRepository);
+
+      await expect(
+        asOwner(() => repo.lockForDelete(created.id)),
+      ).rejects.toThrow(/must be called inside TenantDbService\.run/);
     });
   });
 });

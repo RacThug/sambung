@@ -177,12 +177,16 @@ describe("deleting inventory never destroys the ledger", () => {
     );
   });
 
-  // The reason 0003 uses `no action` and not `restrict`: restrict fires
-  // immediately and would break this, because closing an account legitimately
-  // cascades tenant -> property -> unit -> booking. `no action` defers to
-  // end-of-statement, by which time booking.tenant_id's own cascade has already
-  // removed the rows. Deleting a tenant is what afterAll does in every db test,
-  // so a regression here takes the whole suite down with it - deliberately.
+  // Account closure must keep working: 0003 made booking -> unit refuse
+  // deletes, and this is the one delete that legitimately takes bookings with
+  // it (tenant -> property -> unit -> booking). Every db test's afterAll deletes
+  // a tenant, so a regression here takes the whole suite down with it.
+  //
+  // What this does NOT prove: that `no action` was necessary rather than
+  // `restrict`. It passes under both (measured - see 0003's header), because
+  // both are non-deferrable end-of-statement checks. This test used to carry a
+  // comment claiming it demonstrated that distinction; it never did. A test
+  // green under a hypothesis AND its negation is evidence for neither.
   it("still lets a tenant be deleted, cascading the whole tree", async () => {
     const [t] = await db
       .insert(tenant)

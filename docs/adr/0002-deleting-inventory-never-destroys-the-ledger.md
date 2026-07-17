@@ -37,8 +37,13 @@ a migration. After M2 it would have been a change to live data, with no undo.
   `(unit_id, tenant_id) -> unit(id, tenant_id)` from #40. Changing one leaves the other cascading, which
   deletes the booking first and passes the check against zero rows - a guard that looks installed and does
   nothing.
-- `no action`, not `restrict`: they differ in *when* they check. `restrict` fires immediately and would break
-  deleting a Tenant, which legitimately cascades tenant -> property -> unit -> booking; `no action` defers to
-  end-of-statement, sees the bookings are already gone, and passes. Account closure still works.
+- `no action` vs `restrict` is a **tie-break, not a mechanism**. The rationale first recorded here - "restrict
+  fires immediately and would break deleting a Tenant" - was **wrong**, and an independent review caught it.
+  Measured on PG 16.14 with both FKs swapped to `RESTRICT`: deleting a Unit with bookings still errors 23503,
+  and deleting a Tenant still succeeds. Both are non-deferrable AFTER-row triggers checked at end of statement,
+  so the tenant cascade removes the bookings before either check runs. The genuine difference: `NO ACTION`'s
+  check can be deferred (`DEFERRABLE INITIALLY DEFERRED`), `RESTRICT`'s cannot - irrelevant to constraints that
+  aren't deferrable. `no action` is kept because it's Postgres's default, is what drizzle-kit emits from
+  `schema.ts`, and preserves the deferral option. **The load-bearing change is `cascade` -> not-`cascade`.**
 - `payment.booking_id` stays `on delete cascade`. A booking can now only disappear via Tenant deletion, where
   losing the ledger with the account is the intent.

@@ -239,13 +239,13 @@ export const booking = pgTable(
       .where(sql`${t.externalUid} is not null`),
     // booking.tenant_id must equal its unit's tenant_id (db-design §4.5, #40).
     //
-    // `no action`, not `cascade` (ADR-0002) and not `restrict`: the two differ
-    // in WHEN they check. `restrict` fires immediately and would break deleting
-    // a tenant, which legitimately cascades tenant -> property -> unit ->
-    // booking; `no action` defers to end-of-statement, by which time the tenant
-    // cascade has removed the bookings via booking.tenant_id, and passes.
-    // Account closure still works; deleting a unit out from under its bookings
-    // does not.
+    // `no action`, not `cascade` (ADR-0002). The cascade -> not-cascade part is
+    // what matters; `no action` vs `restrict` is a tie-break, not a mechanism.
+    // Both are non-deferrable AFTER-row checks at end of statement, so both
+    // refuse deleting a unit with bookings AND both still allow account closure
+    // (tenant -> property -> unit -> booking) - measured, see migration 0003.
+    // `no action` is Postgres's default and the only one that could later be
+    // made DEFERRABLE.
     foreignKey({
       name: "booking_unit_tenant_fk",
       columns: [t.unitId, t.tenantId],
