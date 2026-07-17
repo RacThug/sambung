@@ -14,11 +14,6 @@ import { TenantDbService } from '../db/tenant-db.service';
 
 export type PropertyRow = Property & { pricedUnitCount: number };
 
-export type DeleteWithGuardResult =
-  | { found: false }
-  | { found: true; deleted: false; futureBookings: number }
-  | { found: true; deleted: true };
-
 // Units under this property with a real price (> 0 - a zero-rupiah unit is a
 // placeholder, not a sellable listing). One of the two inputs to `publishable`;
 // the photo count joins it with #39. Computed via LEFT JOIN + conditional
@@ -101,54 +96,70 @@ export class PropertiesRepository {
   }
 
   /**
-   * Atomic guarded delete (api-spec §4.4): count future occupying bookings and
-   * delete only when there are none, in one transaction. "Occupying" = status
-   * pending_payment|confirmed; "future" = check_out > today (half-open stays:
-   * an in-house guest still counts, today's checkout doesn't).
+   * Lock a property and everything that could add bookings under it, so a
+   * caller can decide whether to delete it. Returns false when the id is
+   * unknown or belongs to another tenant.
    *
-   * The FOR UPDATE locks make the guard sound, not best-effort: an INSERT
-   * referencing a locked row takes FOR KEY SHARE on it, which conflicts with
-   * FOR UPDATE. Locking the property row blocks new units appearing under it
-   * mid-delete; locking its unit rows blocks new bookings on them. A booking
-   * insert racing this delete therefore waits, and if the delete wins it fails
-   * its FK instead of being silently cascaded away.
+   * Call this FIRST in the unit of work: the locks are what make the caller's
+   * guard sound rather than best-effort. An INSERT referencing a locked row
+   * takes FOR KEY SHARE on it, which conflicts with FOR UPDATE. Locking the
+   * property row blocks new units appearing under it mid-delete; locking its
+   * unit rows blocks new bookings on them. A booking insert racing the delete
+   * therefore waits, and if the delete wins it fails its FK instead of being
+   * silently cascaded away.
+   *
+   * Both locks are taken here, in this order, because their order is a
+   * persistence detail - callers should not be able to get it wrong.
    */
-  deleteWithGuard(
-    id: string,
-    tenantId: string,
-  ): Promise<DeleteWithGuardResult> {
-    return this.db.run(async (tx): Promise<DeleteWithGuardResult> => {
+  async lockForDelete(id: string, tenantId: string): Promise<boolean> {
+    return this.db.run(async (tx) => {
       const found = await tx
         .select({ id: property.id })
         .from(property)
         .where(and(eq(property.id, id), eq(property.tenantId, tenantId)))
         .limit(1)
         .for('update');
-      if (!found.length) return { found: false };
+      if (!found.length) return false;
 
       await tx
         .select({ id: unit.id })
         .from(unit)
         .where(eq(unit.propertyId, id))
         .for('update');
+      return true;
+    });
+  }
 
+  /**
+   * Count bookings under this property that still occupy dates in the future.
+   * "Occupying" = status pending_payment|confirmed (the same set as the
+   * booking_no_overlap constraint's WHERE); "future" = check_out > today,
+   * evaluated as current_date in the database so the day boundary is the
+   * server's, not the caller's. Half-open stays: an in-house guest still
+   * counts, today's checkout doesn't.
+   */
+  async countFutureOccupying(propertyId: string): Promise<number> {
+    return this.db.run(async (tx) => {
       const [{ futureBookings }] = await tx
         .select({ futureBookings: count() })
         .from(booking)
         .innerJoin(unit, eq(booking.unitId, unit.id))
         .where(
           and(
-            eq(unit.propertyId, id),
+            eq(unit.propertyId, propertyId),
             inArray(booking.status, ['pending_payment', 'confirmed']),
             gt(booking.checkOut, sql`current_date`),
           ),
         );
-      if (futureBookings > 0) {
-        return { found: true, deleted: false, futureBookings };
-      }
-
-      await tx.delete(property).where(eq(property.id, id));
-      return { found: true, deleted: true };
+      return futureBookings;
     });
+  }
+
+  async delete(id: string, tenantId: string): Promise<void> {
+    await this.db.run((tx) =>
+      tx
+        .delete(property)
+        .where(and(eq(property.id, id), eq(property.tenantId, tenantId))),
+    );
   }
 }

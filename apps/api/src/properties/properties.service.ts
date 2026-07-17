@@ -15,6 +15,7 @@ import {
   type UpdatePropertyRequest,
 } from '@sambung/shared';
 import { TenantContext } from '../common/tenant-context.service';
+import { TenantDbService } from '../db/tenant-db.service';
 import { StorageService } from '../storage/storage.service';
 import {
   PropertiesRepository,
@@ -27,6 +28,7 @@ export class PropertiesService {
     private readonly repo: PropertiesRepository,
     private readonly tenant: TenantContext,
     private readonly storage: StorageService,
+    private readonly db: TenantDbService,
   ) {}
 
   async list(): Promise<PropertyResponse[]> {
@@ -91,6 +93,13 @@ export class PropertiesService {
    * `<tenantId>/<propertyId>/` prefix - a key minted for another tenant OR
    * another of the caller's own properties is rejected, so galleries can
    * never reference objects they don't own.
+   *
+   * Deliberately NOT wrapped in `db.run`, despite being check-then-write: the
+   * storage round-trips below are network calls to Garage/R2. Holding a
+   * transaction (and its row locks) open across them would tie up a pool
+   * connection for the latency of an external service. The write is a single
+   * statement and the exclusion of bad keys is enforced before it, so the
+   * check-then-write gap costs at worst a wasted PATCH, never a bad row.
    */
   async updatePhotos(
     id: string,
@@ -132,19 +141,29 @@ export class PropertiesService {
     return this.toResponse(row);
   }
 
+  /**
+   * Guarded delete (api-spec §4.4). The whole guard is ONE unit of work: the
+   * locks taken by lockForDelete only hold for the transaction they were taken
+   * in, so counting and deleting must join that same transaction or the guard
+   * is decorative. `db.run` here is what makes the three repository calls
+   * below share it.
+   */
   async remove(id: string): Promise<void> {
-    const result = await this.repo.deleteWithGuard(id, this.tenant.tenantId);
-    if (!result.found) {
-      throw new NotFoundException('Property not found');
-    }
-    if (!result.deleted) {
-      const n = result.futureBookings;
-      // Deleting live inventory must be an explicit two-step (api-spec §4.4):
-      // the count tells the owner exactly what to cancel first.
-      throw new ConflictException(
-        `Cannot delete: ${n} future booking${n === 1 ? '' : 's'} - cancel them first`,
-      );
-    }
+    await this.db.run(async () => {
+      const tenantId = this.tenant.tenantId;
+      if (!(await this.repo.lockForDelete(id, tenantId))) {
+        throw new NotFoundException('Property not found');
+      }
+      const n = await this.repo.countFutureOccupying(id);
+      if (n > 0) {
+        // Deleting live inventory must be an explicit two-step (api-spec §4.4):
+        // the count tells the owner exactly what to cancel first.
+        throw new ConflictException(
+          `Cannot delete: ${n} future booking${n === 1 ? '' : 's'} - cancel them first`,
+        );
+      }
+      await this.repo.delete(id, tenantId);
+    });
   }
 
   /**
