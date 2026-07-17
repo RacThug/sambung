@@ -87,6 +87,32 @@ describe("properties list (§4.4)", () => {
 });
 
 describe("property edit (§4.5 details tab)", () => {
+  /**
+   * The slug is minted server-side, so this link is the ONLY way an owner
+   * learns the address of their own page. Without it, "a guest opens a shared
+   * link" has no first step (#46).
+   */
+  it("shows the public URL so the owner can actually share it", async () => {
+    const row = property({ slug: "seminyak-beach-villa" });
+    stubFetch({ [`GET /api/properties/${row.id}`]: () => json(row) });
+    renderAt(`/app/properties/${row.id}`);
+
+    const link = await screen.findByRole("link", { name: /\/p\/seminyak-beach-villa$/ });
+    expect(link).toHaveAttribute("href", "/p/seminyak-beach-villa");
+  });
+
+  it("calls an incomplete page live-but-incomplete, not unpublished", async () => {
+    // publishable never gates the page (ADR-0004), so the copy must not imply a
+    // publish step that doesn't exist.
+    const row = property({ publishable: false });
+    stubFetch({ [`GET /api/properties/${row.id}`]: () => json(row) });
+    renderAt(`/app/properties/${row.id}`);
+
+    expect(
+      await screen.findByText(/public page is live, but incomplete/i),
+    ).toBeInTheDocument();
+  });
+
   it("previews the Verified badge live while typing a license number", async () => {
     const row = property({});
     stubFetch({

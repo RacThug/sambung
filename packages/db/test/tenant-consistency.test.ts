@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 import { closeDb, db } from "../src/index";
 import { booking, channelConnection, property, tenant, unit } from "../src/schema";
-import { expectDbError } from "./helpers";
+import { expectDbError, testSlug } from "./helpers";
 
 // Each test maps to one composite FK from the schema (db-design §4.5, #40):
 // a child row whose denormalized tenant_id disagrees with its parent chain
@@ -24,7 +24,7 @@ beforeAll(async () => {
   tenantB = rows[1].id;
   const [p] = await db
     .insert(property)
-    .values({ tenantId: tenantA, name: "Villa A" })
+    .values({ tenantId: tenantA, name: "Villa A", slug: testSlug() })
     .returning({ id: property.id });
   propertyA = p.id;
   const [u] = await db

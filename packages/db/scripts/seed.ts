@@ -7,9 +7,10 @@
  * Run: pnpm --filter @sambung/db db:seed
  */
 import "./load-env";
-import { count } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { closeDb, db } from "../src/index";
+import { uploadSeedPhotos } from "./seed-photos";
 import {
   appUser,
   booking,
@@ -23,6 +24,12 @@ import {
 } from "../src/schema";
 
 // Fixed IDs so re-seeding is stable and demo URLs don't change.
+//
+// Slugs are literal for the same reason, and written here rather than derived
+// via slugifyName: this script inserts rows directly on the owner connection,
+// bypassing the service that mints them, and a seed's whole job is to produce
+// the SAME state every run. `/p/seminyak-beach-villa` is a demo link that gets
+// pasted into a README - it must survive re-seeding (#46 AC).
 const T1 = "11111111-1111-1111-1111-111111111111"; // Bali Breeze Villas
 const T2 = "22222222-2222-2222-2222-222222222222"; // Ubud Retreats
 const P_SEMINYAK = "aaaaaaaa-0000-0000-0000-000000000001";
@@ -81,6 +88,7 @@ async function main() {
         id: P_SEMINYAK,
         tenantId: T1,
         name: "Seminyak Beach Villa",
+        slug: "seminyak-beach-villa",
         address: "Jl. Kayu Aya, Seminyak, Bali",
         latitude: -8.6905,
         longitude: 115.1656,
@@ -91,6 +99,7 @@ async function main() {
         id: P_CANGGU,
         tenantId: T1,
         name: "Canggu Surf House",
+        slug: "canggu-surf-house",
         address: "Jl. Pantai Batu Bolong, Canggu, Bali",
         latitude: -8.6478,
         longitude: 115.1385,
@@ -101,6 +110,7 @@ async function main() {
         id: P_UBUD,
         tenantId: T2,
         name: "Ubud Jungle Villa",
+        slug: "ubud-jungle-villa",
         address: "Jl. Raya Tegallalang, Ubud, Bali",
         latitude: -8.4312,
         longitude: 115.2769,
@@ -202,6 +212,26 @@ async function main() {
       amountIdr: 14_000_000n,
       status: "paid",
     });
+
+    // --- demo photos (#46) ---
+    // Seminyak and Ubud get a gallery; CANGGU DELIBERATELY DOES NOT. The seed
+    // already withholds licenseNo from Canggu to demo the conditional Verified
+    // badge - same instinct here: one bare property means the demo shows the
+    // publishable checklist doing its job, and proves the public page renders
+    // without a gallery rather than breaking (ADR-0004).
+    //
+    // Inside the transaction so a storage failure mid-way cannot leave rows
+    // pointing at objects that were never uploaded.
+    const photos = await uploadSeedPhotos([
+      { tenantId: T1, propertyId: P_SEMINYAK, palette: "seminyak", count: 3 },
+      { tenantId: T2, propertyId: P_UBUD, palette: "ubud", count: 3 },
+    ]);
+    for (const [propertyId, keys] of photos) {
+      await tx
+        .update(property)
+        .set({ photos: keys })
+        .where(eq(property.id, propertyId));
+    }
   });
 
   // Report final counts.

@@ -2,18 +2,43 @@ import { Injectable } from '@nestjs/common';
 import { ClsService } from 'nestjs-cls';
 
 /**
- * The authenticated actor, for the duration of one request. The single shape:
- * the guard mints it from the access token, services read tenantId off it, and
- * TenantDbService scopes the database to it.
+ * A logged-in Owner or staff member, for the duration of one request.
  *
  * Not the token's shape - JWT's `sub` stays in AccessPayload, where JWT's
  * vocabulary belongs, and auth.guard translates. This is the domain's.
  */
-export interface Principal {
+export interface UserPrincipal {
+  kind: 'user';
   userId: string;
   tenantId: string;
   role: 'owner' | 'staff';
 }
+
+/**
+ * A Visitor: someone reading a public page, who has not booked and is not a
+ * user of anyone's Tenant (CONTEXT.md). They still act inside exactly ONE
+ * tenant's scope - the tenant that owns the Property whose slug they opened -
+ * which is what makes them a principal rather than an absence of one.
+ *
+ * Minted by PublicScope, from the slug (ADR-0003). Deliberately has no userId
+ * and no role: there is no one to be, and nothing to be allowed.
+ */
+export interface VisitorPrincipal {
+  kind: 'visitor';
+  tenantId: string;
+}
+
+/**
+ * Whoever the current request acts for. The single shape: a guard or PublicScope
+ * mints it, services read tenantId off it, and TenantDbService scopes the
+ * database to it.
+ *
+ * A UNION rather than one shape with optional fields, so `principal.role` does
+ * not compile until the Visitor case is handled. That is the whole point: a
+ * Visitor must not be able to drift into a role check and pass it by looking
+ * close enough to an Owner. Unrepresentable beats unlikely (boss fight #5).
+ */
+export type Principal = UserPrincipal | VisitorPrincipal;
 
 // Private on purpose. Nothing outside this file should know the principal is
 // stored in CLS, let alone under which key - go through TenantContext. When
@@ -21,14 +46,45 @@ export interface Principal {
 // RLS scoping to zero rows; now it is a compile error.
 const PRINCIPAL_KEY = 'principal';
 
-// Ambient per-request access to the authenticated principal (AsyncLocalStorage,
-// via nestjs-cls). Services read tenantId here instead of threading it through
+// Ambient per-request access to the current principal (AsyncLocalStorage, via
+// nestjs-cls). Services read tenantId here instead of threading it through
 // every call — one forgotten parameter can't become a cross-tenant leak.
 @Injectable()
 export class TenantContext {
   constructor(private readonly cls: ClsService) {}
 
+  /**
+   * Mint the principal for this request. Once.
+   *
+   * Throws rather than overwriting, because a second mint is never a legitimate
+   * thing to want: one request acts for one principal. The failure it forecloses
+   * is specific and was found in review of #46. `PublicScope` is globally
+   * injectable, so if any GUARDED route ever calls `enterFromSlug`, the Owner
+   * that JwtAuthGuard minted would be silently replaced by a Visitor of whatever
+   * tenant owns that slug - and every query after it would run under the wrong
+   * scope. `TenantDbService.run` would not catch it: it compares principals only
+   * INSIDE an already-open transaction; outside one it simply opens a new
+   * transaction under the new tenant.
+   *
+   * That hazard also answers the fair objection to ADR-0003: it rejects
+   * `runAsTenant(tenantId, fn)` because any caller could name any tenant, yet
+   * `enterFromSlug(slug)` lets any caller name any slug, and slugs are public.
+   * The difference the ADR relies on is real but was incomplete - it confined
+   * the VALUE, not who may re-mint. This is the other half, and it is the same
+   * idiom as the Principal union: make it unrepresentable, not unlikely.
+   *
+   * No live caller does this today (M2's `POST /public/bookings` is the next
+   * one). Cheap to close before it arrives, expensive to debug after.
+   */
   set(principal: Principal): void {
+    if (this.cls.get<Principal>(PRINCIPAL_KEY)) {
+      throw new Error(
+        'TenantContext.set: a principal is already minted for this request. ' +
+          'One request acts for one principal - re-minting would silently ' +
+          're-scope every query after it, which is how an Owner becomes a ' +
+          "Visitor of someone else's tenant.",
+      );
+    }
     this.cls.set(PRINCIPAL_KEY, principal);
   }
 
@@ -36,11 +92,22 @@ export class TenantContext {
     return this.cls.get<Principal>(PRINCIPAL_KEY);
   }
 
-  /** The current tenant id. Throws if used outside an authenticated request. */
+  /**
+   * The current tenant id - the one question both kinds of principal answer,
+   * which is why TenantDbService and every repository can read it without
+   * caring whether a Visitor or an Owner is asking. RLS scopes a Visitor's
+   * query exactly as it scopes an Owner's.
+   *
+   * Throws when nothing has been minted: a request that reached a tenant-scoped
+   * query with no tenant is a bug, not a query.
+   */
   get tenantId(): string {
     const principal = this.principal;
     if (!principal) {
-      throw new Error('Tenant context is empty — route must be authenticated');
+      throw new Error(
+        'Tenant context is empty — an authenticated route must run behind ' +
+          'JwtAuthGuard, and a public one must enter a scope via PublicScope',
+      );
     }
     return principal.tenantId;
   }

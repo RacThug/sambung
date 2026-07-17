@@ -372,7 +372,12 @@ describe('Unit CRUD', () => {
     /** Run fn as tenant A's owner, the way a request would. */
     const asOwner = <T>(fn: () => Promise<T>): Promise<T> =>
       cls.run(() => {
-        tenantCtx.set({ userId: 'test', tenantId: tenantAId, role: 'owner' });
+        tenantCtx.set({
+          kind: 'user',
+          userId: 'test',
+          tenantId: tenantAId,
+          role: 'owner',
+        });
         return fn();
       });
 

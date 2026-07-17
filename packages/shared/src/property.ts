@@ -38,6 +38,13 @@ export const propertyResponseSchema = z.object({
   id: z.string().uuid(),
   tenantId: z.string().uuid(),
   name: z.string(),
+  /**
+   * The public address (`/p/:slug`). Read-only: it is minted at create and
+   * never moves, so it appears here and in NO request schema - a rename must
+   * not break links already in the wild (ADR-0004). The owner sees it so the
+   * edit page can show, and link to, the real public URL.
+   */
+  slug: z.string(),
   address: z.string().nullable(),
   latitude: z.number().nullable(),
   longitude: z.number().nullable(),

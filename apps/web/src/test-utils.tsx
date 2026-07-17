@@ -10,6 +10,8 @@ import {
   rupiahSchema,
   type AuthResponse,
   type PropertyResponse,
+  type PublicPropertyResponse,
+  type PublicUnit,
   type UnitResponse,
 } from "@sambung/shared";
 import { routeTree } from "./router";
@@ -58,6 +60,7 @@ export function propertyResponse(
     id: "aaaaaaaa-0000-0000-0000-000000000001",
     tenantId: authResponse().tenant.id,
     name: "Seminyak Beach Villa",
+    slug: "seminyak-beach-villa",
     address: "Jl. Kayu Aya, Seminyak",
     latitude: null,
     longitude: null,
@@ -68,6 +71,41 @@ export function propertyResponse(
     publishable: false,
     createdAt: "2026-07-01T00:00:00.000Z",
     ...overrides,
+  };
+}
+
+/**
+ * One PublicPropertyResponse factory, same reason as above.
+ *
+ * A separate factory rather than a slice of propertyResponse(), because the
+ * public payload is a deliberate subset and not a projection of the owner's one
+ * (api-spec §4.7): deriving it here would quietly re-couple the two shapes the
+ * API works to keep apart, and a test built on that could not notice licenseNo
+ * arriving. Prices come in as plain numbers and are branded here, exactly as
+ * unitResponse does below.
+ */
+export function publicPropertyResponse(
+  overrides: Partial<Omit<PublicPropertyResponse, "units">> & {
+    units?: Array<Partial<Omit<PublicUnit, "basePriceIdr">> & { basePriceIdr?: number }>;
+  } = {},
+): PublicPropertyResponse {
+  const { units, ...rest } = overrides;
+  return {
+    slug: "seminyak-beach-villa",
+    name: "Seminyak Beach Villa",
+    address: "Jl. Kayu Aya, Seminyak",
+    description: null,
+    verified: false,
+    photos: [],
+    units: (units ?? []).map((u, i) => ({
+      id: `bbbbbbbb-0000-0000-0000-00000000000${i + 1}`,
+      name: "Garden Room",
+      maxGuests: 2,
+      minStay: 1,
+      ...u,
+      basePriceIdr: rupiahSchema.parse(u.basePriceIdr ?? 1_200_000),
+    })),
+    ...rest,
   };
 }
 

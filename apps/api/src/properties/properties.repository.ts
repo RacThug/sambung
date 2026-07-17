@@ -1,10 +1,54 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, count, eq, getTableColumns, sql } from 'drizzle-orm';
 import { booking, property, unit, type Property } from '@sambung/db';
+import { isVerified } from '@sambung/shared';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
 
 export type PropertyRow = Property & { pricedUnitCount: number };
+
+/**
+ * What a Visitor's query returns - and, more to the point, what it CANNOT.
+ *
+ * There is no `licenseNo` field. `verified` is computed here, at the only place
+ * that reads the column, so the secret never leaves this file: the public
+ * service cannot leak it, because it never receives it. That is stronger than a
+ * mapper that remembers not to spread, and it is why this projection exists
+ * rather than reusing PropertyRow.
+ *
+ * Computing `verified` is a whisker past "dumb repository" (CLAUDE.md layering).
+ * The rule itself still lives once, in shared's isVerified - this calls it, it
+ * doesn't restate it in SQL, which would be the two-copies mistake #80 punishes.
+ * And PropertyRow already carries pricedUnitCount, so a repository returning a
+ * derived projection is the established shape here, not a new liberty.
+ */
+export type PublicPropertyRow = {
+  slug: string;
+  name: string;
+  address: string | null;
+  description: string | null;
+  verified: boolean;
+  photos: string[];
+  units: PublicUnitRow[];
+};
+
+/**
+ * The unit half of the same projection, for the same reason.
+ *
+ * This was `Unit` - the whole row, tenantId and createdAt included. The payload
+ * was still correct (the service maps by hand and zod strips the rest), but the
+ * principle above was then true of `property` and merely *observed* for `unit`:
+ * two structural layers for one, one layer plus a convention for the other.
+ * Caught in review. If a projection is what keeps the secret out, it has to
+ * cover everything the projection returns.
+ */
+export type PublicUnitRow = {
+  id: string;
+  name: string;
+  basePriceIdr: bigint;
+  maxGuests: number;
+  minStay: number;
+};
 
 // Units under this property with a real price (> 0 - a zero-rupiah unit is a
 // placeholder, not a sellable listing). One of the two inputs to `publishable`;
@@ -76,16 +120,32 @@ export class PropertiesRepository {
     return rows[0] ?? null;
   }
 
-  async create(
+  /**
+   * Insert, unless the slug is taken - in which case return null and let the
+   * caller try another one (the mint loop in properties.service).
+   *
+   * `on conflict (slug) do nothing` rather than catching 23505, because a raised
+   * constraint violation ABORTS the transaction (25P02): every subsequent
+   * statement fails too, so the retry would need a fresh transaction or a
+   * savepoint. DO NOTHING never raises - it returns zero rows - so the loop runs
+   * inside one transaction and the failure costs nothing.
+   *
+   * Targeted at `(slug)` on purpose. A bare `do nothing` would swallow EVERY
+   * unique violation on this table, turning an unrelated constraint into a
+   * silent "slug taken" retry.
+   */
+  async createWithSlug(
     values: Omit<typeof property.$inferInsert, 'tenantId'>,
-  ): Promise<PropertyRow> {
+  ): Promise<PropertyRow | null> {
     const tenantId = this.tenant.tenantId;
     const [row] = await this.db.run((tx) =>
       tx
         .insert(property)
         .values({ ...values, tenantId })
+        .onConflictDoNothing({ target: property.slug })
         .returning(),
     );
+    if (!row) return null;
     // A brand-new property has no units yet - no second query needed.
     return { ...row, pricedUnitCount: 0 };
   }
@@ -179,6 +239,75 @@ export class PropertiesRepository {
           and(eq(unit.propertyId, propertyId), eq(booking.tenantId, tenantId)),
         );
       return bookings;
+    });
+  }
+
+  /**
+   * The public projection, by slug (api-spec §4.7).
+   *
+   * Runs under RLS as the Visitor's resolved tenant, and still carries the
+   * tenant_id filter - same two layers as every authenticated query, for the
+   * same reason (architecture §3.3 point 3).
+   *
+   * Two statements, not a join: a join would multiply the property's photo array
+   * across its unit rows and need de-duplicating back out in TS. Both run inside
+   * one `db.run`, so they share a transaction and a consistent snapshot - a unit
+   * created between them cannot make the page half-new.
+   *
+   * Returns null when the slug is unknown to THIS tenant. Given PublicScope
+   * resolved the tenant from this very slug, that means the property was deleted
+   * between the two steps - a race, answered with the same 404 as never having
+   * existed, which is the truthful answer by the time we reply.
+   */
+  async findPublicBySlug(slug: string): Promise<PublicPropertyRow | null> {
+    const tenantId = this.tenant.tenantId;
+    return this.db.run(async (tx) => {
+      const [row] = await tx
+        .select({
+          id: property.id,
+          slug: property.slug,
+          name: property.name,
+          address: property.address,
+          description: property.description,
+          licenseNo: property.licenseNo,
+          photos: property.photos,
+        })
+        .from(property)
+        .where(and(eq(property.slug, slug), eq(property.tenantId, tenantId)))
+        .limit(1);
+      if (!row) return null;
+
+      const units = await tx
+        .select({
+          id: unit.id,
+          name: unit.name,
+          basePriceIdr: unit.basePriceIdr,
+          maxGuests: unit.maxGuests,
+          minStay: unit.minStay,
+        })
+        .from(unit)
+        .where(and(eq(unit.propertyId, row.id), eq(unit.tenantId, tenantId)))
+        // Ordered by createdAt without selecting it: the gallery order of the
+        // rooms is the order the owner entered them, but a Visitor has no use
+        // for the timestamp itself.
+        .orderBy(asc(unit.createdAt), asc(unit.id));
+
+      // Built field by field, NOT spread. licenseNo stops here - it becomes the
+      // boolean and goes no further. `id` stops here too: the page has no use
+      // for it, and M2 books a unit, not a property.
+      //
+      // A spread would defeat the whole projection: the next column added to
+      // `property` would ride into the public row for free, and this type exists
+      // precisely so that cannot happen.
+      return {
+        slug: row.slug,
+        name: row.name,
+        address: row.address,
+        description: row.description,
+        verified: isVerified(row.licenseNo),
+        photos: row.photos,
+        units,
+      };
     });
   }
 

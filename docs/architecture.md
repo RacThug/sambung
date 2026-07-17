@@ -79,6 +79,10 @@ api/src/
 4. (Defense in depth) Postgres RLS policies `using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)` — `TenantDbService.run` sets the GUC per transaction, on a non-owner role. Even a forgotten `WHERE` returns nothing instead of leaking.
    The `nullif` is load-bearing, not noise: `set_config(..., is_local => true)` reverts at COMMIT to the GUC's *reset* value, which for a custom GUC already set once on that session is the **empty string, not NULL**. Without it, a query with no tenant returns zero rows on a fresh connection but errors `22P02` on a pooled one that has served a request — so "fail-closed" held only until the pool warmed up (#74).
 
+**The public path (no token) — same machinery, different mint.** A Visitor has no JWT, so step 1 never runs and steps 2–4 would throw. The funnel's entry is also *cross-tenant*: you can't scope by tenant before finding the property, because the property is what tells you the tenant. So `PublicScope.enterFromSlug` runs **one** statement on the owner connection — `select tenant_id from property where slug = $1` — and seeds `TenantContext` with `{ kind: 'visitor', tenantId }`. From there, steps 2–4 are untouched: same `run`, same RLS, same `WHERE`. The Visitor is a principal, not an exception to the rule ([ADR-0003](adr/0003-a-visitor-is-a-principal.md), #77).
+
+`Principal` is a union — `UserPrincipal | VisitorPrincipal` — so `principal.role` doesn't compile until the Visitor case is handled. A Visitor can't drift into a role check by looking close enough to an Owner. The one unscoped statement reads a single column keyed by a deliberately-public value and returns nothing renderable: when `property` grows a payout account, that step can't leak it, because it doesn't select it.
+
 > The portfolio money-shot: a test that logs in as tenant A, requests tenant B's booking by ID, and asserts 404. Two layers (app guard + RLS) both have to fail for a leak.
 >
 > Both layers are tested **alone**, because a claim about two layers is worth nothing if either is only ever exercised behind the other. `properties.spec.ts` proves RLS scopes a query with no `WHERE`, and proves the `WHERE` scopes with RLS bypassed (repository over an owner-role connection). `packages/db/test/rls.test.ts` covers all 9 policies at the DB seam.
@@ -202,9 +206,13 @@ provider POSTs (maybe twice) → INSERT into payment_event (provider, provider_e
 
 ## 6. SEO for the public pages (the SPA trade-off)
 SPA HTML is thin until JS runs → weaker SEO by default. Handle it in tiers (pick per ambition):
-1. **Showcase-enough:** correct meta/OG tags per property (react-helmet). Modern Googlebot renders JS, so pages still index.
-2. **Shows you get SEO:** prerender property pages for bots (Prerender / Puppeteer snapshot).
+1. **Showcase-enough:** correct meta/OG tags per property. Modern Googlebot renders JS, so pages still index. **Built** (#46) — no dependency: React 19 hoists `<title>`/`<meta>` from anywhere in the tree into `<head>` natively, so the react-helmet this doc used to recommend is neither needed nor maintained.
+2. **Shows you get SEO:** serve bots real HTML.
 3. **Production-real:** SSR just the public pages via Astro (React islands) or Next, dashboard stays SPA.
+
+> **Tier 1 is not enough here, and it's worth being precise about why.** Client-rendered OG tags are invisible to *every* link-preview crawler — WhatsApp, `facebookexternalhit`, Twitterbot, Telegram, LINE. They fetch raw HTML and never execute JS, so a forwarded villa previews as a blank card reading "Sambung". Googlebot is fine; the crawler this product lives on is not. Sambung's whole distribution model is a link pasted into a chat — in Indonesia, WhatsApp — so the gap sits exactly where the value is (#46, FR-NOTIF-2).
+>
+> Tier 2 is also cheaper than "Prerender / Puppeteer snapshot" implies, which is what made it look like a bigger step than it is: **social crawlers only read meta tags — they never render.** So Caddy can match their user agents and proxy to a small API route that returns a static OG stub, while humans and Googlebot get the real SPA. A template, not a headless browser on a $5 VPS. Tracked as #87.
 
 For the portfolio, tier 1–2 + a README note "in production I'd SSR the public funnel" is the mature answer.
 

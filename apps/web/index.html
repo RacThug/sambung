@@ -4,7 +4,19 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>web</title>
+    <!--
+      The fallback title, and the one that matters more than it looks. React 19
+      hoists a per-property <title> once the SPA runs, but link-preview crawlers
+      (WhatsApp, facebookexternalhit, Twitterbot) never run JS - so THIS is the
+      title a forwarded villa previews with. It said "web", Vite's scaffold
+      default. Until bots get served real HTML (architecture §6 tier 2), this is
+      the floor: a name, not a placeholder.
+    -->
+    <title>Sambung - Book your Bali stay direct</title>
+    <meta
+      name="description"
+      content="Book villas, homestays and guesthouses in Bali directly with their owners - no commission, no middleman."
+    />
   </head>
   <body>
     <div id="root"></div>

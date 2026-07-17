@@ -18,7 +18,7 @@ import {
   type RegisterRequest,
 } from '@sambung/shared';
 import { CurrentPrincipal } from '../common/decorators/current-principal.decorator';
-import type { Principal } from '../common/tenant-context.service';
+import type { UserPrincipal } from '../common/tenant-context.service';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './auth.guard';
@@ -71,7 +71,7 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  me(@CurrentPrincipal() principal: Principal): Promise<MeResponse> {
+  me(@CurrentPrincipal() principal: UserPrincipal): Promise<MeResponse> {
     return this.auth.me(principal.userId);
   }
 

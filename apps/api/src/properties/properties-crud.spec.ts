@@ -108,7 +108,12 @@ describe('Property CRUD', () => {
   /** Run fn as tenant A's owner, the way a request would. */
   const asOwner = <T>(fn: () => Promise<T>): Promise<T> =>
     cls.run(() => {
-      tenantCtx.set({ userId: 'test', tenantId: tenantAId, role: 'owner' });
+      tenantCtx.set({
+        kind: 'user',
+        userId: 'test',
+        tenantId: tenantAId,
+        role: 'owner',
+      });
       return fn();
     });
 
@@ -194,6 +199,65 @@ describe('Property CRUD', () => {
         .set('Authorization', `Bearer ${tokenA}`)
         .send({ name: 'Bad Geo Villa', latitude: 91 })
         .expect(400);
+    });
+
+    it('mints a slug from the name', async () => {
+      const created = await createProperty(tokenA, {
+        name: `Slug ${randomUUID()} Villa`,
+      });
+      expect(created.slug).toMatch(/^slug-[0-9a-f-]+-villa$/);
+    });
+
+    /**
+     * The collision path, forced rather than raced.
+     *
+     * Two concurrent creates only *sometimes* overlap - auth.spec.ts measured
+     * the equivalent race catching a broken map about 1 run in 4 - so a race
+     * alone would let a broken mint loop merge green. Here the taken slug
+     * already exists, so the second create MUST walk the retry branch every run.
+     */
+    it('suffixes the slug when the name is already taken', async () => {
+      const name = `Twin ${randomUUID()} Villa`;
+      const first = await createProperty(tokenA, { name });
+      const second = await createProperty(tokenA, { name });
+
+      expect(second.slug).not.toBe(first.slug);
+      expect(second.slug).toMatch(new RegExp(`^${first.slug}-[a-z0-9]{5}$`));
+    });
+
+    /**
+     * The reason the mint loop cannot pre-check: this collision is INVISIBLE to
+     * the tenant hitting it. Slugs are globally unique, but RLS hides tenant A's
+     * row from tenant B - so "is villa-x free?" answers yes, and only the index
+     * knows better.
+     *
+     * B must get a working slug and a 201. Never a 409: B typed a name, not a
+     * slug, and telling them it is taken would confirm a stranger's property
+     * exists (the cross-tenant existence oracle api-spec §1 forbids).
+     */
+    it('handles a collision with a property the caller cannot see', async () => {
+      const name = `Hidden ${randomUUID()} Villa`;
+      const mine = await createProperty(tokenA, { name });
+      const theirs = await createProperty(tokenB, { name });
+
+      expect(theirs.slug).toMatch(new RegExp(`^${mine.slug}-[a-z0-9]{5}$`));
+      expect(theirs.tenantId).not.toBe(mine.tenantId);
+    });
+
+    it('gives concurrent creates of one name distinct slugs, never a 409', async () => {
+      const name = `Race ${randomUUID()} Villa`;
+      const send = () =>
+        request(server())
+          .post('/api/properties')
+          .set('Authorization', `Bearer ${tokenA}`)
+          .send({ name });
+      const results = await Promise.all([send(), send(), send()]);
+
+      // Every one succeeds: a slug collision is ours to resolve, not the
+      // owner's to be told about.
+      expect(results.map((r) => r.status)).toEqual([201, 201, 201]);
+      const slugs = results.map((r) => bodyOf<PropertyResponse>(r).slug);
+      expect(new Set(slugs).size).toBe(3);
     });
 
     it('rejects unauthenticated create (401)', async () => {

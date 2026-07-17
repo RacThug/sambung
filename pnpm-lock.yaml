@@ -217,6 +217,9 @@ importers:
         specifier: ^8.22.0
         version: 8.22.0
     devDependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.1088.0
+        version: 3.1088.0
       '@types/pg':
         specifier: ^8.20.0
         version: 8.20.0

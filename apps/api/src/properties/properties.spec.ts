@@ -14,6 +14,7 @@ import { DbService } from '../db/db.service';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
 import { PropertiesRepository } from './properties.repository';
+import { testSlug } from '../test-helpers';
 
 // Tenant isolation (FR-AUTH-3, boss fight #5) — app-layer proof against a real DB.
 describe('Tenant isolation (properties)', () => {
@@ -64,11 +65,11 @@ describe('Tenant isolation (properties)', () => {
     tenantAId = a.tenant.id;
     [propA] = await dbs.db
       .insert(property)
-      .values({ tenantId: a.tenant.id, name: 'A Villa' })
+      .values({ tenantId: a.tenant.id, name: 'A Villa', slug: testSlug() })
       .returning({ id: property.id });
     [propB] = await dbs.db
       .insert(property)
-      .values({ tenantId: b.tenant.id, name: 'B Villa' })
+      .values({ tenantId: b.tenant.id, name: 'B Villa', slug: testSlug() })
       .returning({ id: property.id });
   });
 
@@ -110,7 +111,12 @@ describe('Tenant isolation (properties)', () => {
   /** Run fn as tenant A's owner, the way a request would. */
   const asTenantA = <T>(fn: () => Promise<T>): Promise<T> =>
     cls.run(() => {
-      tenantCtx.set({ userId: 'test', tenantId: tenantAId, role: 'owner' });
+      tenantCtx.set({
+        kind: 'user',
+        userId: 'test',
+        tenantId: tenantAId,
+        role: 'owner',
+      });
       return fn();
     });
 

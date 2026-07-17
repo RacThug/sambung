@@ -63,7 +63,7 @@ Sources: `direct | airbnb | booking_com | vrbo | manual_block`. Transitions outs
 | 19 | `GET /bookings/export.csv?…` | CSV export (same filters) | M5 | - |
 | 20 | `POST /bookings` | Manual block / walk-in | M2 | CAL-1 |
 | 21 | `POST /bookings/:id/cancel` | Cancel (FSM) | M2 | - |
-| 22 | `GET /public/properties/:slug` | Public property page data | M1 | PROP-1 |
+| 22 | `GET /public/properties/:slug` | Public property page data | **Built** | PROP-1 |
 | 23 | `GET /public/units/:id/availability?from&to` | Availability + quote | M2 | CAL-1/2 |
 | 24 | `POST /public/bookings` | Guest booking → hold | M2 | BOOK-1 |
 | 25 | `GET /public/bookings/:id` | Confirmation-page status (reconciles) | M3 | PAY-1 |
@@ -143,9 +143,22 @@ Fields: `name`, `basePriceIdr` (int ≥ 0; a 0 price is storable but keeps the p
 
 **Bounds are proven per layer, not per request** (#45's "rejected twice over"): if zod works, a negative price never reaches the CHECK, so one request cannot exercise both. zod is proven in `packages/shared/test/unit.test.ts`, the CHECKs in `packages/db/test/unit-bounds.test.ts` (raw inserts as the owner role, asserting `23514`). A CHECK firing in production means the boundary is broken → 500, unmapped, deliberately.
 
-### 4.7 `GET /public/properties/:slug` → 200 - M1 (no auth)
-Public page payload: property (name, address, description, `verified`, photos as public URLs) + its units (name, `basePriceIdr`, `maxGuests`, `minStay`). No PII, no license number value (only the boolean), no tenant internals. `404` unknown slug.
-**Schema note:** `property.slug` (globally unique, kebab-case, generated from name + suffix on collision) is added in M1 - the schema currently lacks it.
+### 4.7 `GET /public/properties/:slug` → 200 - **Built** (#46, no auth)
+Shared types: `packages/shared/src/public-property.ts` (`publicPropertyResponseSchema`).
+
+`PublicPropertyResponse = { slug, name, address, description, verified, photos: [{ url }], units: [{ id, name, basePriceIdr, maxGuests, minStay }] }`. `404` unknown slug - the only failure.
+
+**A malformed slug is a `404`, not the `400` §1 mandates for a malformed UUID.** A string that can't match `SLUG_PATTERN` can't exist in the column (`property_slug_format` guarantees it), so "no such page" is the true answer, not a euphemism - and it's what a guest with a mistyped link needs to read. §1's actual principle, refuse before touching the database, is upheld: `SlugParamPipe` rejects at the boundary. This is not optional politeness - taking the slug raw made `%00` a NUL byte, an unmapped `22021`, and a **500 on the one route with no auth in front of it** (found in review of #46).
+
+**The payload is a deliberate subset, not `PropertyResponse` minus a field.** Absent: `licenseNo` (only the `verified` boolean - the repository returns a row that has never had the column, so the service cannot leak what it never received), `tenantId`, `property.id` (no consumer - M2 books a *unit*), `publishable` (an owner's checklist, not a fact about the villa), `createdAt`. The response is parsed against the shared schema on the way out, so zod strips anything a future refactor spreads in - "no PII" is enforced, not promised. `unit.id` IS included: M2's `?unit` param and #23 address a unit by it.
+
+**`publishable` does NOT gate this endpoint** ([ADR-0004](adr/0004-a-public-url-is-an-address-not-a-view-of-state.md)). A property with no photos renders without a gallery. It reads like a gate, but every spec that uses it (page-spec §4.4, §4.5) uses it as an owner-facing readiness checklist - and a gate would mean deleting a photo silently 404s a link already pasted into an OTA profile.
+
+**No auth, but a tenant.** The slug resolves to one via `PublicScope` and everything renders under RLS as that tenant ([ADR-0003](adr/0003-a-visitor-is-a-principal.md), #77).
+
+**Known and accepted: public photo URLs embed the tenant and property UUIDs.** The URL is `STORAGE_PUBLIC_BASE_URL/<key>` and keys are `<tenantId>/<propertyId>/<uuid>.<ext>` (§4.5), so omitting the `key` field changes nothing - the URL *is* the key. Those ids are identifiers, not capabilities: RLS scopes on a GUC set from a verified JWT or a slug resolution, never from a value a visitor supplies, so knowing one grants nothing. The alternatives are worse - re-keying means migrating storage and losing the prefix check that makes `PATCH /photos` ownership-safe, and proxying bytes discards #39's "the API never proxies bytes" and R2's zero-egress. Read "no tenant internals" as the payload's *fields*, which is what it constrains.
+
+**Schema:** `property.slug` is globally unique (the URL carries no tenant, so the slug is what finds one), minted once at create from the name, and **never moved by a rename** (ADR-0004). Collisions are resolved by the mint loop, never surfaced: `INSERT ... ON CONFLICT (slug) DO NOTHING`, retried with a random suffix. `property_slug_key` is deliberately absent from the constraint map - with `ON CONFLICT` it cannot raise, so if it ever does, a path skipped the mint: a 500, not a 409.
 
 ---
 

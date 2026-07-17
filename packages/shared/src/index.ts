@@ -21,6 +21,8 @@ export * from "./auth";
 export * from "./money";
 export * from "./photo";
 export * from "./property";
+export * from "./public-property";
+export * from "./slug";
 export * from "./unit";
 
 /** Health-check response shape, shared by API and any client probe. */

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { closeDb, db } from "../src/index";
 import { booking, property, tenant, unit } from "../src/schema";
-import { expectDbError } from "./helpers";
+import { expectDbError, testSlug } from "./helpers";
 
 // Each test maps to one decision in the booking_no_overlap constraint
 // (db-design §4.3):
@@ -50,7 +50,7 @@ beforeAll(async () => {
   tenantId = t.id;
   const [p] = await db
     .insert(property)
-    .values({ tenantId, name: "Test Villa" })
+    .values({ tenantId, name: "Test Villa", slug: testSlug() })
     .returning({ id: property.id });
   propertyId = p.id;
 });

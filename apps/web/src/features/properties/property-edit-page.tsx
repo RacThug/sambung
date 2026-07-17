@@ -40,10 +40,12 @@ export function PropertyEditPage() {
         <h1 className="text-2xl font-bold">{property.name}</h1>
         {property.verified && <VerifiedBadge />}
       </div>
+      <PublicLink property={property} />
+
       {!property.publishable && (
         <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Not publishable yet — the public page needs at least one photo and
-          one unit with a price.
+          The public page is live, but incomplete — it needs at least one photo
+          and one unit with a price before it's worth sharing.
         </p>
       )}
 
@@ -56,6 +58,51 @@ export function PropertyEditPage() {
 
       <DangerZone property={property} />
     </section>
+  );
+}
+
+/**
+ * The property's public address, shown and copyable (page-spec §4.5).
+ *
+ * Not a nicety - without it the feature has no user. The slug is minted
+ * server-side from the name, so an owner has no other way to learn the URL of
+ * their own page, and "a guest opens a shared link" (#46) starts with an owner
+ * who can copy that link.
+ *
+ * It says "live", not "preview", because it is: the page renders for anyone with
+ * the URL from the moment the property exists (ADR-0004). Calling it a preview
+ * would imply a publish step that does not exist and never will - if that
+ * changes, it changes as an explicit flag, not by inference from photos.
+ */
+function PublicLink({ property }: { property: PropertyResponse }) {
+  const [copied, setCopied] = useState(false);
+  const path = `/p/${property.slug}`;
+  const url = window.location.origin + path;
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+      <span className="text-gray-500">Public page:</span>
+      <a
+        href={path}
+        target="_blank"
+        rel="noreferrer"
+        className="font-medium text-brand-600 underline underline-offset-2"
+      >
+        {url}
+      </a>
+      <button
+        type="button"
+        onClick={() => {
+          void navigator.clipboard.writeText(url).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          });
+        }}
+        className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700"
+      >
+        {copied ? "Copied" : "Copy link"}
+      </button>
+    </div>
   );
 }
 

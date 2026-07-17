@@ -89,6 +89,14 @@ export const property = pgTable(
       .notNull()
       .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
     name: text("name").notNull(),
+    // The public address: `/p/:slug` (api-spec §4.7). GLOBALLY unique, not
+    // per-tenant, because the URL carries no tenant - the slug is what tells a
+    // guest's request which tenant it belongs to (ADR-0003).
+    //
+    // Minted once at create and never moved by a rename (ADR-0004). No DB
+    // default: the value comes from slugifyName, and a row without one would be
+    // a property with no public page.
+    slug: text("slug").notNull(),
     address: text("address"),
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),
@@ -104,6 +112,18 @@ export const property = pgTable(
   (t) => [
     // Composite-FK target for unit_property_tenant_fk (db-design §4.5, #40).
     unique("property_id_tenant_uniq").on(t.id, t.tenantId),
+    // THE check on slug uniqueness, not a backstop for one. An app-level
+    // pre-check is impossible here: RLS hides the other tenants' rows we would
+    // collide with, so "is this slug free?" always answers yes. The mint loop
+    // asks this index instead, via ON CONFLICT DO NOTHING (properties.service).
+    //
+    // Deliberately NOT in the constraint map: with ON CONFLICT it never raises,
+    // so if it ever does, some path skipped the mint - a bug, therefore a 500.
+    unique("property_slug_key").on(t.slug),
+    // Mirrors SLUG_PATTERN in @sambung/shared. The slug is server-derived, not
+    // external input, so this guards our own slugify rather than a caller: a
+    // malformed slug means a broken URL, and that should fail at the write.
+    check("property_slug_format", sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
   ],
 );
 
