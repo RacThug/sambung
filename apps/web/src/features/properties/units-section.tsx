@@ -9,9 +9,7 @@ import {
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { issuesToFieldErrors } from "../../lib/forms";
-
-const rupiah = new Intl.NumberFormat("id-ID");
-const formatIdr = (n: number) => `Rp ${rupiah.format(n)}`;
+import { formatIdr } from "../../lib/money";
 
 /**
  * Units on the property workbench (page-spec §4.5, api #14/#15/#16).

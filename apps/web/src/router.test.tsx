@@ -4,7 +4,13 @@ import { cleanup, screen } from "@testing-library/react";
 import { propertySearchSchema } from "./features/public-booking/property-search";
 import { authSearchSchema } from "./features/auth/auth-search";
 import { clearSession, setSession } from "./lib/auth";
-import { authResponse, json, renderAt, stubFetch } from "./test-utils";
+import {
+  authResponse,
+  json,
+  publicPropertyResponse,
+  renderAt,
+  stubFetch,
+} from "./test-utils";
 
 beforeEach(() => {
   clearSession();
@@ -22,17 +28,28 @@ describe("route tree", () => {
     expect(await screen.findByText("Sambung")).toBeInTheDocument();
   });
 
-  it("renders the property page at /p/$slug with typed params and dates", async () => {
+  it("renders the property page at /p/$slug from the slug in the URL", async () => {
+    stubFetch({
+      "GET /api/public/properties/villa-sunset": () =>
+        json(publicPropertyResponse({ name: "Villa Sunset" })),
+    });
     renderAt("/p/villa-sunset?from=2026-08-01&to=2026-08-05");
-    expect(await screen.findByText("villa-sunset")).toBeInTheDocument();
-    expect(screen.getByText(/2026-08-01/)).toBeInTheDocument();
-    expect(screen.getByText(/2026-08-05/)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Villa Sunset" }),
+    ).toBeInTheDocument();
   });
 
   it("drops malformed date params instead of crashing the funnel", async () => {
+    // .catch(undefined) in the search schema: a deep link with a typo'd date
+    // must still open the villa, not an error page.
+    stubFetch({
+      "GET /api/public/properties/villa-sunset": () =>
+        json(publicPropertyResponse({ name: "Villa Sunset" })),
+    });
     renderAt("/p/villa-sunset?from=not-a-date&to=2026-08-05");
-    expect(await screen.findByText("villa-sunset")).toBeInTheDocument();
-    expect(screen.queryByText(/not-a-date/)).not.toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "Villa Sunset" }),
+    ).toBeInTheDocument();
   });
 
   it("renders the login page at /login", async () => {

@@ -206,9 +206,13 @@ provider POSTs (maybe twice) → INSERT into payment_event (provider, provider_e
 
 ## 6. SEO for the public pages (the SPA trade-off)
 SPA HTML is thin until JS runs → weaker SEO by default. Handle it in tiers (pick per ambition):
-1. **Showcase-enough:** correct meta/OG tags per property (react-helmet). Modern Googlebot renders JS, so pages still index.
-2. **Shows you get SEO:** prerender property pages for bots (Prerender / Puppeteer snapshot).
+1. **Showcase-enough:** correct meta/OG tags per property. Modern Googlebot renders JS, so pages still index. **Built** (#46) — no dependency: React 19 hoists `<title>`/`<meta>` from anywhere in the tree into `<head>` natively, so the react-helmet this doc used to recommend is neither needed nor maintained.
+2. **Shows you get SEO:** serve bots real HTML.
 3. **Production-real:** SSR just the public pages via Astro (React islands) or Next, dashboard stays SPA.
+
+> **Tier 1 is not enough here, and it's worth being precise about why.** Client-rendered OG tags are invisible to *every* link-preview crawler — WhatsApp, `facebookexternalhit`, Twitterbot, Telegram, LINE. They fetch raw HTML and never execute JS, so a forwarded villa previews as a blank card reading "Sambung". Googlebot is fine; the crawler this product lives on is not. Sambung's whole distribution model is a link pasted into a chat — in Indonesia, WhatsApp — so the gap sits exactly where the value is (#46, FR-NOTIF-2).
+>
+> Tier 2 is also cheaper than "Prerender / Puppeteer snapshot" implies, which is what made it look like a bigger step than it is: **social crawlers only read meta tags — they never render.** So Caddy can match their user agents and proxy to a small API route that returns a static OG stub, while humans and Googlebot get the real SPA. A template, not a headless browser on a $5 VPS. Tracked as a follow-up to #46.
 
 For the portfolio, tier 1–2 + a README note "in production I'd SSR the public funnel" is the mature answer.
 
