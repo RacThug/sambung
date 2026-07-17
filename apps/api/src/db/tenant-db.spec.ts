@@ -39,7 +39,12 @@ describe('TenantDbService.run — transaction seam', () => {
   /** Every run() below needs a principal, the same way a real request has one. */
   const asTenant = <T>(fn: () => Promise<T>): Promise<T> =>
     cls.run(() => {
-      tenantCtx.set({ userId: randomUUID(), tenantId, role: 'owner' });
+      tenantCtx.set({
+        kind: 'user',
+        userId: randomUUID(),
+        tenantId,
+        role: 'owner',
+      });
       return fn();
     });
 
@@ -117,9 +122,9 @@ describe('TenantDbService.run — transaction seam', () => {
       db.run(async () => {
         await db.run((tx) =>
           tx
-              .insert(property)
-              .values({ tenantId, name, slug: testSlug() })
-              .returning(),
+            .insert(property)
+            .values({ tenantId, name, slug: testSlug() })
+            .returning(),
         );
       }),
     );
@@ -191,7 +196,9 @@ describe('TenantDbService.run — transaction seam', () => {
     await expect(
       asTenant(() =>
         db.run(async () => {
-          tenantCtx.set({ userId: randomUUID(),
+          tenantCtx.set({
+            kind: 'user',
+            userId: randomUUID(),
             tenantId: otherTenantId,
             role: 'owner',
           });

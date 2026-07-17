@@ -16,6 +16,16 @@ _Avoid_: account, organization, workspace, client
 The person who runs a Tenant and its inventory.
 _Avoid_: host, landlord, admin
 
+**Visitor**:
+Someone reading a public page. They have booked nothing and belong to no Tenant - but they are
+always looking at exactly one Tenant's Property, so a Visitor is never tenant-less.
+_Avoid_: anonymous, public user, lead
+
+**Guest**:
+Someone a booking is for. A Visitor becomes a Guest by booking; that conversion is what the funnel
+exists to cause, so the two are not the same word.
+_Avoid_: customer, visitor, user
+
 ### Inventory
 
 **Property**:
@@ -32,9 +42,16 @@ A Property whose licence (NIB) is on file. A claim about paperwork, not a qualit
 _Avoid_: approved, certified, trusted
 
 **Publishable**:
-A Property complete enough for its public page to be worth rendering: at least one photo and at least
-one Unit priced above zero. A zero-priced Unit is a placeholder, not sellable inventory.
+A Property whose public page is complete: at least one photo and at least one Unit priced above zero.
+A zero-priced Unit is a placeholder, not sellable inventory.
+A readiness checklist shown to the Owner - **not** a gate. The public page renders either way, so
+that deleting a photo can never silently kill a link already in the wild. Nothing is "unpublished".
 _Avoid_: complete, live, published
+
+**Slug**:
+A Property's permanent public address (`/p/seminyak-beach-villa`). Minted once from the name and
+never moved by a rename - it is where the Property lives, not what it is called.
+_Avoid_: url, permalink, handle
 
 ### Bookings
 

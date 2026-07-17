@@ -9,7 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import {
   TenantContext,
-  type Principal,
+  type UserPrincipal,
 } from '../common/tenant-context.service';
 
 // Shape of the signed access-token payload - JWT's vocabulary, not ours.
@@ -18,7 +18,7 @@ import {
 interface AccessPayload {
   sub: string;
   tenantId: string;
-  role: Principal['role'];
+  role: UserPrincipal['role'];
 }
 
 // Validates the access token from `Authorization: Bearer`, attaches req.user,
@@ -32,7 +32,9 @@ export class JwtAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const req = ctx.switchToHttp().getRequest<Request & { user?: Principal }>();
+    const req = ctx
+      .switchToHttp()
+      .getRequest<Request & { user?: UserPrincipal }>();
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) {
       throw new UnauthorizedException('Missing bearer token');
@@ -51,7 +53,8 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     // Wire → domain. The one place JWT's `sub` becomes the domain's userId.
-    const principal: Principal = {
+    const principal: UserPrincipal = {
+      kind: 'user',
       userId: payload.sub,
       tenantId: payload.tenantId,
       role: payload.role,
