@@ -28,9 +28,19 @@ interface ActiveTx {
 }
 
 /**
- * Wrap a transaction so every call through it asserts the transaction is still
- * open. This is the enforcement behind "work started inside run() must be
- * awaited before it returns" - without it, that rule is only a comment.
+ * Wrap a transaction so that every call made through this handle asserts the
+ * transaction is still open.
+ *
+ * Scope, precisely - it guards CALLS THROUGH THE HANDLE, nothing wider. A
+ * query *built* here and executed later still escapes: drizzle's builders are
+ * lazy thenables holding the raw session, so `const q = tx.select().from(x)`
+ * inside the callback and `await q` after it returns lands on whichever
+ * transaction now owns the connection. Narrower door than an un-awaited query,
+ * same blast radius. Tracked as #75; unreachable today.
+ *
+ * Do not read this as enforcing "work started inside run() must be awaited
+ * before it returns" in general. Claiming that was the bug in the first
+ * attempt at this guard, which checked liveness only when `run` was entered.
  */
 function guardTx(tx: DbTx, active: ActiveTx): DbTx {
   return new Proxy(tx, {
