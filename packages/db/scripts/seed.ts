@@ -7,9 +7,10 @@
  * Run: pnpm --filter @sambung/db db:seed
  */
 import "./load-env";
-import { count } from "drizzle-orm";
+import { count, eq } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { closeDb, db } from "../src/index";
+import { uploadSeedPhotos } from "./seed-photos";
 import {
   appUser,
   booking,
@@ -211,6 +212,26 @@ async function main() {
       amountIdr: 14_000_000n,
       status: "paid",
     });
+
+    // --- demo photos (#46) ---
+    // Seminyak and Ubud get a gallery; CANGGU DELIBERATELY DOES NOT. The seed
+    // already withholds licenseNo from Canggu to demo the conditional Verified
+    // badge - same instinct here: one bare property means the demo shows the
+    // publishable checklist doing its job, and proves the public page renders
+    // without a gallery rather than breaking (ADR-0004).
+    //
+    // Inside the transaction so a storage failure mid-way cannot leave rows
+    // pointing at objects that were never uploaded.
+    const photos = await uploadSeedPhotos([
+      { tenantId: T1, propertyId: P_SEMINYAK, palette: "seminyak", count: 3 },
+      { tenantId: T2, propertyId: P_UBUD, palette: "ubud", count: 3 },
+    ]);
+    for (const [propertyId, keys] of photos) {
+      await tx
+        .update(property)
+        .set({ photos: keys })
+        .where(eq(property.id, propertyId));
+    }
   });
 
   // Report final counts.
