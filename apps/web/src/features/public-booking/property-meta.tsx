@@ -23,7 +23,7 @@ import type { PublicPropertyResponse } from "@sambung/shared";
  * The fix is cheaper than architecture §6 assumes: §6 imagines Puppeteer, but
  * social crawlers only READ meta tags - they never render - so Caddy can match
  * their user agents and proxy to a small API route returning a static OG stub,
- * with humans and Googlebot still getting the real SPA. Tracked as a follow-up.
+ * with humans and Googlebot still getting the real SPA. Tracked as #87.
  * ---------------------------------------------------------------------------
  */
 export function PropertyMeta({

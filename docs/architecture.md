@@ -212,7 +212,7 @@ SPA HTML is thin until JS runs → weaker SEO by default. Handle it in tiers (pi
 
 > **Tier 1 is not enough here, and it's worth being precise about why.** Client-rendered OG tags are invisible to *every* link-preview crawler — WhatsApp, `facebookexternalhit`, Twitterbot, Telegram, LINE. They fetch raw HTML and never execute JS, so a forwarded villa previews as a blank card reading "Sambung". Googlebot is fine; the crawler this product lives on is not. Sambung's whole distribution model is a link pasted into a chat — in Indonesia, WhatsApp — so the gap sits exactly where the value is (#46, FR-NOTIF-2).
 >
-> Tier 2 is also cheaper than "Prerender / Puppeteer snapshot" implies, which is what made it look like a bigger step than it is: **social crawlers only read meta tags — they never render.** So Caddy can match their user agents and proxy to a small API route that returns a static OG stub, while humans and Googlebot get the real SPA. A template, not a headless browser on a $5 VPS. Tracked as a follow-up to #46.
+> Tier 2 is also cheaper than "Prerender / Puppeteer snapshot" implies, which is what made it look like a bigger step than it is: **social crawlers only read meta tags — they never render.** So Caddy can match their user agents and proxy to a small API route that returns a static OG stub, while humans and Googlebot get the real SPA. A template, not a headless browser on a $5 VPS. Tracked as #87.
 
 For the portfolio, tier 1–2 + a README note "in production I'd SSR the public funnel" is the mature answer.
 
