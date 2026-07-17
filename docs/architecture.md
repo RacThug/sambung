@@ -73,12 +73,15 @@ api/src/
 ```
 
 ### 3.3 Multi-tenancy enforcement (boss fight #5)
-1. `JwtAuthGuard` validates the access token, attaches `req.user` (which carries `tenant_id` + role).
-2. `TenantContextInterceptor` exposes that `tenant_id` to services via a request-scoped context.
-3. **Every** repository query filters by `tenant_id`. No exceptions, because the denormalized column (DB doc §4.5) makes it one cheap `WHERE`.
-4. (Defense in depth) Postgres RLS policies `using (tenant_id = current_setting('app.tenant_id'))` — set the GUC per request. Even a forgotten `WHERE` then returns nothing instead of leaking.
+1. `JwtAuthGuard` validates the access token, mints the `Principal` (JWT's `sub` becomes `userId` here — the token's vocabulary stops at the guard), attaches `req.user`, and seeds `TenantContext`.
+2. `TenantContext` owns the principal: its type, its storage (AsyncLocalStorage via `nestjs-cls`), and its key. Everything reads the tenant from there — services, repositories, and `TenantDbService` — so nothing threads a `tenant_id` parameter that someone could forget, or pass wrong. No principal → it throws; a request with no tenant is a bug, not a query.
+3. **Every** repository query filters by `tenant_id`. No exceptions, because the denormalized column (DB doc §4.5) makes it one cheap `WHERE`. This is not redundant with the ambient read — both come from the same place, so they cannot disagree. It guards **RLS not being in force at all**: boot against `DATABASE_URL` instead of `APP_DATABASE_URL` and the owner role bypasses every policy, leaving this `WHERE` as the only thing standing. That's one env var.
+4. (Defense in depth) Postgres RLS policies `using (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)` — `TenantDbService.run` sets the GUC per transaction, on a non-owner role. Even a forgotten `WHERE` returns nothing instead of leaking.
+   The `nullif` is load-bearing, not noise: `set_config(..., is_local => true)` reverts at COMMIT to the GUC's *reset* value, which for a custom GUC already set once on that session is the **empty string, not NULL**. Without it, a query with no tenant returns zero rows on a fresh connection but errors `22P02` on a pooled one that has served a request — so "fail-closed" held only until the pool warmed up (#74).
 
 > The portfolio money-shot: a test that logs in as tenant A, requests tenant B's booking by ID, and asserts 404. Two layers (app guard + RLS) both have to fail for a leak.
+>
+> Both layers are tested **alone**, because a claim about two layers is worth nothing if either is only ever exercised behind the other. `properties.spec.ts` proves RLS scopes a query with no `WHERE`, and proves the `WHERE` scopes with RLS bypassed (repository over an owner-role connection). `packages/db/test/rls.test.ts` covers all 9 policies at the DB seam.
 
 ### 3.4 The scheduler (why NestJS, not serverless)
 `channel-sync` uses `@nestjs/schedule`:
