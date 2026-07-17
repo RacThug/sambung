@@ -53,7 +53,38 @@ const PRINCIPAL_KEY = 'principal';
 export class TenantContext {
   constructor(private readonly cls: ClsService) {}
 
+  /**
+   * Mint the principal for this request. Once.
+   *
+   * Throws rather than overwriting, because a second mint is never a legitimate
+   * thing to want: one request acts for one principal. The failure it forecloses
+   * is specific and was found in review of #46. `PublicScope` is globally
+   * injectable, so if any GUARDED route ever calls `enterFromSlug`, the Owner
+   * that JwtAuthGuard minted would be silently replaced by a Visitor of whatever
+   * tenant owns that slug - and every query after it would run under the wrong
+   * scope. `TenantDbService.run` would not catch it: it compares principals only
+   * INSIDE an already-open transaction; outside one it simply opens a new
+   * transaction under the new tenant.
+   *
+   * That hazard also answers the fair objection to ADR-0003: it rejects
+   * `runAsTenant(tenantId, fn)` because any caller could name any tenant, yet
+   * `enterFromSlug(slug)` lets any caller name any slug, and slugs are public.
+   * The difference the ADR relies on is real but was incomplete - it confined
+   * the VALUE, not who may re-mint. This is the other half, and it is the same
+   * idiom as the Principal union: make it unrepresentable, not unlikely.
+   *
+   * No live caller does this today (M2's `POST /public/bookings` is the next
+   * one). Cheap to close before it arrives, expensive to debug after.
+   */
   set(principal: Principal): void {
+    if (this.cls.get<Principal>(PRINCIPAL_KEY)) {
+      throw new Error(
+        'TenantContext.set: a principal is already minted for this request. ' +
+          'One request acts for one principal - re-minting would silently ' +
+          're-scope every query after it, which is how an Owner becomes a ' +
+          "Visitor of someone else's tenant.",
+      );
+    }
     this.cls.set(PRINCIPAL_KEY, principal);
   }
 

@@ -10,6 +10,7 @@ import { property, tenant, unit } from '@sambung/db';
 import type { AuthResponse, PublicPropertyResponse } from '@sambung/shared';
 import { AppModule } from '../app.module';
 import { PublicScope } from '../common/public-scope.service';
+import { TenantContext } from '../common/tenant-context.service';
 import { DbService } from '../db/db.service';
 import { TenantDbService } from '../db/tenant-db.service';
 import { testSlug } from '../test-helpers';
@@ -147,6 +148,37 @@ describe('Public property page', () => {
       .expect(404);
   });
 
+  /**
+   * Found in review. `%00` decodes to a NUL byte, which Postgres rejects with
+   * 22021 - not a constraint violation, so unmapped, so a 500 on the one route
+   * with no authentication in front of it. The controller's comment claimed a
+   * malformed slug was "simply a 404"; parameterizing the query stops injection,
+   * not this. SlugParamPipe refuses it before any lookup.
+   */
+  it('404s a malformed slug rather than 500ing (never reaches the database)', async () => {
+    for (const slug of [
+      '%00',
+      '%00villa',
+      'Villa Bali',
+      'UPPERCASE',
+      '-leading',
+      'trailing-',
+      'double--dash',
+      '../../etc/passwd',
+      "'--",
+      '<script>alert(1)</script>',
+    ]) {
+      const res = await request(server()).get(`/api/public/properties/${slug}`);
+      expect([slug, res.status]).toEqual([slug, 404]);
+    }
+  });
+
+  it('never leaks internals in the 404 body', async () => {
+    // api-spec §1: errors carry no SQL, no constraint names, no stack.
+    const res = await request(server()).get('/api/public/properties/%00');
+    expect(JSON.stringify(res.body)).not.toMatch(/22021|slug|postgres|select/i);
+  });
+
   it('never leaks the license value, only the badge', async () => {
     const res = await request(server()).get(`/api/public/properties/${slugA}`);
     const body = bodyOf<PublicPropertyResponse>(res);
@@ -259,6 +291,33 @@ describe('Public property page', () => {
     await expect(
       cls.run(() => tenantDb.run((tx) => tx.select().from(property))),
     ).rejects.toThrow(/Tenant context is empty/);
+  });
+
+  /**
+   * Found in review. PublicScope is globally injectable, so nothing stopped a
+   * guarded route from calling enterFromSlug and silently turning its Owner into
+   * a Visitor of whichever tenant owns that slug - every query after it running
+   * under the wrong scope. TenantDbService.run would not have caught it: it
+   * compares principals only inside an already-open transaction.
+   */
+  it('refuses to re-mint a principal over an existing one', async () => {
+    const cls = app.get(ClsService);
+    const tenantCtx = app.get(TenantContext);
+    const scope = app.get(PublicScope);
+
+    await expect(
+      cls.run(async () => {
+        // An authenticated request: the guard mints the Owner first...
+        tenantCtx.set({
+          kind: 'user',
+          userId: 'test',
+          tenantId: createdTenantIds[0],
+          role: 'owner',
+        });
+        // ...then something reaches for the public path in the same request.
+        await scope.enterFromSlug(slugB);
+      }),
+    ).rejects.toThrow(/already minted/);
   });
 
   it('keeps the slug when the property is renamed (ADR-0004)', async () => {

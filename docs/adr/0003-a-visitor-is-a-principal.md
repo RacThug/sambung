@@ -52,6 +52,17 @@ already typed. Minting a principal also means **nothing downstream changes** -
 `run` and every repository keep reading the tenant ambiently, exactly as they do
 for an Owner. The only new thing is where the mint comes from: a token, or a slug.
 
+> **This argument was incomplete as first written; review caught it.**
+> `PublicScope` is globally injectable, so `enterFromSlug(slug)` lets any caller
+> name any *slug* - and slugs are public, so that resolves to any tenant. What
+> the shape confines is the **value**, not **who may re-mint the principal**. The
+> missing half now exists: `TenantContext.set` throws when a principal is already
+> minted, so a guarded route cannot silently swap its Owner for a Visitor
+> mid-request. `TenantDbService.run` would *not* have caught that - it compares
+> principals only *inside* an already-open transaction; outside one it simply
+> opens a new transaction under the new tenant. One request, one principal,
+> enforced rather than assumed. The claim above holds only because of it.
+
 **Why the union rather than a synthetic userId + role.** A Visitor with a
 plausible-looking `role` is a lie the type system would help us tell. The union
 makes a Visitor drifting into a role check a compile error rather than a
@@ -93,6 +104,9 @@ write that matters most.
 
 - `PublicScope` is the **only** class permitted to query across tenants for an
   unauthenticated request. Keep its surface tiny; it is what a reviewer greps for.
+- **One request mints one principal.** `TenantContext.set` throws on a second
+  mint, which is what stops `enterFromSlug` from being a re-scoping backdoor on a
+  guarded route. Anything that wants to act for two tenants wants two requests.
 - Public endpoints must call `enterFromSlug` (or its M2 siblings) before touching
   anything tenant-scoped. Forgetting fails loudly - `run` throws, 500 - rather
   than silently returning zero rows.

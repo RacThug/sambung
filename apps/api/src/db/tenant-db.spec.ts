@@ -67,6 +67,14 @@ describe('TenantDbService.run — transaction seam', () => {
     otherTenantId = rows[1].id;
   });
 
+  // The principal-switch test below stubs a getter on the shared TenantContext.
+  // Without this, that stub outlives its test and every later one silently runs
+  // as the wrong tenant - a stub that escapes its test is a flaky suite waiting
+  // for someone to add a test after it. (`restoreMocks` isn't on in this config.)
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   afterAll(async () => {
     await dbs.db
       .delete(tenant)
@@ -189,23 +197,51 @@ describe('TenantDbService.run — transaction seam', () => {
     );
   });
 
+  /**
+   * The GUC belongs to the outer transaction and can't be changed for one nested
+   * call, so joining under a different principal would silently run this work
+   * under the wrong tenant's scope.
+   *
+   * The switch is FORCED with a stub, because the legitimate door is now shut:
+   * this test used to call `tenantCtx.set()` a second time, and since #46's
+   * review that throws (one request, one principal). Two layers, and this one is
+   * proven alone - the same standard architecture §3.3 sets for the app filter
+   * and RLS. A guard only ever exercised behind another guard is a guard nobody
+   * has actually tested.
+   */
   it('refuses to join a transaction opened for a different tenant', async () => {
-    // The GUC belongs to the outer transaction and can't be changed for one
-    // nested call, so joining under a different principal would silently run
-    // this work under the wrong tenant's scope.
     await expect(
       asTenant(() =>
         db.run(async () => {
-          tenantCtx.set({
-            kind: 'user',
-            userId: randomUUID(),
-            tenantId: otherTenantId,
-            role: 'owner',
-          });
+          jest
+            .spyOn(tenantCtx, 'tenantId', 'get')
+            .mockReturnValue(otherTenantId);
           return db.run(xactId);
         }),
       ),
     ).rejects.toThrow(/principal changed inside an open transaction/);
+  });
+
+  /**
+   * The outer half of the same protection (#46 review): the switch above cannot
+   * be reached through TenantContext at all. PublicScope is globally injectable,
+   * so without this a guarded route calling `enterFromSlug` would silently swap
+   * its Owner for a Visitor of whatever tenant owns that slug - and `run` only
+   * compares principals INSIDE an open transaction, so outside one it would just
+   * open a new one under the wrong tenant.
+   */
+  it('cannot re-mint a principal over an existing one', () => {
+    expect(() =>
+      cls.run(() => {
+        tenantCtx.set({
+          kind: 'user',
+          userId: randomUUID(),
+          tenantId,
+          role: 'owner',
+        });
+        tenantCtx.set({ kind: 'visitor', tenantId: otherTenantId });
+      }),
+    ).toThrow(/already minted/);
   });
 
   it('assertInTransaction throws outside a run', () => {

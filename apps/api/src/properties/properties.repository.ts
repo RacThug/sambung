@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, count, eq, getTableColumns, sql } from 'drizzle-orm';
-import { booking, property, unit, type Property, type Unit } from '@sambung/db';
+import { booking, property, unit, type Property } from '@sambung/db';
 import { isVerified } from '@sambung/shared';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
@@ -29,7 +29,25 @@ export type PublicPropertyRow = {
   description: string | null;
   verified: boolean;
   photos: string[];
-  units: Unit[];
+  units: PublicUnitRow[];
+};
+
+/**
+ * The unit half of the same projection, for the same reason.
+ *
+ * This was `Unit` - the whole row, tenantId and createdAt included. The payload
+ * was still correct (the service maps by hand and zod strips the rest), but the
+ * principle above was then true of `property` and merely *observed* for `unit`:
+ * two structural layers for one, one layer plus a convention for the other.
+ * Caught in review. If a projection is what keeps the secret out, it has to
+ * cover everything the projection returns.
+ */
+export type PublicUnitRow = {
+  id: string;
+  name: string;
+  basePriceIdr: bigint;
+  maxGuests: number;
+  minStay: number;
 };
 
 // Units under this property with a real price (> 0 - a zero-rupiah unit is a
@@ -260,9 +278,18 @@ export class PropertiesRepository {
       if (!row) return null;
 
       const units = await tx
-        .select()
+        .select({
+          id: unit.id,
+          name: unit.name,
+          basePriceIdr: unit.basePriceIdr,
+          maxGuests: unit.maxGuests,
+          minStay: unit.minStay,
+        })
         .from(unit)
         .where(and(eq(unit.propertyId, row.id), eq(unit.tenantId, tenantId)))
+        // Ordered by createdAt without selecting it: the gallery order of the
+        // rooms is the order the owner entered them, but a Visitor has no use
+        // for the timestamp itself.
         .orderBy(asc(unit.createdAt), asc(unit.id));
 
       // Built field by field, NOT spread. licenseNo stops here - it becomes the
