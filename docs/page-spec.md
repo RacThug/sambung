@@ -103,11 +103,11 @@ Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · *
 - **Data:** api #8 + #15; **Actions:**
   - Details form → api #10 (`licenseNo` ↔ Verified badge preview).
   - **Photos:** file picker → presign (api #12) → browser `PUT` to storage → persist/reorder keys (api #13). Progress per file; type/size errors from presign shown pre-upload.
-  - **Units:** inline CRUD → api #14/#16; per-unit price/guests/min-stay.
+  - **Units:** inline table → api #14/#15/#16; per-unit price/guests/min-stay. Rows are read-only until **Edit**; a **permanent add row** sits at the bottom (never a dialog), because a Unit is one sellable thing (ADR-0001), so 8 identical rooms are 8 creates in one sitting - Enter submits and the row clears for the next. A zero-priced unit is flagged **not sellable** on its own row: it's storable on purpose (a placeholder, not an error), it just doesn't count toward `publishable`. A duplicate name comes back as a **409** and renders on the name field, identically to a zod 400 - zod can't catch it, since it needs the other rows.
   - Per-unit **channels** section (M4): connect (api #28), list + status (api #29), disconnect (api #30 - shows "n imported bookings kept"), **Sync now** (api #31), copy **export .ics URL** (api #34) with "paste this into the OTA" helper (flow 4.1 step 5).
   - Link out: "view public page" → `/p/:slug` (+ `publishable` checklist when incomplete: needs ≥1 photo + ≥1 unit priced above zero).
-  - Delete property → api #11; **409 path renders the reason** ("n future bookings - cancel them first").
-- **States:** tab-level loading/saving · upload progress/failure per photo · unit delete 409 (same future-bookings guard).
+  - Delete property → api #11; **409 path renders the reason** ("this property has n bookings - deleting it would destroy that history"). Delete is only for inventory nothing was ever booked on (ADR-0002); the copy says so up front rather than only on failure. Retiring inventory with history is archive (M2, #84).
+- **States:** tab-level loading/saving · upload progress/failure per photo · unit delete 409 rendered on the row (same any-booking guard).
 
 ### 4.6 Channel sync health - `/app/channels` - **M4**
 - **Purpose:** fleet-wide view of every OTA connection + **the conflict inbox** (#38) - the page that makes sync failures impossible to miss (FR-SYNC-3).

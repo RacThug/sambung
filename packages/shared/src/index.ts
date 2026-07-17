@@ -12,8 +12,10 @@
 import { z } from "zod";
 
 export * from "./auth";
+export * from "./money";
 export * from "./photo";
 export * from "./property";
+export * from "./unit";
 
 /** Booking lifecycle. Availability is derived from these rows. (db-design.md) */
 export const bookingStatusSchema = z.enum([
@@ -32,17 +34,6 @@ export const bookingSourceSchema = z.enum([
   "manual",
 ]);
 export type BookingSource = z.infer<typeof bookingSourceSchema>;
-
-/**
- * Money is integer rupiah (no float, no cents). CLAUDE.md invariant #6.
- * Branded so a raw number can't be passed where rupiah is expected.
- */
-export type Rupiah = number & { readonly __brand: "Rupiah" };
-export const rupiahSchema = z
-  .number()
-  .int()
-  .nonnegative()
-  .transform((n) => n as Rupiah);
 
 /** Health-check response shape, shared by API and any client probe. */
 export const healthResponseSchema = z.object({

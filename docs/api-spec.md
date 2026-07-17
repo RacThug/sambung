@@ -55,9 +55,9 @@ Sources: `direct | airbnb | booking_com | vrbo | manual_block`. Transitions outs
 | 11 | `DELETE /properties/:id` | Delete (guarded) | M1 | PROP-1 |
 | 12 | `POST /properties/:id/photos/presign` | Presigned photo upload | **Built** | PROP-1 |
 | 13 | `PATCH /properties/:id/photos` | Persist/reorder photo keys | **Built** | PROP-1 |
-| 14 | `POST /properties/:id/units` | Create unit | M1 | PROP-2 |
-| 15 | `GET /properties/:id/units` | List units | M1 | PROP-2 |
-| 16 | `PATCH /units/:id` · `DELETE /units/:id` | Update/delete unit (guarded) | M1 | PROP-2 |
+| 14 | `POST /properties/:id/units` | Create unit | **Built** | PROP-2 |
+| 15 | `GET /properties/:id/units` | List units | **Built** | PROP-2 |
+| 16 | `PATCH /units/:id` · `DELETE /units/:id` | Update/delete unit (guarded) | **Built** | PROP-2 |
 | 17 | `GET /units/:id/calendar?from&to` | Owner calendar (all sources) | M2 | CAL-3 |
 | 18 | `GET /bookings?from&to&propertyId&status&source` | Reservations list/filter | M2 | - |
 | 19 | `GET /bookings/export.csv?…` | CSV export (same filters) | M5 | - |
@@ -120,8 +120,12 @@ Tenant-scoped list, `createdAt` ascending. Empty tenant → `[]` (never other te
 ### 4.3 `POST /properties` → 201 · `PATCH /properties/:id` → 200 - M1
 Fields: `name` (required, 2-160), `address?`, `latitude?`/`longitude?` (valid ranges), `description?`, `licenseNo?` (NIB). Response includes derived `verified: boolean` - true iff `licenseNo` is non-empty (FR-PROP-3). A public page needs ≥1 photo + ≥1 unit with a price **above zero** to render "complete" (FR-PROP-1 AC) - the API exposes `publishable: boolean` computed from that rule. A zero-rupiah unit is storable (§4.6) but never counts toward publishability: it's a placeholder, not a sellable listing.
 
-### 4.4 `DELETE /properties/:id` → 204 - M1
-**Guarded:** if any unit under it has a *future occupying* booking → `409` naming the count. Deleting live inventory must be an explicit two-step (cancel bookings first). Same rule for `DELETE /units/:id`.
+### 4.4 `DELETE /properties/:id` → 204 - **Built** (M1)
+**Guarded:** if **any** booking has ever referenced a unit under it - past, cancelled and expired included - → `409` naming the count. Same rule for `DELETE /units/:id`. Delete is only for inventory that was never booked; retiring inventory that has history is **archive** (M2, #84).
+
+Two layers, per invariant #5: the service guard produces the count and the message, and both `booking → unit` FKs are `on delete no action` so the database refuses too ([ADR-0002](adr/0002-deleting-inventory-never-destroys-the-ledger.md)). The FK is deliberately **not** mapped in the constraint map - the guard locks the unit before counting, so nothing can slip in behind it, and a FK that fires anyway means a code path skipped the guard: a 500, not a 409.
+
+> **Superseded:** this used to read "*future occupying* booking → 409 … (cancel bookings first)". That guard protected the calendar, not the ledger - it never saw past or cancelled bookings, so `DELETE` returned 204 and cascaded them, and their `payment` rows, into nothing. "Cancel them first" is also gone: cancelling doesn't remove the row, so it promised an escape that doesn't exist.
 
 ### 4.5 Photos - **Built** (#39, architecture §3.6)
 Shared types: `packages/shared/src/photo.ts` (`presignPhotoRequestSchema`, `presignPhotoResponseSchema`, `updatePhotosRequestSchema`).
@@ -129,9 +133,15 @@ Shared types: `packages/shared/src/photo.ts` (`presignPhotoRequestSchema`, `pres
 - `PATCH /properties/:id/photos` body `{ keys: string[] }` (ordered, ≤ 30, all must carry the caller's `<tenantId>/<propertyId>/` prefix - a key for another tenant OR another own property → 400) → 200 full `PropertyResponse`. Persist + reorder + delete in one idempotent set-operation. Keys **new to the gallery** must reference a real uploaded image - one ranged GET verifies existence + magic bytes against the stored content type (presigned-but-never-uploaded or junk-bytes-as-jpeg → 400); already-persisted keys are trusted, so reorders cost nothing. Orphaned objects are GC'd out-of-band (deferred).
 - `PropertyResponse` carries `photos: [{ key, url }]` (order = gallery order, url = `STORAGE_PUBLIC_BASE_URL/<key>`); `publishable` counts these photos.
 
-### 4.6 Units - M1
-`POST /properties/:id/units` → 201, `GET /properties/:id/units` → 200, `PATCH /units/:id` → 200.
-Fields: `name`, `basePriceIdr` (int ≥ 0; a 0 price is storable but keeps the property unpublishable - §4.3), `maxGuests` (int ≥ 1, default 2), `minStay` (nights, int ≥ 1, default 1). The DB CHECKs mirror these bounds - a bypassed app check still cannot store garbage.
+### 4.6 Units - **Built** (#45)
+`POST /properties/:id/units` → 201, `GET /properties/:id/units` → 200 (`createdAt` asc), `PATCH /units/:id` → 200, `DELETE /units/:id` → 204 (guarded, §4.4).
+Shared types: `packages/shared/src/unit.ts` (`createUnitRequestSchema`, `updateUnitRequestSchema`, `unitResponseSchema`, `isSellable`).
+
+Fields: `name`, `basePriceIdr` (int ≥ 0; a 0 price is storable but keeps the property unpublishable - §4.3), `maxGuests` (int ≥ 1, default 2), `minStay` (nights, int ≥ 1, default 1). The DB CHECKs mirror these bounds - a bypassed app check still cannot store garbage. Every field is mutable: a booking snapshots its own `totalPriceIdr`, and `minStay` applies when booking, so neither is retroactive. `404` for another tenant's property or unit id (indistinguishable from unknown).
+
+**A Unit is one sellable thing, not a room type with a quantity** ([ADR-0001](adr/0001-unit-is-one-sellable-thing.md)): three identical garden rooms are three units. `name` is therefore `unique(property_id, name)` → `409` on a duplicate within one property (two *different* properties may each have a "Garden Room"). This is the one unit constraint that IS mapped in the constraint map - zod cannot check it, since the answer depends on the other rows, so the DB isn't a backstop here, it's the only check.
+
+**Bounds are proven per layer, not per request** (#45's "rejected twice over"): if zod works, a negative price never reaches the CHECK, so one request cannot exercise both. zod is proven in `packages/shared/test/unit.test.ts`, the CHECKs in `packages/db/test/unit-bounds.test.ts` (raw inserts as the owner role, asserting `23514`). A CHECK firing in production means the boundary is broken → 500, unmapped, deliberately.
 
 ### 4.7 `GET /public/properties/:slug` → 200 - M1 (no auth)
 Public page payload: property (name, address, description, `verified`, photos as public URLs) + its units (name, `basePriceIdr`, `maxGuests`, `minStay`). No PII, no license number value (only the boolean), no tenant internals. `404` unknown slug.
@@ -229,7 +239,7 @@ Disconnects. Already-imported bookings are **kept** (they may reflect real stays
 1. **404-over-403 for cross-tenant probes** - verified by test per resource (the pattern exists for properties; every new resource copies it).
 2. **Every write is FSM- and constraint-checked** - invalid transitions and overlaps are 409s with stable machine-readable `message` slugs; clients switch on those, not prose.
 3. **Public endpoints are rate-limit candidates** (`/auth/*`, `/public/bookings*`) - deferred to M5, named here so it isn't forgotten. No CAPTCHA in v1.
-4. **BigInt discipline:** DB `bigint` ⇄ JSON number happens in one serialization helper; no `JSON.stringify` of raw rows with BigInt fields.
+4. **BigInt discipline:** DB `bigint` ⇄ JSON number happens in one serialization helper - `toRupiah()` in `packages/shared/src/money.ts` (#45); no `JSON.stringify` of raw rows with BigInt fields. The `Rupiah` brand is what enforces it: a bare `number` doesn't typecheck as a money field, so a response path can't skip the helper. It throws above `MAX_SAFE_INTEGER` rather than rounding - a stored value that big never came through `rupiahSchema`, so it's corruption, not a price.
 5. **Testing seam** (matches existing prior art - `auth.spec.ts`, `properties.spec.ts`): behaviors in this spec are tested with supertest over real HTTP against the booted app + real Postgres; DB-owned invariants at the `packages/db` vitest seam; the only fakes sit at the outbound provider edge (Midtrans client, iCal fetch) so webhook/feed fixtures can drive flows end-to-end.
 
 ## 9. Out of scope (v1, per PRD §2.2)

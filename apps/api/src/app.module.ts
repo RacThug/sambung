@@ -9,6 +9,7 @@ import { DbErrorInterceptor } from './common/db-error/db-error.interceptor';
 import { DbModule } from './db/db.module';
 import { AuthModule } from './auth/auth.module';
 import { PropertiesModule } from './properties/properties.module';
+import { UnitsModule } from './units/units.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { PropertiesModule } from './properties/properties.module';
     DbModule,
     AuthModule,
     PropertiesModule,
+    UnitsModule,
   ],
   controllers: [AppController],
   providers: [
