@@ -142,6 +142,19 @@ export const unit = pgTable(
   (t) => [
     // Composite-FK target for booking/channel_connection tenant FKs (#40).
     unique("unit_id_tenant_uniq").on(t.id, t.tenantId),
+    // A Unit is ONE sellable thing (ADR-0001), so an owner with 8 identical
+    // rooms creates 8 rows - which makes near-identical names the common case,
+    // not the exception. Scoped to the property: two properties may each have a
+    // "Garden Room"; the same property may not. Case-sensitive on purpose -
+    // being told "Garden Room" is taken while looking at a list showing
+    // "garden room" confuses more than the near-duplicate it would prevent.
+    //
+    // Not cosmetic: M4 wires an OTA iCal feed per unit (#28) from a dropdown
+    // labelled by name. Two rows reading "Garden Room" and the owner connects
+    // Airbnb's calendar for one into the other - a real overbooking that no
+    // exclusion constraint can catch, because the bookings don't overlap, they
+    // are just on the wrong unit.
+    unique("unit_property_name_uniq").on(t.propertyId, t.name),
     // unit.tenant_id must equal its property's tenant_id - a mismatch is
     // unrepresentable, not an app-code obligation (db-design §4.5).
     foreignKey({
@@ -195,9 +208,12 @@ export const booking = pgTable(
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    // no action, NOT cascade: deleting inventory must never destroy the ledger
+    // (ADR-0002). See the twin composite FK below - BOTH must refuse, or the
+    // survivor cascades the booking away and the check passes against zero rows.
     unitId: uuid("unit_id")
       .notNull()
-      .references(() => unit.id, { onDelete: "cascade", onUpdate: "cascade" }),
+      .references(() => unit.id, { onDelete: "no action", onUpdate: "cascade" }),
     source: bookingSource("source").notNull(),
     status: bookingStatus("status").notNull(),
     checkIn: date("check_in", { mode: "string" }).notNull(),
@@ -222,11 +238,19 @@ export const booking = pgTable(
       .on(t.channelConnectionId, t.externalUid)
       .where(sql`${t.externalUid} is not null`),
     // booking.tenant_id must equal its unit's tenant_id (db-design §4.5, #40).
+    //
+    // `no action`, not `cascade` (ADR-0002) and not `restrict`: the two differ
+    // in WHEN they check. `restrict` fires immediately and would break deleting
+    // a tenant, which legitimately cascades tenant -> property -> unit ->
+    // booking; `no action` defers to end-of-statement, by which time the tenant
+    // cascade has removed the bookings via booking.tenant_id, and passes.
+    // Account closure still works; deleting a unit out from under its bookings
+    // does not.
     foreignKey({
       name: "booking_unit_tenant_fk",
       columns: [t.unitId, t.tenantId],
       foreignColumns: [unit.id, unit.tenantId],
-    }).onDelete("cascade"),
+    }).onDelete("no action"),
     check("booking_stay_nonempty", sql`${t.checkOut} > ${t.checkIn}`),
     check(
       "booking_total_price_nonneg",

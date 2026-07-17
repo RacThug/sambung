@@ -92,7 +92,12 @@ create table unit (
   base_price_idr bigint not null check (base_price_idr >= 0),            -- integer rupiah, never float (see §4.5)
   max_guests     int not null default 2 check (max_guests > 0),
   min_stay       int not null default 1 check (min_stay >= 1),
-  created_at     timestamptz not null default now()
+  created_at     timestamptz not null default now(),
+
+  -- A Unit is ONE sellable thing, never a room type with a count (ADR-0001):
+  -- 8 identical rooms are 8 rows, so the name is all that tells them apart.
+  -- M4 wires an OTA feed per unit from a dropdown labelled by it.
+  constraint unit_property_name_uniq unique (property_id, name)
 );
 
 -- Channels ------------------------------------------------------------------
@@ -117,7 +122,7 @@ create type booking_status as enum ('pending_payment', 'confirmed', 'cancelled',
 create table booking (
   id                    uuid primary key default gen_random_uuid(),
   tenant_id             uuid not null references tenant(id) on delete cascade,   -- denormalized for RLS
-  unit_id               uuid not null references unit(id) on delete cascade,
+  unit_id               uuid not null references unit(id) on delete no action,  -- never cascade: see §4.9
   source                booking_source not null,
   status                booking_status not null,
   stay                  daterange not null,        -- half-open: [check_in, check_out)
@@ -155,7 +160,7 @@ alter table unit     add constraint unit_property_tenant_fk
   foreign key (property_id, tenant_id) references property (id, tenant_id) on delete cascade;
 alter table unit     add constraint unit_id_tenant_uniq unique (id, tenant_id);
 alter table booking  add constraint booking_unit_tenant_fk
-  foreign key (unit_id, tenant_id) references unit (id, tenant_id) on delete cascade;
+  foreign key (unit_id, tenant_id) references unit (id, tenant_id) on delete no action;  -- §4.9
 alter table channel_connection add constraint channel_connection_unit_tenant_fk
   foreign key (unit_id, tenant_id) references unit (id, tenant_id) on delete cascade;
 
@@ -245,6 +250,22 @@ The exclusion constraint doesn't care where a booking came from — an imported 
 - **Reconcile only on a healthy parse.** The "UID absent from feed → cancelled" rule must never run on a truncated/empty/errored feed — that would mass-cancel real bookings. Unhealthy fetch → connection status `error`, nothing else changes.
 
 Design + DDL land with M4 (issue #38).
+
+### 4.9 Deleting inventory must never destroy the ledger
+
+`unit → booking → payment` used to be `on delete cascade` the whole way down, and the app's delete guard only counted **future occupying** bookings. Put those together and `DELETE /properties/:id` returned `204` while silently erasing every past stay, every cancelled booking, and every `payment` row hanging off them. The guard protected the *calendar*; nobody was protecting the *ledger*. It asked "will a guest show up?" when the dangerous question is "did money change hands?".
+
+Two changes, and both are load-bearing ([ADR-0002](adr/0002-deleting-inventory-never-destroys-the-ledger.md), #45):
+
+- **The guard now refuses on any booking that ever existed.** Delete is for a unit nobody ever booked; retiring one with history is **archive** (M2, #84). Cancelling is a domain event with a status - deleting is amnesia. The schema had already flinched at this once: `payment_event.booking_id` is `on delete set null` precisely so the idempotency trail outlives the booking.
+- **Both `booking → unit` FKs became `no action`**, which is what turns the rule from a convention into a guarantee (§4.3's philosophy: app checks are UX, the DB is correctness). Under `cascade` the database was an *accomplice* - it did the destroying.
+
+Two traps worth remembering, because both fail silently:
+
+1. **There are two FKs from `booking` to `unit`** - the plain `unit_id` and the `(unit_id, tenant_id)` composite from §4.5. Change one and leave the other on `cascade`, and the survivor deletes the booking first; the remaining check then passes against zero rows. The guard looks installed and does nothing.
+2. **`no action`, not `restrict`.** They differ in *when* they check, not whether. `restrict` fires immediately and would break deleting a tenant, which legitimately cascades `tenant → property → unit → booking`. `no action` defers to end-of-statement, by which time `booking.tenant_id`'s own cascade has removed those rows, and passes. Account closure keeps working; deleting a unit out from under live history does not.
+
+`payment.booking_id` stays `cascade` on purpose: a booking can now only disappear via tenant deletion, where losing the ledger along with the account is the intent.
 
 ---
 

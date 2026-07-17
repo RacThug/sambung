@@ -1,14 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  and,
-  asc,
-  count,
-  eq,
-  getTableColumns,
-  gt,
-  inArray,
-  sql,
-} from 'drizzle-orm';
+import { and, asc, count, eq, getTableColumns, sql } from 'drizzle-orm';
 import { booking, property, unit, type Property } from '@sambung/db';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
@@ -165,29 +156,26 @@ export class PropertiesRepository {
   }
 
   /**
-   * Count bookings under this property that still occupy dates in the future.
-   * "Occupying" = status pending_payment|confirmed (the same set as the
-   * booking_no_overlap constraint's WHERE); "future" = check_out > today,
-   * evaluated as current_date in the database so the day boundary is the
-   * server's, not the caller's. Half-open stays: an in-house guest still
-   * counts, today's checkout doesn't.
+   * Count every booking that has ever referenced a unit under this property -
+   * any status, any date (ADR-0002).
+   *
+   * This used to count only FUTURE OCCUPYING bookings (pending_payment|confirmed
+   * with check_out > current_date), which meant it protected the calendar and
+   * not the ledger: past and cancelled bookings were invisible to it, so DELETE
+   * returned 204 and cascaded them - and their payment rows - into nothing. The
+   * question is "did anything ever happen here", not "will a guest show up".
    */
-  async countFutureOccupying(propertyId: string): Promise<number> {
+  async countBookings(propertyId: string): Promise<number> {
     const tenantId = this.tenant.tenantId;
     return this.db.run(async (tx) => {
-      const [{ futureBookings }] = await tx
-        .select({ futureBookings: count() })
+      const [{ bookings }] = await tx
+        .select({ bookings: count() })
         .from(booking)
         .innerJoin(unit, eq(booking.unitId, unit.id))
         .where(
-          and(
-            eq(unit.propertyId, propertyId),
-            eq(booking.tenantId, tenantId),
-            inArray(booking.status, ['pending_payment', 'confirmed']),
-            gt(booking.checkOut, sql`current_date`),
-          ),
+          and(eq(unit.propertyId, propertyId), eq(booking.tenantId, tenantId)),
         );
-      return futureBookings;
+      return bookings;
     });
   }
 

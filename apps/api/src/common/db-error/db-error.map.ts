@@ -1,6 +1,6 @@
 import { HttpException } from '@nestjs/common';
 import { pgError } from '@sambung/db';
-import { emailTaken } from './conflicts';
+import { emailTaken, unitNameTaken } from './conflicts';
 
 /**
  * Constraint name → the response it means. The database already names the
@@ -19,6 +19,13 @@ import { emailTaken } from './conflicts';
  * say, `booking_stay_nonempty` is a real question only the booking module can
  * answer.
  *
+ * The unit CHECKs (unit_base_price_nonneg and friends) and the booking->unit FKs
+ * are deliberately ABSENT, though both can fire. Neither has a legitimate
+ * trigger: zod rejects a negative price before the CHECK can see it, and
+ * UnitsService.remove locks the unit before counting, so no booking can slip in
+ * behind the count. If either fires, the boundary or the guard is broken - which
+ * is a 500 by design, not a 409 that makes a bug look like a user error.
+ *
  * M2: booking_no_overlap → overlap (§5.3)
  * M3: payment_event_provider_event_uniq → already processed (§6.2)
  * M4: booking_external_uid_uniq → already imported (§7.3)
@@ -32,6 +39,7 @@ import { emailTaken } from './conflicts';
 // assumption.
 const MAP = new Map<string, () => HttpException>([
   ['app_user_email_key', emailTaken],
+  ['unit_property_name_uniq', unitNameTaken],
 ]);
 
 /**

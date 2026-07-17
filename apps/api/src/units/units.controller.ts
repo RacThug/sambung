@@ -1,0 +1,73 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  createUnitRequestSchema,
+  updateUnitRequestSchema,
+  type CreateUnitRequest,
+  type UnitResponse,
+  type UpdateUnitRequest,
+} from '@sambung/shared';
+import { JwtAuthGuard } from '../auth/auth.guard';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
+import { UnitsService } from './units.service';
+
+/**
+ * Units nested under their property (api-spec §4.6, #14/#15).
+ *
+ * Two controllers, one module, because the spec splits the routes: creating and
+ * listing are questions about a property ("what's in it?", "add one to it"),
+ * while updating and deleting address a unit directly by its own id.
+ */
+@Controller('properties/:propertyId/units')
+@UseGuards(JwtAuthGuard)
+export class PropertyUnitsController {
+  constructor(private readonly units: UnitsService) {}
+
+  @Get()
+  list(
+    @Param('propertyId', ParseUUIDPipe) propertyId: string,
+  ): Promise<UnitResponse[]> {
+    return this.units.listByProperty(propertyId);
+  }
+
+  @Post()
+  create(
+    @Param('propertyId', ParseUUIDPipe) propertyId: string,
+    @Body(new ZodValidationPipe(createUnitRequestSchema))
+    dto: CreateUnitRequest,
+  ): Promise<UnitResponse> {
+    return this.units.create(propertyId, dto);
+  }
+}
+
+/** Units addressed directly (api-spec §4.6, #16). */
+@Controller('units')
+@UseGuards(JwtAuthGuard)
+export class UnitsController {
+  constructor(private readonly units: UnitsService) {}
+
+  @Patch(':id')
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body(new ZodValidationPipe(updateUnitRequestSchema))
+    dto: UpdateUnitRequest,
+  ): Promise<UnitResponse> {
+    return this.units.update(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
+    return this.units.remove(id);
+  }
+}
