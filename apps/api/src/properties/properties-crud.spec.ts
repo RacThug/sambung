@@ -14,6 +14,7 @@ import {
 } from '@sambung/shared';
 import { AppModule } from '../app.module';
 import { DbService } from '../db/db.service';
+import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
 import { PropertiesService } from './properties.service';
 import { PropertiesRepository } from './properties.repository';
@@ -23,6 +24,7 @@ describe('Property CRUD', () => {
   let app: INestApplication;
   let dbs: DbService;
   let cls: ClsService;
+  let tenantCtx: TenantContext;
   const createdTenantIds: string[] = [];
 
   const server = () => app.getHttpServer() as Server;
@@ -89,6 +91,13 @@ describe('Property CRUD', () => {
     });
   }
 
+  /** Run fn as tenant A's owner, the way a request would. */
+  const asOwner = <T>(fn: () => Promise<T>): Promise<T> =>
+    cls.run(() => {
+      tenantCtx.set({ userId: 'test', tenantId: tenantAId, role: 'owner' });
+      return fn();
+    });
+
   let tokenA: string;
   let tenantAId: string;
   let tokenB: string;
@@ -103,6 +112,7 @@ describe('Property CRUD', () => {
     await app.init();
     dbs = app.get(DbService);
     cls = app.get(ClsService);
+    tenantCtx = app.get(TenantContext);
 
     const a = await registerTenant('CRUD Tenant A');
     const b = await registerTenant('CRUD Tenant B');
@@ -389,14 +399,7 @@ describe('Property CRUD', () => {
       await seedUnit(tenantAId, created.id, 750_000n);
 
       const repo = app.get(PropertiesRepository);
-      const row = await cls.run(async () => {
-        cls.set('principal', {
-          userId: 'test',
-          tenantId: tenantAId,
-          role: 'owner',
-        });
-        return repo.findByIdForTenant(created.id, tenantAId);
-      });
+      const row = await asOwner(() => repo.findById(created.id));
       expect(row?.pricedUnitCount).toBe(1);
     });
   });
@@ -407,16 +410,6 @@ describe('Property CRUD', () => {
   // work itself. The spies below call through - they instrument, they don't
   // fake, so the "fakes only at the outbound provider edge" rule holds.
   describe('DELETE /api/properties/:id — the guard is one unit of work', () => {
-    const asOwner = <T>(fn: () => Promise<T>): Promise<T> =>
-      cls.run(() => {
-        cls.set('principal', {
-          userId: 'test',
-          tenantId: tenantAId,
-          role: 'owner',
-        });
-        return fn();
-      });
-
     afterEach(() => jest.restoreAllMocks());
 
     it('takes the lock, counts and deletes in one transaction, lock first', async () => {
@@ -443,11 +436,11 @@ describe('Property CRUD', () => {
       // the pass-through joins the ambient transaction exactly as the original
       // would. (`.bind` would do, but apps/api sets strictBindCallApply:false,
       // which degrades it to `any`.)
-      const real = new PropertiesRepository(tenantDb);
+      const real = new PropertiesRepository(tenantDb, tenantCtx);
 
-      jest.spyOn(repo, 'lockForDelete').mockImplementation(async (id, t) => {
+      jest.spyOn(repo, 'lockForDelete').mockImplementation(async (id) => {
         await record('lockForDelete');
-        return real.lockForDelete(id, t);
+        return real.lockForDelete(id);
       });
       jest
         .spyOn(repo, 'countFutureOccupying')
@@ -455,9 +448,9 @@ describe('Property CRUD', () => {
           await record('countFutureOccupying');
           return real.countFutureOccupying(id);
         });
-      jest.spyOn(repo, 'delete').mockImplementation(async (id, t) => {
+      jest.spyOn(repo, 'delete').mockImplementation(async (id) => {
         await record('delete');
-        return real.delete(id, t);
+        return real.delete(id);
       });
 
       await asOwner(() => app.get(PropertiesService).remove(created.id));
@@ -477,7 +470,7 @@ describe('Property CRUD', () => {
       const repo = app.get(PropertiesRepository);
 
       await expect(
-        asOwner(() => repo.lockForDelete(created.id, tenantAId)),
+        asOwner(() => repo.lockForDelete(created.id)),
       ).rejects.toThrow(/must be called inside TenantDbService\.run/);
     });
   });
