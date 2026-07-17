@@ -143,44 +143,50 @@ describe('Auth (FR-AUTH-1)', () => {
     // fails while the behaviour is still correct. Watching the map itself is
     // exact and portable - if it produced a response, the constraint fired.
     const mapped = jest.spyOn(dbErrorMap, 'mapDbError');
+    let constraintFired: boolean;
+    let fromConstraint: Awaited<ReturnType<typeof register>>;
+    try {
+      // `.then()` starts the request now rather than on await. The pre-check
+      // runs within a few ms; bcrypt(12) then holds the window open (~205ms
+      // here), so stealing the email at 80ms lands inside it. Contention only
+      // widens the window - the risk is a faster box, and the spy removes it.
+      const stolen = email();
+      const inFlight = request(server())
+        .post('/api/auth/register')
+        .send({
+          tenantName: 'Stolen Co',
+          email: stolen,
+          password: 'supersecret1',
+        })
+        .then((r) => r);
 
-    // `.then()` starts the request now rather than on await. The pre-check runs
-    // within a few ms; bcrypt(12) then holds the window open (~205ms here), so
-    // stealing the email at 80ms lands inside it. Contention only widens the
-    // window - the risk is a faster box, and the spy above removes it.
-    const stolen = email();
-    const inFlight = request(server())
-      .post('/api/auth/register')
-      .send({
-        tenantName: 'Stolen Co',
+      await new Promise((r) => setTimeout(r, 80));
+      const [thief] = await dbs.db
+        .insert(tenant)
+        .values({ name: 'Thief Co' })
+        .returning({ id: tenant.id });
+      createdTenantIds.push(thief.id);
+      // If this throws, the signup already inserted and the premise is broken -
+      // loudly, rather than by silently testing the pre-check twice.
+      await dbs.db.insert(appUser).values({
+        tenantId: thief.id,
         email: stolen,
-        password: 'supersecret1',
-      })
-      .then((r) => r);
+        passwordHash: 'x',
+        role: 'owner',
+      });
 
-    await new Promise((r) => setTimeout(r, 80));
-    const [thief] = await dbs.db
-      .insert(tenant)
-      .values({ name: 'Thief Co' })
-      .returning({ id: tenant.id });
-    createdTenantIds.push(thief.id);
-    // If this throws, the signup already inserted and the premise is broken -
-    // loudly, rather than by silently testing the pre-check twice.
-    await dbs.db.insert(appUser).values({
-      tenantId: thief.id,
-      email: stolen,
-      passwordHash: 'x',
-      role: 'owner',
-    });
-
-    const fromConstraint = await inFlight;
-
-    // Read and restore before asserting: a throw here would otherwise leave the
-    // spy installed for the rest of the file.
-    const constraintFired = mapped.mock.results.some(
-      (r) => r.value !== undefined,
-    );
-    mapped.mockRestore();
+      fromConstraint = await inFlight;
+      // `type === 'return'` matters: a THROWING mapDbError would otherwise read
+      // as "the constraint fired". Unreachable through a Map.get today, but the
+      // assertion should mean what it says.
+      constraintFired = mapped.mock.results.some(
+        (r) => r.type === 'return' && r.value !== undefined,
+      );
+    } finally {
+      // finally, not after: anything above can throw, and a leaked spy outlives
+      // this test.
+      mapped.mockRestore();
+    }
 
     // Asserted FIRST, because it is what makes the rest meaningful: the map
     // turned a real violation into this response, so the pre-check demonstrably
