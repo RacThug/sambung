@@ -17,10 +17,8 @@ import {
   type MeResponse,
   type RegisterRequest,
 } from '@sambung/shared';
-import {
-  CurrentUser,
-  type AuthUser,
-} from '../common/decorators/current-user.decorator';
+import { CurrentPrincipal } from '../common/decorators/current-principal.decorator';
+import type { Principal } from '../common/tenant-context.service';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './auth.guard';
@@ -73,8 +71,8 @@ export class AuthController {
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
-  me(@CurrentUser() user: AuthUser): Promise<MeResponse> {
-    return this.auth.me(user.userId);
+  me(@CurrentPrincipal() principal: Principal): Promise<MeResponse> {
+    return this.auth.me(principal.userId);
   }
 
   // Refresh token: httpOnly + Secure cookie, scoped to /api/auth so it's only

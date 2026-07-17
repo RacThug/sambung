@@ -32,7 +32,7 @@ export class PropertiesService {
   ) {}
 
   async list(): Promise<PropertyResponse[]> {
-    const rows = await this.repo.findAllByTenant(this.tenant.tenantId);
+    const rows = await this.repo.findAll();
     return rows.map((row) => this.toResponse(row));
   }
 
@@ -41,10 +41,7 @@ export class PropertiesService {
   }
 
   async create(dto: CreatePropertyRequest): Promise<PropertyResponse> {
-    const row = await this.repo.create({
-      ...dto,
-      tenantId: this.tenant.tenantId,
-    });
+    const row = await this.repo.create(dto);
     return this.toResponse(row);
   }
 
@@ -61,7 +58,7 @@ export class PropertiesService {
     if (Object.keys(patch).length === 0) {
       return this.get(id);
     }
-    const row = await this.repo.update(id, this.tenant.tenantId, patch);
+    const row = await this.repo.update(id, patch);
     if (!row) {
       throw new NotFoundException('Property not found');
     }
@@ -132,9 +129,7 @@ export class PropertiesService {
         `Not an uploaded image: ${rejected.map((r) => r.key).join(', ')}`,
       );
     }
-    const row = await this.repo.update(id, this.tenant.tenantId, {
-      photos: dto.keys,
-    });
+    const row = await this.repo.update(id, { photos: dto.keys });
     if (!row) {
       throw new NotFoundException('Property not found');
     }
@@ -150,8 +145,7 @@ export class PropertiesService {
    */
   async remove(id: string): Promise<void> {
     await this.db.run(async () => {
-      const tenantId = this.tenant.tenantId;
-      if (!(await this.repo.lockForDelete(id, tenantId))) {
+      if (!(await this.repo.lockForDelete(id))) {
         throw new NotFoundException('Property not found');
       }
       const n = await this.repo.countFutureOccupying(id);
@@ -162,7 +156,7 @@ export class PropertiesService {
           `Cannot delete: ${n} future booking${n === 1 ? '' : 's'} - cancel them first`,
         );
       }
-      await this.repo.delete(id, tenantId);
+      await this.repo.delete(id);
     });
   }
 
@@ -171,7 +165,7 @@ export class PropertiesService {
    * another tenant - existence is hidden. (api-spec §1 tenancy)
    */
   private async getOwnedOrThrow(id: string): Promise<PropertyRow> {
-    const row = await this.repo.findByIdForTenant(id, this.tenant.tenantId);
+    const row = await this.repo.findById(id);
     if (!row) {
       throw new NotFoundException('Property not found');
     }

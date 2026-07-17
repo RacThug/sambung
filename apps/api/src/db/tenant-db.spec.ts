@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { ClsService } from 'nestjs-cls';
 import { property, tenant } from '@sambung/db';
+import { TenantContext } from '../common/tenant-context.service';
 import { AppModule } from '../app.module';
 import { DbService } from './db.service';
 import { TenantDbService } from './tenant-db.service';
@@ -17,7 +18,9 @@ describe('TenantDbService.run — transaction seam', () => {
   let dbs: DbService;
   let db: TenantDbService;
   let cls: ClsService;
+  let tenantCtx: TenantContext;
   let tenantId: string;
+  let otherTenantId: string;
 
   /**
    * Postgres assigns one transaction id per transaction, so two calls
@@ -35,7 +38,7 @@ describe('TenantDbService.run — transaction seam', () => {
   /** Every run() below needs a principal, the same way a real request has one. */
   const asTenant = <T>(fn: () => Promise<T>): Promise<T> =>
     cls.run(() => {
-      cls.set('principal', { userId: randomUUID(), tenantId, role: 'owner' });
+      tenantCtx.set({ userId: randomUUID(), tenantId, role: 'owner' });
       return fn();
     });
 
@@ -48,16 +51,20 @@ describe('TenantDbService.run — transaction seam', () => {
     dbs = app.get(DbService);
     db = app.get(TenantDbService);
     cls = app.get(ClsService);
+    tenantCtx = app.get(TenantContext);
 
-    const [row] = await dbs.db
+    const rows = await dbs.db
       .insert(tenant)
-      .values({ name: 'Txn Seam Test' })
+      .values([{ name: 'Txn Seam Test' }, { name: 'Txn Seam Other' }])
       .returning({ id: tenant.id });
-    tenantId = row.id;
+    tenantId = rows[0].id;
+    otherTenantId = rows[1].id;
   });
 
   afterAll(async () => {
-    await dbs.db.delete(tenant).where(eq(tenant.id, tenantId));
+    await dbs.db
+      .delete(tenant)
+      .where(inArray(tenant.id, [tenantId, otherTenantId]));
     await app.close();
   });
 
@@ -159,6 +166,33 @@ describe('TenantDbService.run — transaction seam', () => {
     const result = await outcome;
     expect(result.ran).toBe(false);
     expect(result.error).toMatch(/after its transaction settled/);
+  });
+
+  it('throws when there is no principal', async () => {
+    // Not belt-and-braces: with no GUC, RLS returns nothing on a cold
+    // connection and errors 22P02 on a warm one (#74). Two different failures
+    // depending on which connection the pool hands you is not a design.
+    await expect(cls.run(() => db.run(xactId))).rejects.toThrow(
+      /Tenant context is empty/,
+    );
+  });
+
+  it('refuses to join a transaction opened for a different tenant', async () => {
+    // The GUC belongs to the outer transaction and can't be changed for one
+    // nested call, so joining under a different principal would silently run
+    // this work under the wrong tenant's scope.
+    await expect(
+      asTenant(() =>
+        db.run(async () => {
+          tenantCtx.set({
+            userId: randomUUID(),
+            tenantId: otherTenantId,
+            role: 'owner',
+          });
+          return db.run(xactId);
+        }),
+      ),
+    ).rejects.toThrow(/principal changed inside an open transaction/);
   });
 
   it('assertInTransaction throws outside a run', () => {

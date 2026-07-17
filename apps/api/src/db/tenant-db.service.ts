@@ -1,10 +1,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ClsService } from 'nestjs-cls';
 import { sql } from 'drizzle-orm';
 import { createDb, type DbTx } from '@sambung/db';
-import type { TenantPrincipal } from '../common/tenant-context.service';
+import { TenantContext } from '../common/tenant-context.service';
 
 /**
  * The open transaction, plus whether it is still open.
@@ -20,9 +19,14 @@ import type { TenantPrincipal } from '../common/tenant-context.service';
  * then awaits anything lands its statements arbitrarily later, after the
  * connection has moved on. The check has to happen when a statement is issued,
  * which is what the proxy does.
+ *
+ * `tenantId` is the tenant this transaction's GUC was set to. A joined call
+ * inherits that GUC whether or not it is still the right one, so joining
+ * compares against it rather than trusting the caller.
  */
 interface ActiveTx {
   readonly tx: DbTx;
+  readonly tenantId: string;
   guarded: DbTx;
   alive: boolean;
 }
@@ -70,20 +74,28 @@ function guardTx(tx: DbTx, active: ActiveTx): DbTx {
 // with the RLS policies, the database itself scopes every query to the current
 // tenant.
 //
-// Callers MUST have a principal in context. With none, the GUC is never set
-// and RLS does NOT reliably fail closed: set_config(..., is_local => true)
-// reverts to the GUC's *reset* value, which for a custom GUC that has been set
-// once on this session is the empty string, not NULL. So a no-principal query
-// returns nothing on a cold connection but errors 22P02 (`invalid input syntax
-// for type uuid: ""`) on a pooled one that has served a request before. System
-// paths that must cross tenants (the M2 hold sweeper) belong on DbService, the
-// owner connection - not here. Tracked as #74.
+// Callers MUST have a principal: `run` throws without one rather than querying
+// with the GUC unset. That is not belt-and-braces, it is the only sane answer -
+// RLS does NOT reliably fail closed there. set_config(..., is_local => true)
+// reverts to the GUC's *reset* value, which for a custom GUC already set once
+// on this session is the empty string, not NULL, so a no-principal query
+// returns nothing on a cold connection but errors 22P02 ('invalid input syntax
+// for type uuid: ""') on a pooled one that has served a request before (#74).
+// Two different failures depending on which connection the pool hands you is
+// not a design; throwing is.
+//
+// Work that legitimately has no principal does NOT belong here:
+//   crosses tenants (the M2 hold sweeper) → DbService, the owner connection.
+//   unauthenticated (the M2 public funnel) → undesigned, see #77.
 //
 // Two ambient stores, two questions, deliberately kept apart:
-//   CLS (mounted by middleware) → WHO is asking: the request's principal.
+//   TenantContext (CLS, mounted by middleware) → WHO is asking.
 //   activeTx (owned by this class) → WHICH transaction we are already inside.
 // activeTx is not on the CLS store because the CLS store only exists for the
 // duration of an HTTP request, whereas a transaction's scope is `run` itself.
+// The principal is read through TenantContext, never from CLS directly: that
+// module owns the key, so a rename is a compile error rather than silent
+// zero-row scoping.
 @Injectable()
 export class TenantDbService implements OnModuleDestroy {
   private readonly conn: ReturnType<typeof createDb>;
@@ -91,7 +103,7 @@ export class TenantDbService implements OnModuleDestroy {
 
   constructor(
     config: ConfigService,
-    private readonly cls: ClsService,
+    private readonly tenant: TenantContext,
   ) {
     this.conn = createDb(config.getOrThrow<string>('APP_DATABASE_URL'));
   }
@@ -114,8 +126,13 @@ export class TenantDbService implements OnModuleDestroy {
    * `async` is load-bearing: it makes a synchronously-throwing callback reject
    * rather than throw, so both the joined and non-joined paths report failure
    * on the same channel.
+   *
+   * Throws when there is no principal - see the note on this class.
    */
   async run<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
+    // Throws with no principal. Deliberately the same getter services use, so
+    // both doors answer a missing tenant the same way.
+    const tenantId = this.tenant.tenantId;
     const joined = this.activeTx.getStore();
     if (joined) {
       if (!joined.alive) {
@@ -127,18 +144,25 @@ export class TenantDbService implements OnModuleDestroy {
             'returns - a deferred query cannot join a closed transaction.',
         );
       }
+      if (joined.tenantId !== tenantId) {
+        // The GUC belongs to the outer transaction and cannot be changed for
+        // one nested call, so joining would silently run this work under the
+        // wrong tenant's scope.
+        throw new Error(
+          'TenantDbService.run: the principal changed inside an open ' +
+            `transaction (opened for ${joined.tenantId}, now ${tenantId}). ` +
+            'One unit of work belongs to one tenant.',
+        );
+      }
       // Already inside a live transaction that set the GUC - reuse both.
       return fn(joined.guarded);
     }
-    const tenantId = this.cls.get<TenantPrincipal>('principal')?.tenantId;
     return this.conn.db.transaction(async (tx) => {
-      const active = { tx, alive: true } as ActiveTx;
+      const active = { tx, tenantId, alive: true } as ActiveTx;
       active.guarded = guardTx(tx, active);
-      if (tenantId) {
-        await tx.execute(
-          sql`select set_config('app.tenant_id', ${tenantId}, true)`,
-        );
-      }
+      await tx.execute(
+        sql`select set_config('app.tenant_id', ${tenantId}, true)`,
+      );
       try {
         return await this.activeTx.run(active, () => fn(active.guarded));
       } finally {
