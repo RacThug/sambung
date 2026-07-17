@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, screen } from "@testing-library/react";
 import { propertySearchSchema } from "./features/public-booking/property-search";
-import { loginSearchSchema } from "./features/auth/login-search";
+import { authSearchSchema } from "./features/auth/auth-search";
 import { clearSession, setSession } from "./lib/auth";
 import { authResponse, json, renderAt, stubFetch } from "./test-utils";
 
@@ -39,6 +39,13 @@ describe("route tree", () => {
     renderAt("/login");
     expect(
       await screen.findByText("Sign in to your dashboard"),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the register page at /register", async () => {
+    renderAt("/register");
+    expect(
+      await screen.findByText("Create your owner account"),
     ).toBeInTheDocument();
   });
 });
@@ -95,6 +102,24 @@ describe("auth guard (/app/*)", () => {
     await screen.findByText("Test Tenant");
     expect(router.state.location.pathname).toBe("/app/properties");
   });
+
+  it("redirects an already-authed visitor away from /register", async () => {
+    setSession(authResponse());
+    stubFetch({ "GET /api/properties": () => json([]) });
+    const router = renderAt("/register");
+    await screen.findByText("Test Tenant");
+    expect(router.state.location.pathname).toBe("/app/properties");
+  });
+
+  it("skips the register form when the refresh cookie still holds a session", async () => {
+    stubFetch({
+      "POST /api/auth/refresh": () => json(authResponse()),
+      "GET /api/properties": () => json([]),
+    });
+    const router = renderAt("/register");
+    await screen.findByText("Test Tenant");
+    expect(router.state.location.pathname).toBe("/app/properties");
+  });
 });
 
 describe("propertySearchSchema", () => {
@@ -115,17 +140,17 @@ describe("propertySearchSchema", () => {
   });
 });
 
-describe("loginSearchSchema", () => {
+describe("authSearchSchema", () => {
   it("keeps same-app paths", () => {
-    expect(loginSearchSchema.parse({ next: "/app/properties" })).toEqual({
+    expect(authSearchSchema.parse({ next: "/app/properties" })).toEqual({
       next: "/app/properties",
     });
   });
 
   it("drops absolute URLs and protocol-relative paths (open redirect)", () => {
-    expect(loginSearchSchema.parse({ next: "https://evil.example" })).toEqual(
+    expect(authSearchSchema.parse({ next: "https://evil.example" })).toEqual(
       {},
     );
-    expect(loginSearchSchema.parse({ next: "//evil.example" })).toEqual({});
+    expect(authSearchSchema.parse({ next: "//evil.example" })).toEqual({});
   });
 });

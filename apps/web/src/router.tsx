@@ -9,7 +9,8 @@ import { HomePage } from "./features/public-booking/home-page";
 import { PropertyPage } from "./features/public-booking/property-page";
 import { propertySearchSchema } from "./features/public-booking/property-search";
 import { LoginPage } from "./features/auth/login-page";
-import { loginSearchSchema } from "./features/auth/login-search";
+import { RegisterPage } from "./features/auth/register-page";
+import { authSearchSchema } from "./features/auth/auth-search";
 import { AppShell } from "./features/dashboard/app-shell";
 import { PropertiesPage } from "./features/properties/properties-page";
 import { PropertyEditPage } from "./features/properties/property-edit-page";
@@ -40,7 +41,7 @@ const propertyRoute = createRoute({
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
-  validateSearch: loginSearchSchema,
+  validateSearch: authSearchSchema,
   // Already authed → straight to the dashboard (page-spec §3.4). ensureSession
   // (not just the in-memory token) so a reload with a live refresh cookie
   // skips the form too.
@@ -50,6 +51,20 @@ const loginRoute = createRoute({
     }
   },
   component: LoginPage,
+});
+
+// Signup (page-spec §3.4). Same already-authed guard and ?next contract as
+// /login - an account holder has nothing to register.
+const registerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/register",
+  validateSearch: authSearchSchema,
+  beforeLoad: async () => {
+    if (await ensureSession()) {
+      throw redirect({ to: "/app" });
+    }
+  },
+  component: RegisterPage,
 });
 
 // Auth guard for everything under /app: no token in memory → one silent
@@ -91,6 +106,7 @@ export const routeTree = rootRoute.addChildren([
   homeRoute,
   propertyRoute,
   loginRoute,
+  registerRoute,
   appRoute.addChildren([appIndexRoute, propertiesRoute, propertyEditRoute]),
 ]);
 

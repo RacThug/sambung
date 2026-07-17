@@ -240,7 +240,7 @@ Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agent
 
 ## Project Facts *(this is the part that changes)*
 
-- **Stage**: M1 (inventory) in progress. Done: M0 (monorepo, DB schema + RLS migrations, seed with demo logins, auth API, local pre-push quality gate) + property CRUD with `verified`/`publishable`, dashboard list/edit pages, SPA session plumbing incl. `/login` (#44) + photo pipeline: Garage in compose, presigned uploads, gallery on the edit page (#39). Next: units (#45), public property page (#46), `/register` (#63).
+- **Stage**: M1 (inventory) in progress. Done: M0 (monorepo, DB schema + RLS migrations, seed with demo logins, auth API, local pre-push quality gate) + property CRUD with `verified`/`publishable`, dashboard list/edit pages, SPA session plumbing incl. `/login` (#44) + photo pipeline: Garage in compose, presigned uploads, gallery on the edit page (#39) + `/register` signup page (#63). Next: units (#45), public property page (#46).
 - **Repo**: `RacThug/sambung` (private).
 - **Tracking**: GitHub **Issues + Milestones** (M0–M5).
 - **Key documents** (read the relevant one before touching that area):
