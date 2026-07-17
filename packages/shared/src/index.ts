@@ -18,19 +18,10 @@
 import { z } from "zod";
 
 export * from "./auth";
+export * from "./money";
 export * from "./photo";
 export * from "./property";
-
-/**
- * Money is integer rupiah (no float, no cents). CLAUDE.md invariant #6.
- * Branded so a raw number can't be passed where rupiah is expected.
- */
-export type Rupiah = number & { readonly __brand: "Rupiah" };
-export const rupiahSchema = z
-  .number()
-  .int()
-  .nonnegative()
-  .transform((n) => n as Rupiah);
+export * from "./unit";
 
 /** Health-check response shape, shared by API and any client probe. */
 export const healthResponseSchema = z.object({

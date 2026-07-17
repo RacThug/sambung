@@ -10,12 +10,13 @@ import {
 import { api, ApiError } from "../../lib/api-client";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { PhotosSection } from "./photos-section";
+import { UnitsSection } from "./units-section";
 import { VerifiedBadge } from "./verified-badge";
 
 const route = getRouteApi("/app/properties/$propertyId");
 
-// The property workbench (page-spec §4.5): details + photos; units (#45) and
-// channels (M4) dock alongside them later.
+// The property workbench (page-spec §4.5): details, photos and units; channels
+// (M4) dock alongside them later.
 export function PropertyEditPage() {
   const { propertyId } = route.useParams();
   const { data: property, isLoading } = useQuery({
@@ -51,7 +52,7 @@ export function PropertyEditPage() {
 
       <PhotosSection property={property} />
 
-      <PlaceholderSection title="Units" note="Unit management arrives with #45." />
+      <UnitsSection property={property} />
 
       <DangerZone property={property} />
     </section>
@@ -212,15 +213,6 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
   );
 }
 
-function PlaceholderSection({ title, note }: { title: string; note: string }) {
-  return (
-    <div className="mt-6 rounded-lg border border-dashed border-gray-300 p-6">
-      <h2 className="text-lg font-semibold text-gray-400">{title}</h2>
-      <p className="mt-1 text-sm text-gray-500">{note}</p>
-    </div>
-  );
-}
-
 function DangerZone({ property }: { property: PropertyResponse }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -233,7 +225,7 @@ function DangerZone({ property }: { property: PropertyResponse }) {
     },
   });
 
-  // The 409 path renders the reason: "n future bookings - cancel them first".
+  // The 409 path renders the reason: "this property has n bookings…" (ADR-0002).
   const deleteError =
     remove.error instanceof ApiError && remove.error.status === 409
       ? remove.error.message
@@ -245,8 +237,9 @@ function DangerZone({ property }: { property: PropertyResponse }) {
     <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-6">
       <h2 className="text-lg font-semibold text-red-800">Delete property</h2>
       <p className="mt-1 text-sm text-red-700">
-        Removes the property and its units. Not possible while future bookings
-        exist.
+        Removes the property and its units. Only possible while nothing has ever
+        been booked here - deleting it later would destroy the booking and
+        payment history.
       </p>
       {deleteError && (
         <p className="mt-2 rounded-md bg-white px-3 py-2 text-sm font-medium text-red-800">

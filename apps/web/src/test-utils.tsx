@@ -6,7 +6,12 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AuthResponse, PropertyResponse } from "@sambung/shared";
+import {
+  rupiahSchema,
+  type AuthResponse,
+  type PropertyResponse,
+  type UnitResponse,
+} from "@sambung/shared";
 import { routeTree } from "./router";
 
 // jsdom has no scrollTo; the router calls it on navigation (scroll restoration).
@@ -63,6 +68,34 @@ export function propertyResponse(
     publishable: false,
     createdAt: "2026-07-01T00:00:00.000Z",
     ...overrides,
+  };
+}
+
+/**
+ * One UnitResponse factory for all tests, for the same reason as above.
+ *
+ * `basePriceIdr` is taken as a plain number and branded here. That keeps the
+ * brand strict where it earns its keep - production code can't put a bare number
+ * on the wire without going through toRupiah()/rupiahSchema, which is what makes
+ * "one serialization helper" (api-spec §8.4) a type error rather than a
+ * convention - while sparing every test a rupiahSchema.parse() ceremony.
+ */
+export function unitResponse(
+  overrides: Partial<Omit<UnitResponse, "basePriceIdr">> & {
+    basePriceIdr?: number;
+  } = {},
+): UnitResponse {
+  const { basePriceIdr = 1_200_000, ...rest } = overrides;
+  return {
+    id: "bbbbbbbb-0000-0000-0000-000000000001",
+    propertyId: propertyResponse().id,
+    tenantId: authResponse().tenant.id,
+    name: "Garden Room 1",
+    maxGuests: 2,
+    minStay: 1,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    ...rest,
+    basePriceIdr: rupiahSchema.parse(basePriceIdr),
   };
 }
 

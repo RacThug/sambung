@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { ClsService } from 'nestjs-cls';
 import request from 'supertest';
-import { booking, property, tenant, unit } from '@sambung/db';
+import { booking, payment, property, tenant, unit } from '@sambung/db';
 import {
   propertyResponseSchema,
   type AuthResponse,
@@ -63,12 +63,22 @@ describe('Property CRUD', () => {
     return bodyOf<PropertyResponse>(res);
   }
 
-  // Inventory/booking fixtures go straight through the owner-role connection:
-  // unit CRUD is #45 and booking creation is M2, so no API exists for them yet.
+  // Booking fixtures go straight through the owner-role connection: booking
+  // creation is M2, so no API exists for it yet. Units have one (#45), but
+  // seeding them directly keeps these tests about properties.
+  //
+  // Names are unique per call because unit_property_name_uniq (ADR-0001) forbids
+  // two units sharing a name under one property.
+  let unitSeq = 0;
   async function seedUnit(tenantId: string, propertyId: string, price: bigint) {
     const [row] = await dbs.db
       .insert(unit)
-      .values({ tenantId, propertyId, name: 'Room', basePriceIdr: price })
+      .values({
+        tenantId,
+        propertyId,
+        name: `Room ${++unitSeq}`,
+        basePriceIdr: price,
+      })
       .returning({ id: unit.id });
     return row.id;
   }
@@ -79,16 +89,20 @@ describe('Property CRUD', () => {
     status: 'pending_payment' | 'confirmed' | 'cancelled' | 'expired',
     checkIn: string,
     checkOut: string,
-  ) {
-    await dbs.db.insert(booking).values({
-      tenantId,
-      unitId,
-      source: 'direct',
-      status,
-      checkIn,
-      checkOut,
-      guestName: 'Test guest',
-    });
+  ): Promise<string> {
+    const [row] = await dbs.db
+      .insert(booking)
+      .values({
+        tenantId,
+        unitId,
+        source: 'direct',
+        status,
+        checkIn,
+        checkOut,
+        guestName: 'Test guest',
+      })
+      .returning({ id: booking.id });
+    return row.id;
   }
 
   /** Run fn as tenant A's owner, the way a request would. */
@@ -292,11 +306,10 @@ describe('Property CRUD', () => {
       expect(units).toHaveLength(0);
     });
 
-    it('409s when future occupying bookings exist, naming the count', async () => {
+    it('409s when bookings exist, naming the count', async () => {
       const created = await createProperty(tokenA, { name: 'Booked Villa' });
       const unitId = await seedUnit(tenantAId, created.id, 2_000_000n);
-      // One future confirmed + one in-house hold (checked in, not out) -
-      // both occupy [checkIn, checkOut) beyond today, so both must count.
+      // One future confirmed + one in-house hold (checked in, not out).
       await seedBooking(
         tenantAId,
         unitId,
@@ -325,16 +338,26 @@ describe('Property CRUD', () => {
         .expect(200);
     });
 
-    it('ignores past, cancelled and expired bookings (204)', async () => {
+    // ADR-0002, and the exact case this file used to assert the opposite of:
+    // "ignores past, cancelled and expired bookings (204)". It did - and took
+    // their payment rows with them. Past and cancelled bookings are the LEDGER;
+    // the guard protects it now, not just the calendar.
+    it('409s on past, cancelled and expired bookings, leaving the ledger intact', async () => {
       const created = await createProperty(tokenA, { name: 'History Villa' });
       const unitId = await seedUnit(tenantAId, created.id, 500_000n);
-      await seedBooking(
+      const paidStay = await seedBooking(
         tenantAId,
         unitId,
         'confirmed',
         daysFromToday(-40),
         daysFromToday(-30),
       );
+      // Money that actually changed hands, on a stay that ended six weeks ago.
+      await dbs.db.insert(payment).values({
+        bookingId: paidStay,
+        provider: 'midtrans',
+        amountIdr: 5_000_000n,
+      });
       await seedBooking(
         tenantAId,
         unitId,
@@ -350,10 +373,26 @@ describe('Property CRUD', () => {
         daysFromToday(43),
       );
 
-      await request(server())
+      const res = await request(server())
         .delete(`/api/properties/${created.id}`)
         .set('Authorization', `Bearer ${tokenA}`)
-        .expect(204);
+        .expect(409);
+      expect(bodyOf<{ message: string }>(res).message).toContain('3');
+      // Never "cancel them first" - cancelling doesn't remove the row, so two of
+      // these three are already cancelled/expired and it would be a lie.
+      expect(bodyOf<{ message: string }>(res).message).not.toContain('cancel');
+
+      // The point of the guard: the money is still there.
+      const payments = await dbs.db
+        .select()
+        .from(payment)
+        .where(eq(payment.bookingId, paidStay));
+      expect(payments).toHaveLength(1);
+      const bookings = await dbs.db
+        .select()
+        .from(booking)
+        .where(eq(booking.unitId, unitId));
+      expect(bookings).toHaveLength(3);
     });
 
     it("404s another tenant's property and leaves it standing", async () => {
@@ -442,12 +481,10 @@ describe('Property CRUD', () => {
         await record('lockForDelete');
         return real.lockForDelete(id);
       });
-      jest
-        .spyOn(repo, 'countFutureOccupying')
-        .mockImplementation(async (id) => {
-          await record('countFutureOccupying');
-          return real.countFutureOccupying(id);
-        });
+      jest.spyOn(repo, 'countBookings').mockImplementation(async (id) => {
+        await record('countBookings');
+        return real.countBookings(id);
+      });
       jest.spyOn(repo, 'delete').mockImplementation(async (id) => {
         await record('delete');
         return real.delete(id);
@@ -456,11 +493,7 @@ describe('Property CRUD', () => {
       await asOwner(() => app.get(PropertiesService).remove(created.id));
 
       // Order: the lock must precede the count, or the count is a TOCTOU read.
-      expect(calls).toEqual([
-        'lockForDelete',
-        'countFutureOccupying',
-        'delete',
-      ]);
+      expect(calls).toEqual(['lockForDelete', 'countBookings', 'delete']);
       // Identity: all three in the same transaction, so the lock still holds.
       expect(new Set(xids).size).toBe(1);
     });

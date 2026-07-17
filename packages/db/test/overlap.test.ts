@@ -13,7 +13,12 @@ import { expectDbError } from "./helpers";
 let tenantId: string;
 let propertyId: string;
 
-async function makeUnit(name = "Unit") {
+// Names are distinct per call because unit_property_name_uniq (ADR-0001) now
+// forbids two units sharing a name under one property - which is the whole
+// point of that constraint: these fixtures are exactly the "several
+// indistinguishable rooms" an owner would otherwise create.
+let unitSeq = 0;
+async function makeUnit(name = `Unit ${++unitSeq}`) {
   const [row] = await db
     .insert(unit)
     .values({ tenantId, propertyId, name, basePriceIdr: 500_000n })

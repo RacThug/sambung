@@ -137,23 +137,28 @@ export class PropertiesService {
   }
 
   /**
-   * Guarded delete (api-spec §4.4). The whole guard is ONE unit of work: the
-   * locks taken by lockForDelete only hold for the transaction they were taken
-   * in, so counting and deleting must join that same transaction or the guard
-   * is decorative. `db.run` here is what makes the three repository calls
-   * below share it.
+   * Guarded delete (api-spec §4.4, ADR-0002). Refuses when ANY booking has ever
+   * referenced a unit under this property - past and cancelled included -
+   * because deleting it would cascade away their payment rows too. Delete is for
+   * a property that was never booked; retiring one with history is archive
+   * (#84).
+   *
+   * The whole guard is ONE unit of work: the locks taken by lockForDelete only
+   * hold for the transaction they were taken in, so counting and deleting must
+   * join that same transaction or the guard is decorative. `db.run` here is what
+   * makes the three repository calls below share it.
    */
   async remove(id: string): Promise<void> {
     await this.db.run(async () => {
       if (!(await this.repo.lockForDelete(id))) {
         throw new NotFoundException('Property not found');
       }
-      const n = await this.repo.countFutureOccupying(id);
+      const n = await this.repo.countBookings(id);
       if (n > 0) {
-        // Deleting live inventory must be an explicit two-step (api-spec §4.4):
-        // the count tells the owner exactly what to cancel first.
+        // No "cancel them first": cancelling doesn't remove the row, so it would
+        // promise an escape that doesn't exist. Says why instead.
         throw new ConflictException(
-          `Cannot delete: ${n} future booking${n === 1 ? '' : 's'} - cancel them first`,
+          `Cannot delete: this property has ${n} booking${n === 1 ? '' : 's'} - deleting it would destroy that history`,
         );
       }
       await this.repo.delete(id);
