@@ -7,6 +7,10 @@
       "outputs": ["dist/**", ".next/**"]
     },
     "dev": {
+      // ^build like every other task: packages/shared compiles to dist/, which
+      // is gitignored, so without this a fresh clone's `pnpm dev` starts a web
+      // server that cannot resolve @sambung/shared at all.
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true
     },
