@@ -6,24 +6,43 @@ import { sql } from 'drizzle-orm';
 import { createDb, type DbTx } from '@sambung/db';
 import type { TenantPrincipal } from '../common/tenant-context.service';
 
+/**
+ * The open transaction, plus whether it is still open. `alive` is the guard
+ * against a stale handle: async work started inside `run` keeps this store
+ * after the transaction settles and its connection returns to the pool, so a
+ * deferred `run` would otherwise join a dead handle and execute on a recycled
+ * connection - inside whatever transaction now owns it, under that tenant's
+ * GUC. Silent cross-tenant contamination. Fail loudly instead.
+ */
+interface ActiveTx {
+  readonly tx: DbTx;
+  alive: boolean;
+}
+
 // Tenant-scoped database access (boss fight #5, app layer). Every callback
 // runs inside a transaction on the NON-OWNER app role that first sets
 // `app.tenant_id` via parameterized set_config (no SQL injection). Combined
 // with the RLS policies, the database itself scopes every query to the current
-// tenant. No tenant in context (a system path) → the GUC stays unset; RLS is
-// fail-closed, so those queries return nothing.
+// tenant.
+//
+// Callers MUST have a principal in context. With none, the GUC is never set
+// and RLS does NOT reliably fail closed: set_config(..., is_local => true)
+// reverts to the GUC's *reset* value, which for a custom GUC that has been set
+// once on this session is the empty string, not NULL. So a no-principal query
+// returns nothing on a cold connection but errors 22P02 (`invalid input syntax
+// for type uuid: ""`) on a pooled one that has served a request before. System
+// paths that must cross tenants (the M2 hold sweeper) belong on DbService, the
+// owner connection - not here. Tracked as #74.
 //
 // Two ambient stores, two questions, deliberately kept apart:
 //   CLS (mounted by middleware) → WHO is asking: the request's principal.
 //   activeTx (owned by this class) → WHICH transaction we are already inside.
 // activeTx is not on the CLS store because the CLS store only exists for the
-// duration of an HTTP request. A transaction's scope is `run` itself, which
-// must also hold for the M2 hold-sweeper cron and for tests that call
-// repositories directly — both run with no CLS store mounted.
+// duration of an HTTP request, whereas a transaction's scope is `run` itself.
 @Injectable()
 export class TenantDbService implements OnModuleDestroy {
   private readonly conn: ReturnType<typeof createDb>;
-  private readonly activeTx = new AsyncLocalStorage<DbTx>();
+  private readonly activeTx = new AsyncLocalStorage<ActiveTx>();
 
   constructor(
     config: ConfigService,
@@ -46,22 +65,59 @@ export class TenantDbService implements OnModuleDestroy {
    * statement fails too. Code that must survive a per-item failure (the M4
    * per-VEVENT iCal loop, db-design §4.8) needs a savepoint, which drizzle
    * spells `tx.transaction(...)`. Add it when that caller exists.
+   *
+   * `async` is load-bearing: it makes a synchronously-throwing callback reject
+   * rather than throw, so both the joined and non-joined paths report failure
+   * on the same channel.
    */
-  run<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
+  async run<T>(fn: (tx: DbTx) => Promise<T>): Promise<T> {
     const joined = this.activeTx.getStore();
     if (joined) {
-      // Already inside a transaction that set the GUC - reuse both.
-      return fn(joined);
+      if (!joined.alive) {
+        // Deferred work outliving its transaction. Joining here would run on
+        // whichever connection the pool has since handed the handle to.
+        throw new Error(
+          'TenantDbService.run: the surrounding transaction has already ' +
+            'settled. Work started inside run() must be awaited before it ' +
+            'returns - a deferred query cannot join a closed transaction.',
+        );
+      }
+      // Already inside a live transaction that set the GUC - reuse both.
+      return fn(joined.tx);
     }
     const tenantId = this.cls.get<TenantPrincipal>('principal')?.tenantId;
     return this.conn.db.transaction(async (tx) => {
+      const active: ActiveTx = { tx, alive: true };
       if (tenantId) {
         await tx.execute(
           sql`select set_config('app.tenant_id', ${tenantId}, true)`,
         );
       }
-      return this.activeTx.run(tx, () => fn(tx));
+      try {
+        return await this.activeTx.run(active, () => fn(tx));
+      } finally {
+        // Runs before drizzle issues COMMIT/ROLLBACK, so nothing can join
+        // between the callback returning and the transaction closing.
+        active.alive = false;
+      }
     });
+  }
+
+  /**
+   * Throw unless the caller is already inside a `run`. For repository methods
+   * whose whole purpose is to affect the surrounding transaction - a row lock
+   * taken in its own transaction is released immediately and locks nothing, so
+   * returning normally would be a lie. Makes that silent no-op loud.
+   */
+  assertInTransaction(caller: string): void {
+    const joined = this.activeTx.getStore();
+    if (!joined?.alive) {
+      throw new Error(
+        `${caller} must be called inside TenantDbService.run - outside one it ` +
+          'would open its own transaction, and any lock it takes would be ' +
+          'released before the caller could rely on it.',
+      );
+    }
   }
 
   async onModuleDestroy(): Promise<void> {

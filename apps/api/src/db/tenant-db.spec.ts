@@ -117,6 +117,44 @@ describe('TenantDbService.run — transaction seam', () => {
     expect(rows).toHaveLength(1);
   });
 
+  it('refuses to join a transaction that has already settled', async () => {
+    // Fire-and-forget work started inside run() keeps the ALS store but
+    // outlives the transaction. Joining then would run on whatever connection
+    // the pool has since handed the handle to - another tenant's, under their
+    // GUC. It must fail loudly instead.
+    // The catch is attached in-chain: a deferred rejection with no handler
+    // would surface as an unhandled rejection, not a test result.
+    let outcome!: Promise<{ joined: boolean; error?: string }>;
+    await asTenant(() =>
+      db.run(() => {
+        outcome = new Promise((resolve) => setImmediate(resolve))
+          .then(() => db.run(xactId))
+          .then(() => ({ joined: true }))
+          .catch((e: Error) => ({ joined: false, error: e.message }));
+        return Promise.resolve();
+      }),
+    );
+
+    const result = await outcome;
+    expect(result.joined).toBe(false);
+    expect(result.error).toMatch(/already settled/);
+  });
+
+  it('assertInTransaction throws outside a run', () => {
+    expect(() => db.assertInTransaction('probe')).toThrow(
+      /must be called inside TenantDbService\.run/,
+    );
+  });
+
+  it('assertInTransaction passes inside a run', async () => {
+    await asTenant(() =>
+      db.run(() => {
+        expect(() => db.assertInTransaction('probe')).not.toThrow();
+        return Promise.resolve();
+      }),
+    );
+  });
+
   it('a joined call inherits the outer transaction tenant GUC', async () => {
     // Regression guard, not proof of the join: this would also pass if the
     // nested call opened its own transaction and set the GUC itself. What it

@@ -110,8 +110,14 @@ export class PropertiesRepository {
    *
    * Both locks are taken here, in this order, because their order is a
    * persistence detail - callers should not be able to get it wrong.
+   *
+   * Only meaningful inside a caller's `db.run`: a lock taken in its own
+   * transaction is released the moment that transaction commits, so a
+   * standalone call would return true having locked nothing. Asserted rather
+   * than documented, because the failure is otherwise silent.
    */
   async lockForDelete(id: string, tenantId: string): Promise<boolean> {
+    this.db.assertInTransaction('PropertiesRepository.lockForDelete');
     return this.db.run(async (tx) => {
       const found = await tx
         .select({ id: property.id })
