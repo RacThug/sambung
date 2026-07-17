@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   ConflictException,
   ExecutionContext,
@@ -30,6 +31,9 @@ describe('DbError mapping', () => {
   let dbs: DbService;
   let tenantId: string;
   let unitId: string;
+  // Randomised, like auth.spec's: a fixed address survives a crashed run and
+  // then fails every test here in beforeAll, blaming the wrong thing.
+  const taken = `dberror-${randomUUID()}@test.dev`;
 
   /** Run something that violates a constraint; hand back what was thrown. */
   const violate = async (fn: () => Promise<unknown>): Promise<unknown> => {
@@ -46,7 +50,7 @@ describe('DbError mapping', () => {
     violate(() =>
       dbs.db.insert(appUser).values({
         tenantId,
-        email: 'dberror@test.dev',
+        email: taken,
         passwordHash: 'x',
         role: 'owner',
       }),
@@ -67,7 +71,7 @@ describe('DbError mapping', () => {
     tenantId = t.id;
     await dbs.db.insert(appUser).values({
       tenantId,
-      email: 'dberror@test.dev',
+      email: taken,
       passwordHash: 'x',
       role: 'owner',
     });

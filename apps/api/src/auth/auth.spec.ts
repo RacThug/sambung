@@ -7,6 +7,7 @@ import { inArray } from 'drizzle-orm';
 import request from 'supertest';
 import { appUser, tenant } from '@sambung/db';
 import type { AuthResponse, MeResponse } from '@sambung/shared';
+import * as dbErrorMap from '../common/db-error/db-error.map';
 import { AppModule } from '../app.module';
 import { DbService } from '../db/db.service';
 
@@ -124,11 +125,11 @@ describe('Auth (FR-AUTH-1)', () => {
   // app_user_email_key to emailTaken too.
   //
   // The constraint path is forced, not raced. Two concurrent signups only
-  // sometimes overlap - measured, the existing race test above catches a broken
-  // map roughly 1 run in 3 - and a §5.3 comparison that quietly falls back to
-  // the pre-check compares a response to itself and passes vacuously. So
-  // instead: let a signup clear the pre-check, then steal its email while it is
-  // busy hashing.
+  // sometimes overlap - measured, the race test above catches a broken map
+  // roughly 1 run in 4 - and a §5.3 comparison that quietly falls back to the
+  // pre-check compares a response to itself and passes vacuously. So instead:
+  // let a signup clear the pre-check, then steal its email while it is busy
+  // hashing.
   it('the pre-check and the constraint are indistinguishable to a client', async () => {
     // Layer 1: the row already exists, so the pre-check refuses before bcrypt.
     const taken = email();
@@ -136,12 +137,18 @@ describe('Auth (FR-AUTH-1)', () => {
     const fromPreCheck = await register({ email: taken });
     expect(fromPreCheck.status).toBe(409);
 
-    // Layer 2. `.then()` starts the request now rather than on await; the
-    // pre-check runs within a few ms, then bcrypt(12) holds the window open for
-    // ~205ms on this machine. Stealing the email at 80ms lands comfortably
-    // inside it.
+    // Attribution. Timing would work (a pre-check rejection returns in
+    // milliseconds because it short-circuits before hashing) but it calibrates
+    // the test to this machine's bcrypt: on a ~1.3x faster CPU the threshold
+    // fails while the behaviour is still correct. Watching the map itself is
+    // exact and portable - if it produced a response, the constraint fired.
+    const mapped = jest.spyOn(dbErrorMap, 'mapDbError');
+
+    // `.then()` starts the request now rather than on await. The pre-check runs
+    // within a few ms; bcrypt(12) then holds the window open (~205ms here), so
+    // stealing the email at 80ms lands inside it. Contention only widens the
+    // window - the risk is a faster box, and the spy above removes it.
     const stolen = email();
-    const startedAt = Date.now();
     const inFlight = request(server())
       .post('/api/auth/register')
       .send({
@@ -167,15 +174,20 @@ describe('Auth (FR-AUTH-1)', () => {
     });
 
     const fromConstraint = await inFlight;
-    const elapsed = Date.now() - startedAt;
 
-    // Attribution, not decoration: a pre-check rejection returns in a few ms
-    // because it short-circuits before hashing. Taking longer than bcrypt means
-    // the pre-check passed - the row genuinely did not exist when it looked -
-    // so this 409 can only have come from the unique constraint, through the
-    // interceptor. If bcrypt ever gets fast enough to break this, the test
-    // fails rather than going quietly vacuous.
-    expect(elapsed).toBeGreaterThan(150);
+    // Read and restore before asserting: a throw here would otherwise leave the
+    // spy installed for the rest of the file.
+    const constraintFired = mapped.mock.results.some(
+      (r) => r.value !== undefined,
+    );
+    mapped.mockRestore();
+
+    // Asserted FIRST, because it is what makes the rest meaningful: the map
+    // turned a real violation into this response, so the pre-check demonstrably
+    // passed and the 409 came from the constraint. Had the pre-check quietly
+    // caught it instead, the body comparison below would be a tautology and
+    // would pass green.
+    expect(constraintFired).toBe(true);
     expect(fromConstraint.status).toBe(409);
     expect(fromConstraint.body).toEqual(fromPreCheck.body);
   });

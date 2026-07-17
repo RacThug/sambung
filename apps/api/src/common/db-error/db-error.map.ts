@@ -1,4 +1,4 @@
-import type { HttpException } from '@nestjs/common';
+import { HttpException } from '@nestjs/common';
 import { pgError } from '@sambung/db';
 import { emailTaken } from './conflicts';
 
@@ -23,9 +23,16 @@ import { emailTaken } from './conflicts';
  * M3: payment_event_provider_event_uniq → already processed (§6.2)
  * M4: booking_external_uid_uniq → already imported (§7.3)
  */
-const MAP: Record<string, () => HttpException> = {
-  app_user_email_key: emailTaken,
-};
+// A Map, not a plain object: constraint names are keys from outside this file,
+// and `{}[name]` reaches the prototype. `__proto__` throws, `constructor`
+// returns a function, `hasOwnProperty` returns something falsy that isn't
+// undefined - so the declared return type would be a lie and the caller's
+// `?? err` fallback would not fire. Schema-owned names make that unreachable
+// today; a lookup that cannot misbehave costs nothing and outlives the
+// assumption.
+const MAP = new Map<string, () => HttpException>([
+  ['app_user_email_key', emailTaken],
+]);
 
 /**
  * The HttpException a database error means, or undefined if we have no opinion.
@@ -35,6 +42,13 @@ const MAP: Record<string, () => HttpException> = {
  * not as a guessed 409 that makes a broken write look like a user error.
  */
 export function mapDbError(err: unknown): HttpException | undefined {
+  // An HttpException is already an answer - never second-guess one. pgError
+  // walks the `cause` chain, so without this a deliberate
+  // `new NotFoundException(msg, { cause: dbErr })` would be rewritten into
+  // whatever that cause's constraint maps to: a 404 silently becoming a 409.
+  // `{ cause }` is idiomatic and Nest supports it, so this is a trap waiting
+  // rather than a hypothetical.
+  if (err instanceof HttpException) return undefined;
   const constraint = pgError(err)?.constraint;
-  return constraint ? MAP[constraint]?.() : undefined;
+  return constraint ? MAP.get(constraint)?.() : undefined;
 }
