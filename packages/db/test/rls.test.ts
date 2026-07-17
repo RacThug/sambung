@@ -16,6 +16,7 @@ import {
   userProperty,
 } from '../src/schema';
 import { expectDbError } from './helpers';
+import { testSlug } from "./helpers";
 
 // Row-Level Security (boss fight #5, DB layer). The ONLY tests in the repo that
 // exercise the policies: every other db test connects as the owner, which is
@@ -61,7 +62,7 @@ describe('RLS policies', () => {
       .returning({ id: appUser.id });
     const [p] = await db
       .insert(property)
-      .values({ tenantId: t.id, name: `${name} Villa` })
+      .values({ tenantId: t.id, name: `${name} Villa`, slug: testSlug() })
       .returning({ id: property.id });
     const [un] = await db
       .insert(unit)
@@ -265,7 +266,9 @@ describe('RLS policies', () => {
   it('WITH CHECK refuses a write scoped to another tenant', async () => {
     await expectDbError(
       asTenant(tenantA, (tx) =>
-        tx.insert(property).values({ tenantId: tenantB, name: 'Smuggled' }),
+        tx
+          .insert(property)
+          .values({ tenantId: tenantB, name: 'Smuggled', slug: testSlug() }),
       ),
       '42501', // insufficient_privilege: new row violates RLS policy
     );

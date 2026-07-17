@@ -58,6 +58,7 @@ export function propertyResponse(
     id: "aaaaaaaa-0000-0000-0000-000000000001",
     tenantId: authResponse().tenant.id,
     name: "Seminyak Beach Villa",
+    slug: "seminyak-beach-villa",
     address: "Jl. Kayu Aya, Seminyak",
     latitude: null,
     longitude: null,

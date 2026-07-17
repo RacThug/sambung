@@ -2,11 +2,13 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import {
   isPublishable,
   isVerified,
+  slugCandidates,
   type CreatePropertyRequest,
   type PresignPhotoRequest,
   type PresignPhotoResponse,
@@ -40,9 +42,36 @@ export class PropertiesService {
     return this.toResponse(await this.getOwnedOrThrow(id));
   }
 
+  /**
+   * Create, minting the public slug from the name (ADR-0004).
+   *
+   * The loop IS the uniqueness check. There is no pre-check, and there cannot
+   * be one: the slug is globally unique, so the rows we would collide with
+   * belong to other tenants - which RLS hides from us. "Is this slug free?"
+   * would always answer yes and then lose at the index. So we ask the index
+   * directly, by trying to insert, and try the next candidate if it says no.
+   *
+   * A collision is never the owner's problem to solve. They typed a NAME; the
+   * slug is ours to derive. Surfacing a 409 would ask them to fix a word they
+   * never wrote - and would confirm that some other tenant holds it, which is
+   * the cross-tenant existence oracle api-spec §1 forbids.
+   *
+   * One transaction for the whole loop: DO NOTHING doesn't raise, so a rejected
+   * candidate leaves the transaction healthy for the next attempt.
+   */
   async create(dto: CreatePropertyRequest): Promise<PropertyResponse> {
-    const row = await this.repo.create(dto);
-    return this.toResponse(row);
+    return this.db.run(async () => {
+      for (const slug of slugCandidates(dto.name)) {
+        const row = await this.repo.createWithSlug({ ...dto, slug });
+        if (row) return this.toResponse(row);
+      }
+      // Unreachable short of a bug: after the bare slug, every candidate carries
+      // a fresh 5-char token out of ~17M. Exhausting them means the generator
+      // stopped being random, so it must not look like a routine conflict.
+      throw new InternalServerErrorException(
+        'Could not mint a unique slug for this property',
+      );
+    });
   }
 
   async update(

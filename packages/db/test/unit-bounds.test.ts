@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { inArray } from "drizzle-orm";
 import { closeDb, db } from "../src/index";
 import { booking, payment, property, tenant, unit } from "../src/schema";
-import { expectDbError } from "./helpers";
+import { expectDbError, testSlug } from "./helpers";
 
 // Layer 2 of #45's "rejected twice over", and the enforcement half of ADR-0002.
 //
@@ -30,7 +30,7 @@ beforeAll(async () => {
   tenantA = t.id;
   const [p] = await db
     .insert(property)
-    .values({ tenantId: tenantA, name: "Villa Bounds" })
+    .values({ tenantId: tenantA, name: "Villa Bounds", slug: testSlug() })
     .returning({ id: property.id });
   propertyA = p.id;
   const [u] = await db
@@ -118,7 +118,7 @@ describe("unit_property_name_uniq (ADR-0001)", () => {
   it("scopes to the property - two properties may each have a Garden Room", async () => {
     const [p2] = await db
       .insert(property)
-      .values({ tenantId: tenantA, name: "Villa Two" })
+      .values({ tenantId: tenantA, name: "Villa Two", slug: testSlug() })
       .returning({ id: property.id });
     await expect(
       db.insert(unit).values({
@@ -194,7 +194,7 @@ describe("deleting inventory never destroys the ledger", () => {
       .returning({ id: tenant.id });
     const [p] = await db
       .insert(property)
-      .values({ tenantId: t.id, name: "Villa Closing" })
+      .values({ tenantId: t.id, name: "Villa Closing", slug: testSlug() })
       .returning({ id: property.id });
     const [u] = await db
       .insert(unit)

@@ -8,6 +8,7 @@ import { TenantContext } from '../common/tenant-context.service';
 import { AppModule } from '../app.module';
 import { DbService } from './db.service';
 import { TenantDbService } from './tenant-db.service';
+import { testSlug } from '../test-helpers';
 
 // The transaction seam (#72). These assert the ONE thing the HTTP tests can't:
 // that nested run() calls land in the same transaction, so a service can
@@ -93,7 +94,10 @@ describe('TenantDbService.run — transaction seam', () => {
       asTenant(() =>
         db.run(async () => {
           await db.run((tx) =>
-            tx.insert(property).values({ tenantId, name }).returning(),
+            tx
+              .insert(property)
+              .values({ tenantId, name, slug: testSlug() })
+              .returning(),
           );
           throw new Error('boom');
         }),
@@ -112,7 +116,10 @@ describe('TenantDbService.run — transaction seam', () => {
     await asTenant(() =>
       db.run(async () => {
         await db.run((tx) =>
-          tx.insert(property).values({ tenantId, name }).returning(),
+          tx
+              .insert(property)
+              .values({ tenantId, name, slug: testSlug() })
+              .returning(),
         );
       }),
     );
@@ -184,8 +191,7 @@ describe('TenantDbService.run — transaction seam', () => {
     await expect(
       asTenant(() =>
         db.run(async () => {
-          tenantCtx.set({
-            userId: randomUUID(),
+          tenantCtx.set({ userId: randomUUID(),
             tenantId: otherTenantId,
             role: 'owner',
           });

@@ -12,6 +12,7 @@ import { AppModule } from '../../app.module';
 import { DbService } from '../../db/db.service';
 import { DbErrorInterceptor } from './db-error.interceptor';
 import { mapDbError } from './db-error.map';
+import { testSlug } from '../../test-helpers';
 
 // The map and the interceptor (#80).
 //
@@ -77,7 +78,7 @@ describe('DbError mapping', () => {
     });
     const [p] = await dbs.db
       .insert(property)
-      .values({ tenantId, name: 'DbError Villa' })
+      .values({ tenantId, name: 'DbError Villa', slug: testSlug() })
       .returning({ id: property.id });
     const [u] = await dbs.db
       .insert(unit)

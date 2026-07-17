@@ -76,16 +76,32 @@ export class PropertiesRepository {
     return rows[0] ?? null;
   }
 
-  async create(
+  /**
+   * Insert, unless the slug is taken - in which case return null and let the
+   * caller try another one (the mint loop in properties.service).
+   *
+   * `on conflict (slug) do nothing` rather than catching 23505, because a raised
+   * constraint violation ABORTS the transaction (25P02): every subsequent
+   * statement fails too, so the retry would need a fresh transaction or a
+   * savepoint. DO NOTHING never raises - it returns zero rows - so the loop runs
+   * inside one transaction and the failure costs nothing.
+   *
+   * Targeted at `(slug)` on purpose. A bare `do nothing` would swallow EVERY
+   * unique violation on this table, turning an unrelated constraint into a
+   * silent "slug taken" retry.
+   */
+  async createWithSlug(
     values: Omit<typeof property.$inferInsert, 'tenantId'>,
-  ): Promise<PropertyRow> {
+  ): Promise<PropertyRow | null> {
     const tenantId = this.tenant.tenantId;
     const [row] = await this.db.run((tx) =>
       tx
         .insert(property)
         .values({ ...values, tenantId })
+        .onConflictDoNothing({ target: property.slug })
         .returning(),
     );
+    if (!row) return null;
     // A brand-new property has no units yet - no second query needed.
     return { ...row, pricedUnitCount: 0 };
   }
@@ -182,7 +198,7 @@ export class PropertiesRepository {
     });
   }
 
-  async delete(id: string): Promise<void> {
+    async delete(id: string): Promise<void> {
     const tenantId = this.tenant.tenantId;
     await this.db.run((tx) =>
       tx
