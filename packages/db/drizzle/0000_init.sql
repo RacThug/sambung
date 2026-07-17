@@ -151,6 +151,14 @@ ALTER TABLE "booking" ADD CONSTRAINT "booking_no_overlap"
 -- Fail-closed: the app sets `app.tenant_id` per transaction (set_config). If it
 -- is unset, current_setting(...,true) is NULL and every row comparison is false
 -- → zero rows. A forgotten WHERE leaks nothing.
+--
+-- ▲ SUPERSEDED by 0002 (#74). The paragraph above is WRONG, and was wrong when
+-- it was written: set_config(..., is_local => true) reverts at COMMIT to the
+-- GUC's *reset* value, which for a custom GUC already set once on the session is
+-- the empty string, not NULL. So these predicates return zero rows on a fresh
+-- connection but error 22P02 on a pooled one that has served a request. 0002
+-- wraps the GUC in nullif(..., '') to make the claim true. The SQL below is left
+-- exactly as applied - migrations are history; read 0002 for current behaviour.
 ALTER TABLE "tenant" ENABLE ROW LEVEL SECURITY;--> statement-breakpoint
 CREATE POLICY "tenant_isolation" ON "tenant"
   USING ("id" = current_setting('app.tenant_id', true)::uuid)

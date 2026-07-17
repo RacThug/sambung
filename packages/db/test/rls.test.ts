@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { eq, inArray, sql } from 'drizzle-orm';
-import { closeDb, createDb, db } from '../src/index';
+import { inArray, sql } from 'drizzle-orm';
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { Client } from 'pg';
+import { closeDb, createDb, db, pgError } from '../src/index';
+import * as schema from '../src/schema';
 import {
   appUser,
   booking,
@@ -127,28 +130,29 @@ describe('RLS policies', () => {
     await closeDb();
   });
 
-  // One per policy: as tenant A, B's row must be invisible. Each ALTER in
-  // 0002 changes one of these predicates - untested, a typo in any of them
-  // (especially the three EXISTS subqueries) would ship silently.
-  describe('scope every table to the GUC tenant', () => {
-    const cases = [
-      { name: 'tenant', table: tenant, col: tenant.id },
-      { name: 'app_user', table: appUser, col: appUser.id },
-      { name: 'property', table: property, col: property.id },
-      { name: 'unit', table: unit, col: unit.id },
-      {
-        name: 'channel_connection',
-        table: channelConnection,
-        col: channelConnection.id,
-      },
-      { name: 'booking', table: booking, col: booking.id },
-      // Child tables with no tenant_id of their own - scoped via an EXISTS on
-      // their parent. Different predicate shape, same question.
-      { name: 'payment', table: payment, col: payment.id },
-      { name: 'payment_event', table: paymentEvent, col: paymentEvent.id },
-      { name: 'user_property', table: userProperty, col: userProperty.propertyId },
-    ];
+  // Every policied table, and the column that identifies a row. 0002 ALTERs one
+  // policy per entry - a typo in any of them (especially the three EXISTS
+  // subqueries, which have never had a test) would otherwise ship silently.
+  const cases = [
+    { name: 'tenant', table: tenant, col: tenant.id },
+    { name: 'app_user', table: appUser, col: appUser.id },
+    { name: 'property', table: property, col: property.id },
+    { name: 'unit', table: unit, col: unit.id },
+    {
+      name: 'channel_connection',
+      table: channelConnection,
+      col: channelConnection.id,
+    },
+    { name: 'booking', table: booking, col: booking.id },
+    // Child tables with no tenant_id of their own - scoped via an EXISTS on
+    // their parent. Different predicate shape, same question.
+    { name: 'payment', table: payment, col: payment.id },
+    { name: 'payment_event', table: paymentEvent, col: paymentEvent.id },
+    { name: 'user_property', table: userProperty, col: userProperty.propertyId },
+  ];
 
+  // One per policy: as tenant A, B's row must be invisible.
+  describe('scope every table to the GUC tenant', () => {
     for (const { name, table, col } of cases) {
       it(`${name}: tenant A sees its own row and not tenant B's`, async () => {
         const rows = await asTenant(tenantA, (tx) =>
@@ -168,55 +172,89 @@ describe('RLS policies', () => {
   //
   // set_config(..., true) reverts at COMMIT to the GUC's RESET value, which for
   // a custom GUC already set once on the session is '' - NOT unset. So the
-  // connection must be WARMED first: a cold connection returns NULL and passes
-  // this test even with the old predicate, proving nothing.
+  // connection must be WARMED first: a cold one reports NULL and fails closed
+  // even under the OLD predicate, so a cold test passes against the bug it is
+  // meant to catch.
+  //
+  // Which means these tests cannot use `appDb`: it is a pg Pool (default
+  // max=10), and a pool hands each query whichever backend is free. Warming one
+  // backend and then firing nine queries warms 1 and opens 8 fresh, cold ones -
+  // measured, 8 of 9 assertions passed against the unfixed predicate. A single
+  // pinned Client is the only way to guarantee every query lands on the backend
+  // we warmed. (A pool client is also destroyed on query error, so even a
+  // sequential loop would go cold after the first failure.)
   describe('fail closed with no tenant in context', () => {
-    /** Run one tenant-scoped transaction so the GUC's reset value becomes ''. */
-    const warm = async () => {
-      await asTenant(tenantA, (tx) => tx.select({ id: property.id }).from(property));
-      const [row] = await appDb.execute<{ raw: string | null; isNull: boolean }>(
-        sql`select current_setting('app.tenant_id', true) as raw,
-                   current_setting('app.tenant_id', true) is null as "isNull"`,
-      ).then((r) => r.rows as Array<{ raw: string | null; isNull: boolean }>);
-      return row;
-    };
+    let client: Client;
+    let warmDb: NodePgDatabase<typeof schema>;
+
+    beforeAll(async () => {
+      client = new Client({ connectionString: process.env.APP_DATABASE_URL });
+      await client.connect();
+      warmDb = drizzle(client, { schema });
+      // One tenant-scoped transaction: after it commits, the GUC's reset value
+      // on THIS backend is '' rather than unset. That is the whole premise.
+      await warmDb.transaction(async (tx) => {
+        await tx.execute(
+          sql`select set_config('app.tenant_id', ${tenantA}, true)`,
+        );
+        await tx.select({ id: property.id }).from(property);
+      });
+    });
+
+    afterAll(async () => {
+      await client.end();
+    });
 
     it('the GUC resets to empty string, not NULL - the premise of #74', async () => {
-      const row = await warm();
-      // If this ever reports isNull=true, the reset-value behaviour changed and
-      // the nullif() in 0002 is load-bearing for a reason that no longer holds.
+      const res = await warmDb.execute<{ raw: string | null; isNull: boolean }>(
+        sql`select current_setting('app.tenant_id', true) as raw,
+                   current_setting('app.tenant_id', true) is null as "isNull"`,
+      );
+      const row = (res.rows as Array<{ raw: string | null; isNull: boolean }>)[0];
+      // If this ever reports isNull=true, the connection went cold and every
+      // assertion below is vacuous - or the reset-value behaviour changed and
+      // 0002's nullif() is load-bearing for a reason that no longer holds.
       expect(row.isNull).toBe(false);
       expect(row.raw).toBe('');
     });
 
-    it('a direct policy returns zero rows, not 22P02', async () => {
-      await warm();
-      // No set_config: the GUC is '' on this connection. Before 0002 this threw
-      // `invalid input syntax for type uuid: ""`.
-      const rows = await appDb.select({ id: property.id }).from(property);
-      expect(rows).toHaveLength(0);
-    });
+    it('every policy fails closed, all on the one warmed backend', async () => {
+      // Sequential, on the pinned client: no set_config anywhere, so the GUC is
+      // '' for all nine. Before 0002 every one of these threw 22P02, `invalid
+      // input syntax for type uuid: ""`. Both predicate shapes are covered -
+      // six direct, three EXISTS.
+      //
+      // Outcomes are collected rather than asserted per query, so a regression
+      // reports all nine policies instead of dying on the first. (Verified the
+      // pinned Client survives an error: unlike a pool client, it isn't
+      // destroyed, so the backend - and its warm '' GUC - persists. The pid
+      // assertion below is what proves that.)
+      const pid = async () =>
+        (
+          (await warmDb.execute<{ pid: number }>(
+            sql`select pg_backend_pid() as pid`,
+          )).rows as Array<{ pid: number }>
+        )[0].pid;
+      const before = await pid();
 
-    it('an EXISTS policy returns zero rows, not 22P02', async () => {
-      await warm();
-      const rows = await appDb.select({ id: payment.id }).from(payment);
-      expect(rows).toHaveLength(0);
-    });
+      const outcomes: Record<string, string> = {};
+      for (const { name, table, col } of cases) {
+        try {
+          const rows = await warmDb.select({ id: col }).from(table);
+          outcomes[name] =
+            rows.length === 0 ? 'closed' : `LEAKED ${rows.length} rows`;
+        } catch (e) {
+          outcomes[name] = `ERROR ${pgError(e)?.code ?? 'unknown'}`;
+        }
+      }
 
-    it('every policy fails closed on a warm connection', async () => {
-      await warm();
-      const counts = await Promise.all([
-        appDb.select({ id: tenant.id }).from(tenant),
-        appDb.select({ id: appUser.id }).from(appUser),
-        appDb.select({ id: property.id }).from(property),
-        appDb.select({ id: unit.id }).from(unit),
-        appDb.select({ id: channelConnection.id }).from(channelConnection),
-        appDb.select({ id: booking.id }).from(booking),
-        appDb.select({ id: payment.id }).from(payment),
-        appDb.select({ id: paymentEvent.id }).from(paymentEvent),
-        appDb.select({ id: userProperty.propertyId }).from(userProperty),
-      ]);
-      expect(counts.map((rows) => rows.length)).toEqual(Array(9).fill(0));
+      expect(outcomes).toEqual(
+        Object.fromEntries(cases.map((c) => [c.name, 'closed'])),
+      );
+      // Same backend before and after, so every query above ran warm - and the
+      // errors (if any) didn't silently reconnect us onto a cold one, which
+      // would make the assertion vacuous.
+      expect(await pid()).toBe(before);
     });
   });
 
