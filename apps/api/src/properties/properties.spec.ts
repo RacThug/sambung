@@ -4,7 +4,7 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
-import { inArray } from 'drizzle-orm';
+import { inArray, sql } from 'drizzle-orm';
 import { ClsService } from 'nestjs-cls';
 import request from 'supertest';
 import { property, tenant } from '@sambung/db';
@@ -145,19 +145,24 @@ describe('Tenant isolation (properties)', () => {
     );
     try {
       const repo = new PropertiesRepository(ownerDb, tenantCtx);
-      const { mine, foreign, all } = await asTenantA(async () => ({
+      const { bypassed, mine, foreign, all } = await asTenantA(async () => ({
+        // Precondition, asserted on the connection UNDER TEST rather than on
+        // DbService: if this connected as the app role, every assertion below
+        // would pass because RLS covered for the filter - the exact "green for
+        // the wrong reason" this test exists to rule out. row_security_active
+        // is false only when the role genuinely bypasses policy.
+        bypassed: await ownerDb.run(async (tx) => {
+          const res = await tx.execute(
+            sql`select row_security_active('property') as active`,
+          );
+          return (res.rows[0] as { active: boolean }).active;
+        }),
         mine: await repo.findById(propA.id),
         foreign: await repo.findById(propB.id),
         all: await repo.findAll(),
       }));
 
-      // Sanity: the owner connection really does see everything, so the
-      // assertions below are the filter's doing and not RLS quietly helping.
-      const unscoped = await dbs.db.select().from(property);
-      expect(unscoped.map((p) => p.id)).toEqual(
-        expect.arrayContaining([propA.id, propB.id]),
-      );
-
+      expect(bypassed).toBe(false);
       expect(mine?.id).toBe(propA.id);
       expect(foreign).toBeNull();
       expect(all.map((p) => p.id)).not.toContain(propB.id);

@@ -60,7 +60,7 @@ api/src/
 ├── common/
 │   ├── guards/            JwtAuthGuard, RolesGuard
 │   ├── interceptors/      TenantContextInterceptor
-│   ├── decorators/        @CurrentUser(), @Tenant()
+│   ├── decorators/        @CurrentPrincipal()
 │   └── filters/           global exception filter (consistent error shape)
 └── modules/
     ├── auth/              register, login, refresh, JWT issuing
