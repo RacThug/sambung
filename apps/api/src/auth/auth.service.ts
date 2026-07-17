@@ -1,19 +1,9 @@
-import {
-  ConflictException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 import { eq } from 'drizzle-orm';
-import {
-  appUser,
-  isUniqueViolation,
-  tenant,
-  type AppUser,
-  type Tenant,
-} from '@sambung/db';
+import { appUser, tenant, type AppUser, type Tenant } from '@sambung/db';
 import type {
   AuthResponse,
   LoginRequest,
@@ -21,6 +11,7 @@ import type {
   RegisterRequest,
   UserDto,
 } from '@sambung/shared';
+import { emailTaken } from '../common/db-error/conflicts';
 import { DbService } from '../db/db.service';
 
 const ACCESS_TTL = '15m';
@@ -46,38 +37,37 @@ export class AuthService {
       .where(eq(appUser.email, input.email))
       .limit(1);
     if (existing) {
-      throw new ConflictException('Email already registered');
+      // Same factory the constraint maps to, so the two layers are literally
+      // the same response - api-spec §5.3. This branch is only a fast path: it
+      // exists to skip the 12-round bcrypt below, not to guarantee anything.
+      throw emailTaken();
     }
     const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
 
-    // The pre-check above is just UX fast-path; the citext UNIQUE on email is
-    // the real guard (two concurrent signups both pass the pre-check, then one
-    // loses at the constraint). Map that 23505 to 409 instead of a 500.
-    try {
-      // Tenant + owner are created together or not at all.
-      const { newTenant, newUser } = await db.transaction(async (tx) => {
-        const [newTenant] = await tx
-          .insert(tenant)
-          .values({ name: input.tenantName })
-          .returning();
-        const [newUser] = await tx
-          .insert(appUser)
-          .values({
-            tenantId: newTenant.id,
-            email: input.email,
-            passwordHash,
-            role: 'owner',
-          })
-          .returning();
-        return { newTenant, newUser };
-      });
-      return this.issue(newUser, newTenant);
-    } catch (err) {
-      if (isUniqueViolation(err)) {
-        throw new ConflictException('Email already registered');
-      }
-      throw err;
-    }
+    // The citext UNIQUE on email is the real guard: two concurrent signups both
+    // pass the pre-check above (bcrypt holds the window open for ~300ms), then
+    // one loses at the constraint. No try/catch - DbErrorInterceptor maps
+    // app_user_email_key to the same 409, so the loser cannot tell which layer
+    // refused it.
+    //
+    // Tenant + owner are created together or not at all.
+    const { newTenant, newUser } = await db.transaction(async (tx) => {
+      const [newTenant] = await tx
+        .insert(tenant)
+        .values({ name: input.tenantName })
+        .returning();
+      const [newUser] = await tx
+        .insert(appUser)
+        .values({
+          tenantId: newTenant.id,
+          email: input.email,
+          passwordHash,
+          role: 'owner',
+        })
+        .returning();
+      return { newTenant, newUser };
+    });
+    return this.issue(newUser, newTenant);
   }
 
   async login(

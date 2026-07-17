@@ -33,6 +33,15 @@ export const closeDb = owner.close;
 /**
  * Extract the Postgres error (code / constraint) from whatever the driver or
  * Drizzle threw - Drizzle may wrap the pg error, so walk the `cause` chain.
+ * The top-level message is only "Failed query: ...", so this is the only way to
+ * reach the SQLSTATE or the constraint name.
+ *
+ * There used to be isUniqueViolation / isExclusionViolation /
+ * isForeignKeyViolation sugar over this. All three are gone (#80): callers want
+ * the constraint NAME, not the code. "23505" means "some unique thing already
+ * exists", which is not an answer - `app_user_email_key` is. The one caller
+ * that used a predicate now keys on the name instead, and the other two never
+ * had a caller at all. Re-add sugar when something actually wants a code.
  */
 export function pgError(
   err: unknown,
@@ -56,10 +65,3 @@ export function pgError(
   }
   return undefined;
 }
-
-export const isUniqueViolation = (err: unknown): boolean =>
-  pgError(err)?.code === "23505";
-export const isExclusionViolation = (err: unknown): boolean =>
-  pgError(err)?.code === "23P01";
-export const isForeignKeyViolation = (err: unknown): boolean =>
-  pgError(err)?.code === "23503";
