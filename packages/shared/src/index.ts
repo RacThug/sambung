@@ -7,7 +7,13 @@
  * for the API shape. (architecture.md §2)
  *
  * This file seeds the pattern with a couple of shared primitives. Real
- * per-feature contracts arrive with their milestones.
+ * per-feature contracts arrive with their milestones, each in its own file.
+ *
+ * The booking vocabulary (`bookingStatusSchema` / `bookingSourceSchema`) used to
+ * live here as M0 scaffolding and was deleted unused, because it had drifted
+ * from the database and would have misled the milestone that finally needed it.
+ * M2 defines it in ./booking, beside the endpoints that use it, pinned to the
+ * pgEnum per api-spec §8.6.
  */
 import { z } from "zod";
 
@@ -16,24 +22,6 @@ export * from "./money";
 export * from "./photo";
 export * from "./property";
 export * from "./unit";
-
-/** Booking lifecycle. Availability is derived from these rows. (db-design.md) */
-export const bookingStatusSchema = z.enum([
-  "pending_payment",
-  "confirmed",
-  "cancelled",
-  "expired",
-]);
-export type BookingStatus = z.infer<typeof bookingStatusSchema>;
-
-/** Where a booking originated. */
-export const bookingSourceSchema = z.enum([
-  "direct",
-  "airbnb",
-  "booking",
-  "manual",
-]);
-export type BookingSource = z.infer<typeof bookingSourceSchema>;
 
 /** Health-check response shape, shared by API and any client probe. */
 export const healthResponseSchema = z.object({
