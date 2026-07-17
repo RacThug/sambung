@@ -140,6 +140,27 @@ describe('TenantDbService.run — transaction seam', () => {
     expect(result.error).toMatch(/already settled/);
   });
 
+  it('refuses a statement issued after its transaction settled', async () => {
+    // The other half of the same hole: this call ENTERS run while the
+    // transaction is alive, so an entry-time check passes it - then awaits,
+    // and its statement lands after COMMIT, on a connection the pool has since
+    // handed to someone else.
+    let outcome!: Promise<{ ran: boolean; error?: string }>;
+    await asTenant(() =>
+      db.run((tx) => {
+        outcome = new Promise((resolve) => setImmediate(resolve))
+          .then(() => xactId(tx))
+          .then(() => ({ ran: true }))
+          .catch((e: Error) => ({ ran: false, error: e.message }));
+        return Promise.resolve();
+      }),
+    );
+
+    const result = await outcome;
+    expect(result.ran).toBe(false);
+    expect(result.error).toMatch(/after its transaction settled/);
+  });
+
   it('assertInTransaction throws outside a run', () => {
     expect(() => db.assertInTransaction('probe')).toThrow(
       /must be called inside TenantDbService\.run/,

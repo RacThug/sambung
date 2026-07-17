@@ -3,7 +3,7 @@ import type { Server } from 'node:http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { ClsService } from 'nestjs-cls';
 import request from 'supertest';
 import { booking, property, tenant, unit } from '@sambung/db';
@@ -14,6 +14,8 @@ import {
 } from '@sambung/shared';
 import { AppModule } from '../app.module';
 import { DbService } from '../db/db.service';
+import { TenantDbService } from '../db/tenant-db.service';
+import { PropertiesService } from './properties.service';
 import { PropertiesRepository } from './properties.repository';
 
 // Property CRUD (FR-PROP-1/3, api-spec §4.3-4.4) over real HTTP + DB.
@@ -396,6 +398,87 @@ describe('Property CRUD', () => {
         return repo.findByIdForTenant(created.id, tenantAId);
       });
       expect(row?.pricedUnitCount).toBe(1);
+    });
+  });
+
+  // The delete guard (api-spec §4.4) is only sound if its lock, count and
+  // delete share ONE transaction: a lock released before the count guards
+  // nothing, and the HTTP tests above pass either way. These pin the unit of
+  // work itself. The spies below call through - they instrument, they don't
+  // fake, so the "fakes only at the outbound provider edge" rule holds.
+  describe('DELETE /api/properties/:id — the guard is one unit of work', () => {
+    const asOwner = <T>(fn: () => Promise<T>): Promise<T> =>
+      cls.run(() => {
+        cls.set('principal', {
+          userId: 'test',
+          tenantId: tenantAId,
+          role: 'owner',
+        });
+        return fn();
+      });
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('takes the lock, counts and deletes in one transaction, lock first', async () => {
+      const created = await createProperty(tokenA, { name: 'Unit Of Work' });
+      const repo = app.get(PropertiesRepository);
+      const tenantDb = app.get(TenantDbService);
+
+      const calls: string[] = [];
+      const xids: string[] = [];
+      // Joins the ambient transaction if there is one, opens its own if not -
+      // so three identical ids prove one transaction, and differing ids prove
+      // the guard has come apart.
+      const record = async (name: string) => {
+        calls.push(name);
+        xids.push(
+          await tenantDb.run(async (tx) => {
+            const r = await tx.execute(sql`select pg_current_xact_id() as id`);
+            return String((r.rows[0] as { id: string | number }).id);
+          }),
+        );
+      };
+
+      // A second real repository over the same TenantDbService singleton, so
+      // the pass-through joins the ambient transaction exactly as the original
+      // would. (`.bind` would do, but apps/api sets strictBindCallApply:false,
+      // which degrades it to `any`.)
+      const real = new PropertiesRepository(tenantDb);
+
+      jest.spyOn(repo, 'lockForDelete').mockImplementation(async (id, t) => {
+        await record('lockForDelete');
+        return real.lockForDelete(id, t);
+      });
+      jest
+        .spyOn(repo, 'countFutureOccupying')
+        .mockImplementation(async (id) => {
+          await record('countFutureOccupying');
+          return real.countFutureOccupying(id);
+        });
+      jest.spyOn(repo, 'delete').mockImplementation(async (id, t) => {
+        await record('delete');
+        return real.delete(id, t);
+      });
+
+      await asOwner(() => app.get(PropertiesService).remove(created.id));
+
+      // Order: the lock must precede the count, or the count is a TOCTOU read.
+      expect(calls).toEqual([
+        'lockForDelete',
+        'countFutureOccupying',
+        'delete',
+      ]);
+      // Identity: all three in the same transaction, so the lock still holds.
+      expect(new Set(xids).size).toBe(1);
+    });
+
+    it('refuses to take the lock outside a unit of work', async () => {
+      const created = await createProperty(tokenA, { name: 'Lock Guard' });
+      const repo = app.get(PropertiesRepository);
+
+      await expect(
+        asOwner(() => repo.lockForDelete(created.id, tenantAId)),
+      ).rejects.toThrow(/must be called inside TenantDbService\.run/);
     });
   });
 });

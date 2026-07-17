@@ -7,16 +7,51 @@ import { createDb, type DbTx } from '@sambung/db';
 import type { TenantPrincipal } from '../common/tenant-context.service';
 
 /**
- * The open transaction, plus whether it is still open. `alive` is the guard
- * against a stale handle: async work started inside `run` keeps this store
- * after the transaction settles and its connection returns to the pool, so a
- * deferred `run` would otherwise join a dead handle and execute on a recycled
- * connection - inside whatever transaction now owns it, under that tenant's
- * GUC. Silent cross-tenant contamination. Fail loudly instead.
+ * The open transaction, plus whether it is still open.
+ *
+ * `alive` guards against a stale handle. Async work started inside `run` keeps
+ * the ALS store after the transaction settles and its connection returns to
+ * the pool, so a late query would otherwise execute on a recycled connection -
+ * inside whatever transaction now owns it, under that tenant's GUC. Silent
+ * cross-tenant contamination.
+ *
+ * `guarded` is what callers actually get. Checking `alive` only when `run` is
+ * entered is not enough: a call that enters while the transaction is alive and
+ * then awaits anything lands its statements arbitrarily later, after the
+ * connection has moved on. The check has to happen when a statement is issued,
+ * which is what the proxy does.
  */
 interface ActiveTx {
   readonly tx: DbTx;
+  guarded: DbTx;
   alive: boolean;
+}
+
+/**
+ * Wrap a transaction so every call through it asserts the transaction is still
+ * open. This is the enforcement behind "work started inside run() must be
+ * awaited before it returns" - without it, that rule is only a comment.
+ */
+function guardTx(tx: DbTx, active: ActiveTx): DbTx {
+  return new Proxy(tx, {
+    get(target, prop) {
+      // Read without the proxy as receiver: drizzle's internals use private
+      // fields, which throw if accessed through a proxy receiver.
+      const value: unknown = Reflect.get(target, prop);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]): unknown => {
+        if (!active.alive) {
+          throw new Error(
+            'TenantDbService: statement issued after its transaction settled. ' +
+              'Work started inside run() must be awaited before the callback ' +
+              'returns - otherwise the query lands on a pooled connection that ' +
+              'has moved on to another transaction, and another tenant.',
+          );
+        }
+        return (value as (...a: unknown[]) => unknown).apply(target, args);
+      };
+    },
+  });
 }
 
 // Tenant-scoped database access (boss fight #5, app layer). Every callback
@@ -83,21 +118,22 @@ export class TenantDbService implements OnModuleDestroy {
         );
       }
       // Already inside a live transaction that set the GUC - reuse both.
-      return fn(joined.tx);
+      return fn(joined.guarded);
     }
     const tenantId = this.cls.get<TenantPrincipal>('principal')?.tenantId;
     return this.conn.db.transaction(async (tx) => {
-      const active: ActiveTx = { tx, alive: true };
+      const active = { tx, alive: true } as ActiveTx;
+      active.guarded = guardTx(tx, active);
       if (tenantId) {
         await tx.execute(
           sql`select set_config('app.tenant_id', ${tenantId}, true)`,
         );
       }
       try {
-        return await this.activeTx.run(active, () => fn(tx));
+        return await this.activeTx.run(active, () => fn(active.guarded));
       } finally {
-        // Runs before drizzle issues COMMIT/ROLLBACK, so nothing can join
-        // between the callback returning and the transaction closing.
+        // Runs before drizzle issues COMMIT/ROLLBACK, so nothing can reach the
+        // connection between the callback returning and the transaction closing.
         active.alive = false;
       }
     });
