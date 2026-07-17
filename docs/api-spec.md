@@ -231,6 +231,9 @@ Disconnects. Already-imported bookings are **kept** (they may reflect real stays
 3. **Public endpoints are rate-limit candidates** (`/auth/*`, `/public/bookings*`) - deferred to M5, named here so it isn't forgotten. No CAPTCHA in v1.
 4. **BigInt discipline:** DB `bigint` ⇄ JSON number happens in one serialization helper; no `JSON.stringify` of raw rows with BigInt fields.
 5. **Testing seam** (matches existing prior art - `auth.spec.ts`, `properties.spec.ts`): behaviors in this spec are tested with supertest over real HTTP against the booted app + real Postgres; DB-owned invariants at the `packages/db` vitest seam; the only fakes sit at the outbound provider edge (Midtrans client, iCal fetch) so webhook/feed fixtures can drive flows end-to-end.
+6. **A shared enum that mirrors a `pgEnum` is pinned to it by a test.** The web app must never import `packages/db` (invariant #1), so a wire-level enum (`booking_source`, `booking_status`, `payment_status`, `sync_status`, `user_role`) is necessarily hand-copied into `packages/shared` - two sources of truth for one list. `apps/api` is the only workspace that legitimately imports **both**, so the equality test lives there: `expect([...someSchema.options].sort()).toEqual([...somePgEnum.enumValues].sort())`. Add it in the same PR as the enum, never after.
+
+   *Why this rule exists:* `bookingSourceSchema` shipped in M0 saying `"booking"`/`"manual"` where the pgEnum says `booking_com`/`vrbo`/`manual_block`, and `vrbo` was missing outright. Nothing imported it, so nothing failed - it sat waiting for M2 to import a type that **typechecks and then fails at the INSERT**, while `BookingSource` existed in `@sambung/db` *and* `@sambung/shared` with different values under the same name. It was deleted rather than fixed (#45 review): a wrong contract is worse than no contract, and the fix without this test just resets the clock.
 
 ## 9. Out of scope (v1, per PRD §2.2)
 
