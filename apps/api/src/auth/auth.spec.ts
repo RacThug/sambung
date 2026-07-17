@@ -5,7 +5,7 @@ import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import { inArray } from 'drizzle-orm';
 import request from 'supertest';
-import { tenant } from '@sambung/db';
+import { appUser, tenant } from '@sambung/db';
 import type { AuthResponse, MeResponse } from '@sambung/shared';
 import { AppModule } from '../app.module';
 import { DbService } from '../db/db.service';
@@ -113,6 +113,71 @@ describe('Auth (FR-AUTH-1)', () => {
     }
     // Exactly one wins (201); the other loses at the DB unique constraint → 409.
     expect([r1.status, r2.status].sort((a, b) => a - b)).toEqual([201, 409]);
+  });
+
+  // api-spec §5.3 as an assertion rather than a comment: "the client cannot
+  // tell (and must not care) which layer refused". Two layers reject a
+  // duplicate email - the app's pre-check (a fast path, to skip bcrypt) and the
+  // citext UNIQUE that actually guarantees it - and their responses must be
+  // indistinguishable. They are, because both come from the same factory: the
+  // pre-check throws emailTaken(), and DbErrorInterceptor maps
+  // app_user_email_key to emailTaken too.
+  //
+  // The constraint path is forced, not raced. Two concurrent signups only
+  // sometimes overlap - measured, the existing race test above catches a broken
+  // map roughly 1 run in 3 - and a §5.3 comparison that quietly falls back to
+  // the pre-check compares a response to itself and passes vacuously. So
+  // instead: let a signup clear the pre-check, then steal its email while it is
+  // busy hashing.
+  it('the pre-check and the constraint are indistinguishable to a client', async () => {
+    // Layer 1: the row already exists, so the pre-check refuses before bcrypt.
+    const taken = email();
+    await register({ email: taken });
+    const fromPreCheck = await register({ email: taken });
+    expect(fromPreCheck.status).toBe(409);
+
+    // Layer 2. `.then()` starts the request now rather than on await; the
+    // pre-check runs within a few ms, then bcrypt(12) holds the window open for
+    // ~205ms on this machine. Stealing the email at 80ms lands comfortably
+    // inside it.
+    const stolen = email();
+    const startedAt = Date.now();
+    const inFlight = request(server())
+      .post('/api/auth/register')
+      .send({
+        tenantName: 'Stolen Co',
+        email: stolen,
+        password: 'supersecret1',
+      })
+      .then((r) => r);
+
+    await new Promise((r) => setTimeout(r, 80));
+    const [thief] = await dbs.db
+      .insert(tenant)
+      .values({ name: 'Thief Co' })
+      .returning({ id: tenant.id });
+    createdTenantIds.push(thief.id);
+    // If this throws, the signup already inserted and the premise is broken -
+    // loudly, rather than by silently testing the pre-check twice.
+    await dbs.db.insert(appUser).values({
+      tenantId: thief.id,
+      email: stolen,
+      passwordHash: 'x',
+      role: 'owner',
+    });
+
+    const fromConstraint = await inFlight;
+    const elapsed = Date.now() - startedAt;
+
+    // Attribution, not decoration: a pre-check rejection returns in a few ms
+    // because it short-circuits before hashing. Taking longer than bcrypt means
+    // the pre-check passed - the row genuinely did not exist when it looked -
+    // so this 409 can only have come from the unique constraint, through the
+    // interceptor. If bcrypt ever gets fast enough to break this, the test
+    // fails rather than going quietly vacuous.
+    expect(elapsed).toBeGreaterThan(150);
+    expect(fromConstraint.status).toBe(409);
+    expect(fromConstraint.body).toEqual(fromPreCheck.body);
   });
 
   it('rejects invalid input at the boundary (400)', async () => {
