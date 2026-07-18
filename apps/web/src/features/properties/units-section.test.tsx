@@ -297,4 +297,69 @@ describe("units section (§4.5)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
     expect(calls).not.toContain(`DELETE /api/units/${unitResponse().id}`);
   });
+
+  // Archive (ADR-0005, #84): a self-archived unit under a LIVE property is muted,
+  // loses Edit, and offers Unarchive instead of Archive.
+  it("marks a self-archived unit and offers Unarchive", async () => {
+    stubEditPage({}, [
+      unitResponse({ archivedAt: "2026-07-18T00:00:00.000Z" }),
+    ]);
+    renderAt(editUrl);
+
+    expect(await screen.findByText("Garden Room 1")).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Unarchive" }),
+    ).toBeInTheDocument();
+    // Editing a retired unit is meaningless, so the affordance is gone.
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("archives an active unit via the Archive button", async () => {
+    const calls = stubEditPage({
+      [`POST /api/units/${unitResponse().id}/archive`]: () =>
+        json(unitResponse({ archivedAt: "2026-07-18T00:00:00.000Z" })),
+    });
+    renderAt(editUrl);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    await waitFor(() =>
+      expect(calls).toContain(`POST /api/units/${unitResponse().id}/archive`),
+    );
+  });
+
+  // The bug the two-session review caught: a Unit under an ARCHIVED property must
+  // read as archived (effective-archived, ADR-0005), not as a bookable room under
+  // a "retired" banner. The whole section goes read-only history - no add, no
+  // per-unit actions - because units come back by unarchiving the property.
+  it("shows units as read-only history when the PROPERTY is archived", async () => {
+    stubEditPage(
+      {
+        [`GET /api/properties/${propertyId}`]: () =>
+          json(propertyResponse({ archivedAt: "2026-07-18T00:00:00.000Z" })),
+      },
+      // The unit's OWN flag is null - it's archived only by derivation.
+      [unitResponse()],
+    );
+    renderAt(editUrl);
+
+    expect(await screen.findByText("Garden Room 1")).toBeInTheDocument();
+    // Effectively archived despite its own flag being null.
+    expect(screen.getByText("Property archived")).toBeInTheDocument();
+    // No per-unit actions and no add row while the property is retired.
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Archive" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /^Delete$/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Add unit" }),
+    ).not.toBeInTheDocument();
+  });
 });

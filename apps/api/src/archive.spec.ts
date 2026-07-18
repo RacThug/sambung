@@ -335,6 +335,23 @@ describe('Archive (retire inventory with history) - #84', () => {
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(404);
     });
+
+    it('is idempotent: re-archiving a property keeps the original archivedAt', async () => {
+      const prop = await createProperty('Prop Idempotent Villa');
+      const first = bodyOf<PropertyResponse>(
+        await request(server())
+          .post(`/api/properties/${prop.id}/archive`)
+          .set('Authorization', `Bearer ${tokenA}`)
+          .expect(200),
+      ).archivedAt;
+      const second = bodyOf<PropertyResponse>(
+        await request(server())
+          .post(`/api/properties/${prop.id}/archive`)
+          .set('Authorization', `Bearer ${tokenA}`)
+          .expect(200),
+      ).archivedAt;
+      expect(second).toBe(first); // the "retired on" date must not reset
+    });
   });
 
   describe('publishable excludes archived (ADR-0005, api-spec §4.3)', () => {
@@ -401,6 +418,20 @@ describe('Archive (retire inventory with history) - #84', () => {
         .expect(200);
       const res = await getPublic(prop.slug).expect(200); // exact URL back
       expect(bodyOf<PublicPropertyResponse>(res).slug).toBe(prop.slug);
+    });
+
+    // No existence oracle (ADR-0006): a crawler must not be able to tell a
+    // retired property from one that never existed - same status AND same body.
+    it("an archived property's 404 is byte-identical to an unknown slug's", async () => {
+      const prop = await createProperty('Oracle Villa');
+      await request(server())
+        .post(`/api/properties/${prop.id}/archive`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      const archived = await getPublic(prop.slug).expect(404);
+      const unknown = await getPublic(testSlug()).expect(404);
+      expect(archived.body).toEqual(unknown.body);
     });
   });
 
