@@ -1,4 +1,5 @@
-import { ConflictException, HttpException } from '@nestjs/common';
+import { ConflictException, HttpException, HttpStatus } from '@nestjs/common';
+import type { BookingRefusalReason } from '@sambung/shared';
 
 /**
  * Domain errors that a database constraint can also produce.
@@ -32,3 +33,29 @@ export const unitNameTaken = (): HttpException =>
   new ConflictException(
     'A unit with this name already exists in this property',
   );
+
+/**
+ * A guest booking cannot occupy these nights (api-spec §5.3, boss fight #1).
+ *
+ * THE reason this whole factory pattern exists. Two layers reach it: the service
+ * re-checks availability inside the transaction and throws this with the full
+ * `reasons` it computed (`overlap`/`min_stay`/`max_guests`/`unavailable`); and if
+ * a racing booking slips between that check and the INSERT, the
+ * `booking_no_overlap` exclusion constraint fires and the interceptor maps it
+ * here with `['overlap']` (see db-error.map.ts). api-spec §5.3 requires the two
+ * to be indistinguishable - "the client cannot tell (and must not care) which
+ * layer refused" - which is exactly one factory, thrown from both places.
+ *
+ * The body carries a machine-readable `reasons` array (AC #4) on top of the
+ * standard conflict shape, so the checkout UI can branch (re-quote on `overlap`,
+ * send back to search on `unavailable`) without parsing prose.
+ */
+export const datesUnavailable = (
+  reasons: readonly BookingRefusalReason[],
+): HttpException =>
+  new ConflictException({
+    statusCode: HttpStatus.CONFLICT,
+    error: 'Conflict',
+    message: 'These dates are no longer available',
+    reasons,
+  });

@@ -19,6 +19,7 @@ import { z } from "zod";
 
 export * from "./availability";
 export * from "./auth";
+export * from "./booking";
 export * from "./money";
 export * from "./photo";
 export * from "./property";

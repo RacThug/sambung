@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
-import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ClsModule } from 'nestjs-cls';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -18,6 +20,28 @@ import { UnitsModule } from './units/units.module';
     // Opens an AsyncLocalStorage store per request (mounted as middleware) so
     // the guard can seed TenantContext and services can read it ambiently.
     ClsModule.forRoot({ global: true, middleware: { mount: true } }),
+    // Cron discovery for the hold-expiry sweeper (boss fight #1, #48). One VPS =
+    // one process, so the @Cron fires exactly once per tick - no distributed lock
+    // needed, and the sweep is idempotent besides (ADR-0009). Skipped under test:
+    // the sweeper service stays injectable and is driven directly, so a 5-minute
+    // tick can't land mid-suite and sweep a test's holds out from under it.
+    ...(process.env.NODE_ENV === 'test' ? [] : [ScheduleModule.forRoot()]),
+    // Rate limit the public surface - the booking write is a no-auth write, so a
+    // naked endpoint invites calendar-griefing and row-flooding (#48, Q9). Global
+    // guard (below) covers every route at once; in-memory storage (default) fits
+    // a single VPS with no Redis. Limits are env-driven with a PROTECTIVE default
+    // (60/60s) so an unconfigured prod is still guarded; dev/test set them high.
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        throttlers: [
+          {
+            ttl: Number(config.get('THROTTLE_TTL_MS') ?? 60_000),
+            limit: Number(config.get('THROTTLE_LIMIT') ?? 60),
+          },
+        ],
+      }),
+    }),
     CommonModule,
     DbModule,
     AuthModule,
@@ -32,6 +56,8 @@ import { UnitsModule } from './units/units.module';
     // route, and a per-module opt-in is a per-module chance to forget. Services
     // that want to handle their own violation just catch it first.
     { provide: APP_INTERCEPTOR, useClass: DbErrorInterceptor },
+    // Global rate-limit guard (configured by ThrottlerModule above).
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

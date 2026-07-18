@@ -174,7 +174,7 @@ The verb for **retiring inventory that has history** - the exit ADR-0002's delet
 
 **Not RLS.** Archive is intra-tenant visibility - the owner must still see their archived inventory, so the predicate is application-level, not a policy (which would hide it from the owner too). A tenant-isolation test covers archive/unarchive; no policy changes.
 
-> **Landed / deferred:** the **quote read** `404` for an archived Unit ships with #47 (§5.1). The `POST /public/bookings` → `409` refusal still lands with §5.3 (#48, the endpoint doesn't exist yet); the iCal export-archive-blind behavior lands with M4 (channel-sync doesn't exist yet). Both remaining items are constraints recorded here so the later build honours them.
+> **Landed / deferred:** the **quote read** `404` for an archived Unit shipped with #47 (§5.1), and the `POST /public/bookings` → `409` (`unavailable`) refusal shipped with #48 (§5.3). The iCal export-archive-blind behavior still lands with M4 (channel-sync doesn't exist yet) - recorded here so the later build honours it.
 
 ---
 
@@ -206,14 +206,16 @@ Response:
 ### 5.2 `GET /units/:id/calendar?from&to` → 200 (auth) - owner calendar (FR-CAL-3)
 Same shape but full-fat: each range carries `bookingId, source, status, guestName?`, so the dashboard can color-code direct/airbnb/manual and show holds.
 
-### 5.3 `POST /public/bookings` → 201 (no auth) - the guest funnel (FR-BOOK-1)
-Body: `{ unitId, checkIn, checkOut, guestName, guestContact, lang? }`.
-Behavior - **the race-condition path** (architecture flow A):
-1. Re-validate availability + min-stay inside the transaction (friendly 409 with `reasons` - UX layer).
-2. INSERT booking `status=pending_payment`, `holdExpiresAt = now() + 15 min` (pessimistic hold, db-design §4.4), server-computed `totalPriceIdr`.
-3. A racing overlap loses at the **exclusion constraint** → mapped to the *same* 409 shape. The client cannot tell (and must not care) which layer refused.
-Response: `{ bookingId, status: "pending_payment", holdExpiresAt, totalPriceIdr, nights }`.
-Unpaid holds are flipped to `expired` by the 5-min sweeper cron - no endpoint does this.
+### 5.3 `POST /public/bookings` → 201 (no auth) - the guest funnel (FR-BOOK-1) - **Built** (#48, boss fight #1)
+Body: `{ unitId, checkIn, checkOut, guestName, guestPhone, guestEmail?, guestCount }` (validated in `@sambung/shared`; `unitId` is in the body, and `PublicScope.enterFromUnitId` resolves the tenant from it). **No price field** - the server recomputes `totalPriceIdr`, the client quote is advisory. `guestPhone` is required and plausibility-checked because WhatsApp is M3's confirmation channel; the old free-text `guestContact` was split into `guest_phone`/`guest_email` and `guest_count` added (migration 0007, ADR-0009 PR).
+Behavior - **the race-condition path** (architecture flow A), all in ONE transaction:
+1. Opportunistic **intra-tenant sweep** of this unit's lapsed holds (ADR-0009), so a dead-but-unswept hold never blocks a live guest, then
+2. Re-validate availability + min-stay by calling `AvailabilityService.quote()` (the one interval authority, joined into this txn), plus the write-only `guest_count ≤ max_guests` check → friendly `409 { reasons }` (UX layer). An archived Unit is resolved-then-refused here as `unavailable` (ADR-0008).
+3. INSERT booking `status=pending_payment`, `holdExpiresAt = now() + 15 min` on the **DB clock** (pessimistic hold, db-design §4.4), server-computed `totalPriceIdr`.
+4. A racing overlap loses at the **exclusion constraint** → mapped (via the constraint map) to the *same* 409 shape. The client cannot tell (and must not care) which layer refused.
+Refusal `reasons` (machine-readable, AC #4): `overlap | min_stay | max_guests | unavailable` - `unavailable` is an archived Unit, named for its guest-facing effect (the wire never carries "archived"). 409 body: `{ statusCode, error, message, reasons }`; the checkout UI re-quotes on `overlap`, sends the guest back to search on `unavailable`.
+Response (201): `{ bookingId, status: "pending_payment", holdExpiresAt, totalPriceIdr, nights }`.
+Unpaid holds are flipped to `expired` by the 5-min **cross-tenant** sweeper cron - the backstop of ADR-0009's two-scope sweep; no endpoint does this.
 
 ### 5.4 `POST /bookings` → 201 (auth) - manual block / walk-in
 Body: `{ unitId, checkIn, checkOut, source: "manual_block" | "direct", guestName?, guestContact?, totalPriceIdr? }`. Born `confirmed` (no payment dance). `guestName` required for `direct`, forbidden-optional for `manual_block`. Same 409 overlap semantics. Staff may only touch assigned properties' units (403 otherwise, M5).

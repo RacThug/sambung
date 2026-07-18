@@ -50,6 +50,13 @@
       "when": 1784350466030,
       "tag": "0006_unit_price_cap",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784400000000,
+      "tag": "0007_structured_guest_contact",
+      "breakpoints": true
     }
   ]
 }

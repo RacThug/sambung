@@ -144,7 +144,7 @@ describe('Availability quote', () => {
         checkIn: '2026-08-10',
         checkOut: '2026-08-13',
         guestName: 'Top Secret Guest',
-        guestContact: '+62-secret',
+        guestPhone: '+62-secret',
       },
       {
         tenantId: a.tenant.id,
