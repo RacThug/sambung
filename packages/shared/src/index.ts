@@ -17,6 +17,7 @@
  */
 import { z } from "zod";
 
+export * from "./availability";
 export * from "./auth";
 export * from "./money";
 export * from "./photo";

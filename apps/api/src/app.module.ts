@@ -8,6 +8,7 @@ import { CommonModule } from './common/common.module';
 import { DbErrorInterceptor } from './common/db-error/db-error.interceptor';
 import { DbModule } from './db/db.module';
 import { AuthModule } from './auth/auth.module';
+import { BookingsModule } from './bookings/bookings.module';
 import { PropertiesModule } from './properties/properties.module';
 import { UnitsModule } from './units/units.module';
 
@@ -22,6 +23,7 @@ import { UnitsModule } from './units/units.module';
     AuthModule,
     PropertiesModule,
     UnitsModule,
+    BookingsModule,
   ],
   controllers: [AppController],
   providers: [

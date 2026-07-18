@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { property } from '@sambung/db';
+import { property, unit } from '@sambung/db';
 import { DbService } from '../db/db.service';
 import { TenantContext } from './tenant-context.service';
 
@@ -60,6 +60,35 @@ export class PublicScope {
       .limit(1);
     if (!found) {
       throw new NotFoundException('Property not found');
+    }
+    this.tenant.set({ kind: 'visitor', tenantId: found.tenantId });
+  }
+
+  /**
+   * Enter the scope of the tenant that owns the Unit `unitId`, so the caller's
+   * subsequent queries run under RLS as that tenant.
+   *
+   * The second public entry (api-spec §5.1, the availability quote). Symmetric
+   * with enterFromSlug, and PURE for the same reason (ADR-0008): it resolves the
+   * tenant for ANY existing Unit - archived included - and 404s only a Unit that
+   * does not exist. What an archived Unit MEANS is decided downstream at the
+   * chokepoint: the quote read answers 404 (§4.8, AvailabilityService), the M2
+   * booking write answers 409. A resolver that judged archive here would make
+   * that resolve-then-409 impossible and split one cross-tenant lookup into two
+   * that drift.
+   *
+   * One column, keyed by a deliberately-public value: the public page returns
+   * `unit.id` precisely so this endpoint can address a Unit by it (api-spec §4.7).
+   * It cannot leak a column a Unit later grows, because it selects only tenant_id.
+   */
+  async enterFromUnitId(unitId: string): Promise<void> {
+    const [found] = await this.dbs.db
+      .select({ tenantId: unit.tenantId })
+      .from(unit)
+      .where(eq(unit.id, unitId))
+      .limit(1);
+    if (!found) {
+      throw new NotFoundException('Unit not found');
     }
     this.tenant.set({ kind: 'visitor', tenantId: found.tenantId });
   }

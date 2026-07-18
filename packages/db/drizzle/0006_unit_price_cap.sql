@@ -1,0 +1,1 @@
+ALTER TABLE "unit" ADD CONSTRAINT "unit_base_price_max" CHECK ("unit"."base_price_idr" <= 1000000000);

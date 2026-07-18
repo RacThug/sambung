@@ -43,6 +43,13 @@
       "when": 1784334417949,
       "tag": "0005_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784350466030,
+      "tag": "0006_unit_price_cap",
+      "breakpoints": true
     }
   ]
 }

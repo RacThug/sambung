@@ -75,3 +75,20 @@ _Avoid_: active, blocking, live
 **Hold**:
 A booking that has claimed a Stay while its guest pays, and lapses on its own if they don't.
 _Avoid_: reservation, lock, pending
+
+**Availability**:
+Which nights a Unit is free, derived from the absence of an Occupying booking - never stored
+(invariant #3). A question you ask the booking rows, not a table you keep.
+_Avoid_: vacancy, openings, calendar
+
+**Quote**:
+The answer to "can this Unit host this Stay, and at what price": whether the nights are free, the
+total (base price x nights), and machine-readable reasons if not (`overlap`, `min_stay`). Advisory -
+recomputed at checkout, and it holds nothing.
+_Avoid_: estimate, price check
+
+**Changeover**:
+The day a departing Guest's check-out is the next Guest's check-in. Because a Stay is half-open the
+two do not overlap, so the day is immediately bookable - the calendar bug this whole model exists to
+kill.
+_Avoid_: turnover, gap day

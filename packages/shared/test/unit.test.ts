@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createUnitRequestSchema,
   isSellable,
+  MAX_NIGHTLY_RATE_IDR,
   updateUnitRequestSchema,
 } from "../src/unit";
 
@@ -48,6 +49,24 @@ describe("createUnitRequestSchema", () => {
     ).toThrow();
   });
 
+  // The domain cap (#47 review): above it, basePriceIdr x 366 nights would
+  // overflow toRupiah and 500 the no-auth availability quote. Layer 2 (the DB
+  // CHECK, zod bypassed) is packages/db/test/unit-bounds.test.ts.
+  it("rejects a price above the nightly-rate cap but accepts exactly the cap", () => {
+    expect(
+      createUnitRequestSchema.parse({
+        ...valid,
+        basePriceIdr: MAX_NIGHTLY_RATE_IDR,
+      }).basePriceIdr,
+    ).toBe(MAX_NIGHTLY_RATE_IDR);
+    expect(() =>
+      createUnitRequestSchema.parse({
+        ...valid,
+        basePriceIdr: MAX_NIGHTLY_RATE_IDR + 1,
+      }),
+    ).toThrow();
+  });
+
   it("rejects maxGuests below 1 and minStay below 1", () => {
     expect(() =>
       createUnitRequestSchema.parse({ ...valid, maxGuests: 0 }),
@@ -88,6 +107,9 @@ describe("updateUnitRequestSchema", () => {
 
   it("still enforces the bounds on fields that ARE present", () => {
     expect(() => updateUnitRequestSchema.parse({ basePriceIdr: -1 })).toThrow();
+    expect(() =>
+      updateUnitRequestSchema.parse({ basePriceIdr: MAX_NIGHTLY_RATE_IDR + 1 }),
+    ).toThrow();
     expect(() => updateUnitRequestSchema.parse({ minStay: 0 })).toThrow();
   });
 });

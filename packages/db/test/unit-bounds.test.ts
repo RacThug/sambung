@@ -72,6 +72,24 @@ describe("unit CHECK constraints (api-spec §4.6)", () => {
     ).resolves.toBeTruthy();
   });
 
+  // The domain cap (#47 review). This is the layer that actually closed the hole:
+  // the overflow was found by a RAW insert of an absurd price - exactly this path,
+  // zod bypassed. Above 1e9, base x 366 nights would overflow the availability
+  // quote's toRupiah and 500 the no-auth endpoint; the CHECK makes it impossible.
+  it("rejects a price above the nightly-rate cap", async () => {
+    await expectDbError(
+      db.insert(unit).values({ ...validUnit(), basePriceIdr: 1_000_000_001n }),
+      "23514",
+      "unit_base_price_max",
+    );
+  });
+
+  it("accepts a price exactly at the cap", async () => {
+    await expect(
+      db.insert(unit).values({ ...validUnit(), basePriceIdr: 1_000_000_000n }),
+    ).resolves.toBeTruthy();
+  });
+
   it("rejects maxGuests of zero", async () => {
     await expectDbError(
       db.insert(unit).values({ ...validUnit(), maxGuests: 0 }),
