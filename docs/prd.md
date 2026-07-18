@@ -235,7 +235,7 @@ Each phase = one sprint in `workplan.md`. Ship M1–M3 first if you need a demo 
 1. **Auth approach:** NestJS-issued JWT (more "look I built it myself" cred) **vs** Supabase Auth + RLS (faster, stronger tenant-isolation demo). Recommendation: **JWT + RLS-style tenant guard** if you want to showcase backend skill; Supabase Auth if you want speed.
 2. **ORM:** Prisma (recommended for DX) vs TypeORM (NestJS-native, matches your day-job comfort).
 3. **Single Next.js app** (dashboard + public site, route groups) vs **two apps**. Recommendation: single app for v1.
-4. **Name:** keep `Sambung` or rebrand?
+4. **Name:** keep `Sambung` or rebrand? → **Resolved 2026-07-18: keep Sambung.** Wordmark = lowercase `sambung` in Fraunces; full identity in [`design-system.md`](design-system.md) (ADR-0007).
 
 ---
 

@@ -11,6 +11,7 @@ subsystem it's working on before proposing changes.
 | [`architecture.md`](./architecture.md) | …wiring FE↔BE, adding a module, or moving data across the stack | FE/BE split, module layout, data flows, the API boundary |
 | [`api-spec.md`](./api-spec.md) | …adding or changing an endpoint | Every REST endpoint M0-M5: path, shapes, behavior, errors, conventions |
 | [`page-spec.md`](./page-spec.md) | …adding or changing a page/route | Every SPA page: purpose, route + URL state, endpoints consumed, states |
+| [`design-system.md`](./design-system.md) | …building or styling any UI | Brand (palette, type, wordmark), semantic tokens, the two-surface component doctrine (ADR-0007) |
 
 ## How these relate
 
