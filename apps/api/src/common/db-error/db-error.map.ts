@@ -1,6 +1,6 @@
 import { HttpException } from '@nestjs/common';
 import { pgError } from '@sambung/db';
-import { emailTaken, unitNameTaken } from './conflicts';
+import { datesUnavailable, emailTaken, unitNameTaken } from './conflicts';
 
 /**
  * Constraint name → the response it means. The database already names the
@@ -26,7 +26,7 @@ import { emailTaken, unitNameTaken } from './conflicts';
  * behind the count. If either fires, the boundary or the guard is broken - which
  * is a 500 by design, not a 409 that makes a bug look like a user error.
  *
- * M2: booking_no_overlap → overlap (§5.3)
+ * M2: booking_no_overlap → overlap (§5.3) - LANDED (#48)
  * M3: payment_event_provider_event_uniq → already processed (§6.2)
  * M4: booking_external_uid_uniq → already imported (§7.3)
  */
@@ -40,6 +40,11 @@ import { emailTaken, unitNameTaken } from './conflicts';
 const MAP = new Map<string, () => HttpException>([
   ['app_user_email_key', emailTaken],
   ['unit_property_name_uniq', unitNameTaken],
+  // A lost overlap race means exactly one thing - "those nights are taken" - so
+  // the constraint always maps to `['overlap']`. It cannot also mean min_stay or
+  // max_guests: the service re-check catches those BEFORE the INSERT, so nothing
+  // with those problems ever reaches the constraint (§5.3).
+  ['booking_no_overlap', () => datesUnavailable(['overlap'])],
 ]);
 
 /**

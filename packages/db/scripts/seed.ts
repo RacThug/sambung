@@ -150,7 +150,9 @@ async function main() {
         checkIn: "2026-08-01",
         checkOut: "2026-08-05",
         guestName: "Wayan D.",
-        guestContact: "+62 812-0000-0001",
+        guestPhone: "+62 812-0000-0001",
+        guestEmail: "wayan@example.com",
+        guestCount: 3,
         totalPriceIdr: 14_000_000n,
       })
       .returning({ id: booking.id });
@@ -176,7 +178,8 @@ async function main() {
         checkIn: "2026-08-03",
         checkOut: "2026-08-06",
         guestName: "Komang S.",
-        guestContact: "+62 812-0000-0002",
+        guestPhone: "+62 812-0000-0002",
+        guestCount: 2,
         totalPriceIdr: 3_600_000n,
         holdExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
       },
@@ -199,7 +202,8 @@ async function main() {
         checkIn: "2026-09-01",
         checkOut: "2026-09-04",
         guestName: "Asian traveler",
-        guestContact: "+86 138-0000-0003",
+        guestPhone: "+86 138-0000-0003",
+        guestCount: 2,
         totalPriceIdr: 6_300_000n,
       },
     ]);

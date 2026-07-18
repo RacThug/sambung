@@ -264,7 +264,14 @@ export const booking = pgTable(
     checkIn: date("check_in", { mode: "string" }).notNull(),
     checkOut: date("check_out", { mode: "string" }).notNull(),
     guestName: text("guest_name"), // null for manual_block / some imports
-    guestContact: text("guest_contact"),
+    // Guest contact is STRUCTURED (not one free-text blob) because WhatsApp is
+    // the confirmation channel and M3's wa.me deeplink needs a real number.
+    // All three stay NULLABLE: "required" is an API-boundary rule for
+    // source=direct, exactly like guest_name - manual_block and imported
+    // bookings have no guest we collected details from (migration 0007, #48).
+    guestPhone: text("guest_phone"),
+    guestEmail: text("guest_email"),
+    guestCount: integer("guest_count"), // party size; checked <= max_guests at the boundary
     totalPriceIdr: bigint("total_price_idr", { mode: "bigint" }),
     externalUid: text("external_uid"), // iCal VEVENT UID, idempotent re-sync
     channelConnectionId: uuid("channel_connection_id").references(
@@ -300,6 +307,13 @@ export const booking = pgTable(
     check(
       "booking_total_price_nonneg",
       sql`${t.totalPriceIdr} is null or ${t.totalPriceIdr} >= 0`,
+    ),
+    // Party size, when set, is a real headcount. Nullable (manual_block/imports
+    // carry none), so the CHECK is null-tolerant - the DB backstops the boundary
+    // rule 1 <= guest_count <= max_guests without forbidding an absent one.
+    check(
+      "booking_guest_count_positive",
+      sql`${t.guestCount} is null or ${t.guestCount} > 0`,
     ),
     // NOTE - boss fight #1: the booking_no_overlap GiST EXCLUDE constraint is
     // NOT expressible in Drizzle. It lives as hand-written SQL in the baseline
