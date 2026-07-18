@@ -7,6 +7,10 @@
     "types": ["vite/client"],
     "skipLibCheck": true,
 
+    /* Path alias: `@/x` -> `src/x` (shadcn convention). Mirrored in vite.config.
+       No baseUrl (deprecated in TS 6) - paths resolve relative to this file. */
+    "paths": { "@/*": ["./src/*"] },
+
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

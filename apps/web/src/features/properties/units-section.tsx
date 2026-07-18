@@ -34,15 +34,15 @@ export function UnitsSection({ property }: { property: PropertyResponse }) {
   const propertyArchived = isArchived(property);
 
   return (
-    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-6">
+    <div className="mt-6 rounded-lg border border-border bg-card p-6">
       <h2 className="text-lg font-semibold">Units</h2>
-      <p className="mt-1 text-sm text-gray-500">
+      <p className="mt-1 text-sm text-muted-foreground">
         One row per bookable room. Three identical rooms are three units - each
         one is sold, and synced to the OTAs, on its own.
       </p>
 
       {isLoading ? (
-        <p className="mt-4 text-sm text-gray-500">Loading units…</p>
+        <p className="mt-4 text-sm text-muted-foreground">Loading units…</p>
       ) : (
         // The page body must never scroll sideways; the table may.
         <div className="mt-4 overflow-x-auto">
@@ -58,7 +58,7 @@ export function UnitsSection({ property }: { property: PropertyResponse }) {
               <col className="w-36" />
             </colgroup>
             <thead>
-              <tr className="border-b border-gray-200 text-left text-gray-500">
+              <tr className="border-b border-border text-left text-muted-foreground">
                 <th className="pb-2 pr-2 font-medium">Name</th>
                 <th className="pb-2 pr-2 font-medium">Price / night</th>
                 <th className="pb-2 pr-2 font-medium">Guests</th>
@@ -94,13 +94,13 @@ export function UnitsSection({ property }: { property: PropertyResponse }) {
       )}
 
       {propertyArchived ? (
-        <p className="mt-3 text-sm text-gray-500">
+        <p className="mt-3 text-sm text-muted-foreground">
           This property is archived, so its units are shown as history. Unarchive
           the property to add or edit units.
         </p>
       ) : (
         units?.length === 0 && (
-          <p className="mt-3 text-sm text-gray-500">
+          <p className="mt-3 text-sm text-muted-foreground">
             No units yet — add the first one above to make this property
             publishable.
           </p>
@@ -157,22 +157,22 @@ function UnitRow({
     ? `${selfArchived ? "Unarchive" : "Archive"} failed - please try again`
     : null;
 
-  const muted = effectiveArchived ? "text-gray-400" : "";
+  const muted = effectiveArchived ? "text-muted-foreground" : "";
 
   return (
     <>
       {/* Effectively-archived rows are muted, not hidden: the owner keeps seeing
           their retired inventory as history (it's just gone from guests). */}
-      <tr className={effectiveArchived ? "border-b border-gray-100 bg-gray-50" : "border-b border-gray-100"}>
-        <td className={`py-3 font-medium ${effectiveArchived ? "text-gray-400" : "text-gray-900"}`}>
+      <tr className={effectiveArchived ? "border-b border-border bg-muted" : "border-b border-border"}>
+        <td className={`py-3 font-medium ${effectiveArchived ? "text-muted-foreground" : "text-foreground"}`}>
           {unit.name}
           {effectiveArchived && (
-            <span className="ml-2 rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+            <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
               Archived
             </span>
           )}
         </td>
-        <td className={`py-3 ${muted}`}>
+        <td className={`py-3 tabular-nums ${muted}`}>
           {formatIdr(unit.basePriceIdr)}
           {/* A zero price is storable on purpose (a placeholder, not an error) -
               it just never counts toward publishable, so say so HERE rather than
@@ -180,7 +180,7 @@ function UnitRow({
               already doesn't count - so don't stack a second badge. */}
           {!effectiveArchived && !isSellable(unit) && (
             <span
-              className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
+              className="ml-2 rounded bg-warning/10 px-1.5 py-0.5 text-xs font-medium text-warning"
               title="A unit priced at zero doesn't count toward publishing this property"
             >
               not sellable
@@ -195,7 +195,7 @@ function UnitRow({
           {propertyArchived ? (
             // Read-only while the property is retired: units come back by
             // unarchiving the property, not one at a time (ADR-0005).
-            <span className="block text-right text-xs text-gray-400">
+            <span className="block text-right text-xs text-muted-foreground">
               Property archived
             </span>
           ) : (
@@ -206,7 +206,7 @@ function UnitRow({
                 <button
                   type="button"
                   onClick={onEdit}
-                  className="rounded px-2 py-1 font-medium text-brand-700 hover:bg-gray-50"
+                  className="rounded px-2 py-1 font-medium text-primary hover:bg-muted"
                 >
                   Edit
                 </button>
@@ -215,7 +215,7 @@ function UnitRow({
                 type="button"
                 disabled={setArchived.isPending}
                 onClick={() => setArchived.mutate()}
-                className="rounded px-2 py-1 font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                className="rounded px-2 py-1 font-medium text-foreground hover:bg-muted disabled:opacity-50"
               >
                 {setArchived.isPending
                   ? selfArchived
@@ -237,7 +237,7 @@ function UnitRow({
                     remove.mutate();
                   }
                 }}
-                className="rounded px-2 py-1 font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                className="rounded px-2 py-1 font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
               >
                 {remove.isPending ? "Deleting…" : "Delete"}
               </button>
@@ -248,7 +248,7 @@ function UnitRow({
       {(deleteError || archiveError) && (
         <tr>
           <td colSpan={5} className="pb-3">
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
               {deleteError ?? archiveError}
             </p>
           </td>
@@ -358,12 +358,12 @@ function UnitFormRow({
   // no way to tell which is which. Only one row is ever in edit mode, so
   // "Edit …" / "New unit …" is enough to make each unique.
   const label = (text: string) => (unit ? `Edit ${text}` : `New unit ${text}`);
-  const cellInput = "w-full rounded-md border border-gray-300 px-2 py-1.5";
+  const cellInput = "w-full rounded-md border border-input px-2 py-1.5";
   const cell = (name: keyof typeof form, input: React.ReactNode) => (
     <td className="py-2 pr-2 align-top">
       {input}
       {fieldErrors[name] && (
-        <p className="mt-1 text-xs text-red-600">{fieldErrors[name]}</p>
+        <p className="mt-1 text-xs text-destructive">{fieldErrors[name]}</p>
       )}
     </td>
   );
@@ -389,8 +389,8 @@ function UnitFormRow({
         }}
         className={
           unit
-            ? "border-b border-gray-100 bg-brand-50/40"
-            : "border-t border-gray-200"
+            ? "border-b border-border bg-accent/40"
+            : "border-t border-border"
         }
       >
         {cell(
@@ -441,7 +441,7 @@ function UnitFormRow({
               <button
                 type="button"
                 onClick={onDone}
-                className="rounded px-2 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+                className="rounded px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted"
               >
                 Cancel
               </button>
@@ -450,7 +450,7 @@ function UnitFormRow({
               type="button"
               disabled={save.isPending}
               onClick={onSubmit}
-              className="rounded-md bg-brand-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
             >
               {save.isPending ? "Saving…" : unit ? "Save" : "Add unit"}
             </button>
@@ -460,7 +460,7 @@ function UnitFormRow({
       {formError && (
         <tr>
           <td colSpan={5} className="pb-2">
-            <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
               {formError}
             </p>
           </td>

@@ -29,10 +29,10 @@ export function PropertyEditPage() {
   });
 
   if (isLoading) {
-    return <p className="text-gray-500">Loading property…</p>;
+    return <p className="text-muted-foreground">Loading property…</p>;
   }
   if (!property) {
-    return <p className="text-gray-600">Property not found.</p>;
+    return <p className="text-muted-foreground">Property not found.</p>;
   }
 
   const archived = isArchived(property);
@@ -43,7 +43,7 @@ export function PropertyEditPage() {
         <h1 className="text-2xl font-bold">{property.name}</h1>
         {property.verified && <VerifiedBadge />}
         {archived && (
-          <span className="rounded bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">
+          <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
             Archived
           </span>
         )}
@@ -53,14 +53,14 @@ export function PropertyEditPage() {
       {/* When retired, the "incomplete" nudge is moot - lead with the retirement
           state and its exit instead (ADR-0005/0006). */}
       {archived ? (
-        <p className="mt-2 rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-600">
+        <p className="mt-2 rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
           This property is retired. Its public page is offline and its units
           can't be booked - existing bookings are untouched. Unarchive it below
           to bring it back.
         </p>
       ) : (
         !property.publishable && (
-          <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p className="mt-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
             The public page is live, but incomplete — it needs at least one photo
             and one unit with a price before it's worth sharing.
           </p>
@@ -109,7 +109,7 @@ function PublicLink({
   // as live. The slug is reserved - unarchive brings this exact URL back.
   if (archived) {
     return (
-      <p className="mt-2 text-sm text-gray-400">
+      <p className="mt-2 text-sm text-muted-foreground">
         Public page offline while archived: <span className="line-through">{url}</span>
       </p>
     );
@@ -117,12 +117,12 @@ function PublicLink({
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-      <span className="text-gray-500">Public page:</span>
+      <span className="text-muted-foreground">Public page:</span>
       <a
         href={path}
         target="_blank"
         rel="noreferrer"
-        className="font-medium text-brand-600 underline underline-offset-2"
+        className="font-medium text-primary underline underline-offset-2"
       >
         {url}
       </a>
@@ -134,7 +134,7 @@ function PublicLink({
             setTimeout(() => setCopied(false), 2000);
           });
         }}
-        className="rounded-md border border-gray-300 px-2 py-0.5 text-xs font-medium text-gray-700"
+        className="rounded-md border border-input px-2 py-0.5 text-xs font-medium text-foreground"
       >
         {copied ? "Copied" : "Copy link"}
       </button>
@@ -197,21 +197,21 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
     input: React.ReactNode,
   ) => (
     <label className="block">
-      <span className="text-sm font-medium text-gray-700">{label}</span>
+      <span className="text-sm font-medium text-foreground">{label}</span>
       {input}
       {fieldErrors[name] && (
-        <p className="mt-1 text-sm text-red-600">{fieldErrors[name]}</p>
+        <p className="mt-1 text-sm text-destructive">{fieldErrors[name]}</p>
       )}
     </label>
   );
 
-  const inputClass = "mt-1 w-full rounded-md border border-gray-300 px-3 py-2";
+  const inputClass = "mt-1 w-full rounded-md border border-input px-3 py-2";
 
   return (
     <form
       onSubmit={onSubmit}
       noValidate
-      className="mt-6 space-y-4 rounded-lg border border-gray-200 bg-white p-6"
+      className="mt-6 space-y-4 rounded-lg border border-border bg-card p-6"
     >
       <h2 className="text-lg font-semibold">Details</h2>
 
@@ -279,15 +279,15 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
         <button
           type="submit"
           disabled={save.isPending}
-          className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
           {save.isPending ? "Saving…" : "Save details"}
         </button>
         {save.isSuccess && !save.isPending && (
-          <span className="text-sm text-green-700">Saved</span>
+          <span className="text-sm text-success">Saved</span>
         )}
         {save.isError && !(save.error instanceof ApiError) && (
-          <span className="text-sm text-red-600">
+          <span className="text-sm text-destructive">
             Something went wrong - please try again
           </span>
         )}
@@ -320,17 +320,17 @@ function ArchiveZone({
   });
 
   return (
-    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-6">
+    <div className="mt-6 rounded-lg border border-border bg-card p-6">
       <h2 className="text-lg font-semibold">
         {archived ? "Restore property" : "Retire property"}
       </h2>
-      <p className="mt-1 text-sm text-gray-500">
+      <p className="mt-1 text-sm text-muted-foreground">
         {archived
           ? "Bring this property and its units back onto the public page and new-booking paths."
           : "Take this property offline for guests while keeping its booking and payment history. Reversible any time."}
       </p>
       {setArchived.isError && (
-        <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
+        <p className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
           {archived ? "Unarchive" : "Archive"} failed - please try again
         </p>
       )}
@@ -338,7 +338,7 @@ function ArchiveZone({
         type="button"
         disabled={setArchived.isPending}
         onClick={() => setArchived.mutate()}
-        className="mt-4 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        className="mt-4 rounded-md border border-input px-4 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
       >
         {setArchived.isPending
           ? archived
@@ -373,15 +373,15 @@ function DangerZone({ property }: { property: PropertyResponse }) {
         : null;
 
   return (
-    <div className="mt-6 rounded-lg border border-red-200 bg-red-50 p-6">
-      <h2 className="text-lg font-semibold text-red-800">Delete property</h2>
-      <p className="mt-1 text-sm text-red-700">
+    <div className="mt-6 rounded-lg border border-destructive/20 bg-destructive/10 p-6">
+      <h2 className="text-lg font-semibold text-destructive">Delete property</h2>
+      <p className="mt-1 text-sm text-destructive">
         Removes the property and its units. Only possible while nothing has ever
         been booked here - deleting it later would destroy the booking and
         payment history.
       </p>
       {deleteError && (
-        <p className="mt-2 rounded-md bg-white px-3 py-2 text-sm font-medium text-red-800">
+        <p className="mt-2 rounded-md bg-card px-3 py-2 text-sm font-medium text-destructive">
           {deleteError}
         </p>
       )}
@@ -393,7 +393,7 @@ function DangerZone({ property }: { property: PropertyResponse }) {
             remove.mutate();
           }
         }}
-        className="mt-4 rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+        className="mt-4 rounded-md bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground disabled:opacity-50"
       >
         {remove.isPending ? "Deleting…" : "Delete property"}
       </button>

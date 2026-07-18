@@ -5,6 +5,7 @@ import { loginRequestSchema, type AuthResponse } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { setSession } from "../../lib/auth";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { Wordmark } from "@/components/wordmark";
 
 const route = getRouteApi("/login");
 
@@ -50,56 +51,58 @@ export function LoginPage() {
 
   return (
     <main className="mx-auto max-w-sm p-8">
-      <h1 className="text-2xl font-bold text-brand-600">Sambung</h1>
-      <p className="mt-1 text-gray-600">Sign in to your dashboard</p>
+      <h1>
+        <Wordmark className="text-2xl" />
+      </h1>
+      <p className="mt-1 text-muted-foreground">Sign in to your dashboard</p>
 
       <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Email</span>
+          <span className="text-sm font-medium text-foreground">Email</span>
           <input
             type="email"
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+            className="mt-1 w-full rounded-md border border-input px-3 py-2"
           />
           {fieldErrors.email && (
-            <p className="mt-1 text-sm text-red-600">{fieldErrors.email}</p>
+            <p className="mt-1 text-sm text-destructive">{fieldErrors.email}</p>
           )}
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Password</span>
+          <span className="text-sm font-medium text-foreground">Password</span>
           <input
             type="password"
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+            className="mt-1 w-full rounded-md border border-input px-3 py-2"
           />
           {fieldErrors.password && (
-            <p className="mt-1 text-sm text-red-600">{fieldErrors.password}</p>
+            <p className="mt-1 text-sm text-destructive">
+              {fieldErrors.password}
+            </p>
           )}
         </label>
 
-        {submitError && <p className="text-sm text-red-600">{submitError}</p>}
+        {submitError && (
+          <p className="text-sm text-destructive">{submitError}</p>
+        )}
 
         <button
           type="submit"
           disabled={login.isPending}
-          className="w-full rounded-md bg-brand-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-50"
         >
           {login.isPending ? "Signing in…" : "Sign in"}
         </button>
       </form>
 
-      <p className="mt-4 text-sm text-gray-600">
+      <p className="mt-4 text-sm text-muted-foreground">
         New to Sambung?{" "}
-        <Link
-          to="/register"
-          search={{ next }}
-          className="text-brand-600 underline"
-        >
+        <Link to="/register" search={{ next }} className="text-primary underline">
           Create an account
         </Link>
       </p>

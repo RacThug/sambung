@@ -126,13 +126,13 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
   }
 
   const iconButtonClass =
-    "rounded bg-white/90 px-1.5 py-0.5 text-xs text-gray-700 shadow " +
-    "hover:bg-white disabled:opacity-40";
+    "rounded bg-card/90 px-1.5 py-0.5 text-xs text-foreground shadow " +
+    "hover:bg-card disabled:opacity-40";
 
   return (
-    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-6">
+    <div className="mt-6 rounded-lg border border-border bg-card p-6">
       <h2 className="text-lg font-semibold">Photos</h2>
-      <p className="mt-1 text-sm text-gray-500">
+      <p className="mt-1 text-sm text-muted-foreground">
         The first photo is the cover of your public page. JPEG, PNG or WebP,
         up to 5 MB each.
       </p>
@@ -144,10 +144,10 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
               <img
                 src={photo.url}
                 alt={`Photo ${i + 1} of ${property.name}`}
-                className="aspect-[4/3] w-full rounded-md border border-gray-200 object-cover"
+                className="aspect-[4/3] w-full rounded-md border border-border object-cover"
               />
               {i === 0 && (
-                <span className="absolute left-1.5 top-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">
+                <span className="absolute left-1.5 top-1.5 rounded bg-foreground/60 px-1.5 py-0.5 text-xs text-background">
                   Cover
                 </span>
               )}
@@ -190,10 +190,10 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
           {uploads.map((u) => (
             <li
               key={u.id}
-              className="rounded-md border border-gray-200 px-3 py-2 text-sm"
+              className="rounded-md border border-border px-3 py-2 text-sm"
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="truncate text-gray-700">{u.name}</span>
+                <span className="truncate text-foreground">{u.name}</span>
                 {u.error ? (
                   <button
                     type="button"
@@ -201,20 +201,20 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
                     onClick={() =>
                       setUploads((all) => all.filter((x) => x.id !== u.id))
                     }
-                    className="text-xs text-gray-500 hover:text-gray-700"
+                    className="text-xs text-muted-foreground hover:text-foreground"
                   >
                     Dismiss
                   </button>
                 ) : (
-                  <span className="text-xs text-gray-500">{u.progress}%</span>
+                  <span className="text-xs text-muted-foreground">{u.progress}%</span>
                 )}
               </div>
               {u.error ? (
-                <p className="mt-1 text-red-600">{u.error}</p>
+                <p className="mt-1 text-destructive">{u.error}</p>
               ) : (
-                <div className="mt-1.5 h-1.5 rounded bg-gray-100">
+                <div className="mt-1.5 h-1.5 rounded bg-muted">
                   <div
-                    className="h-1.5 rounded bg-brand-600 transition-[width]"
+                    className="h-1.5 rounded bg-primary transition-[width]"
                     style={{ width: `${u.progress}%` }}
                   />
                 </div>
@@ -238,17 +238,17 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
           type="button"
           disabled={busy || galleryFull}
           onClick={() => inputRef.current?.click()}
-          className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
           {uploading ? "Uploading…" : "Add photos"}
         </button>
         {galleryFull && (
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-muted-foreground">
             Gallery is full ({MAX_PHOTOS_PER_PROPERTY} photos)
           </span>
         )}
         {savePhotos.isError && !uploading && (
-          <span className="text-sm text-red-600">
+          <span className="text-sm text-destructive">
             {savePhotos.error instanceof ApiError
               ? savePhotos.error.message
               : "Saving photos failed - please try again"}

@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -5,6 +6,12 @@ import tailwindcss from "@tailwindcss/vite";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // `@/x` -> `src/x` (shadcn convention). Mirrored in tsconfig.app.json paths.
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   // @sambung/shared compiles to CommonJS (tsconfig.base sets module: NodeNext
   // and the package has no "type": "module" - the API is CJS NestJS and needs
   // it that way). Vite does NOT pre-bundle *linked* workspace packages by
