@@ -69,6 +69,7 @@ export function propertyResponse(
     photos: [],
     verified: false,
     publishable: false,
+    archivedAt: null,
     createdAt: "2026-07-01T00:00:00.000Z",
     ...overrides,
   };
@@ -131,6 +132,7 @@ export function unitResponse(
     name: "Garden Room 1",
     maxGuests: 2,
     minStay: 1,
+    archivedAt: null,
     createdAt: "2026-07-01T00:00:00.000Z",
     ...rest,
     basePriceIdr: rupiahSchema.parse(basePriceIdr),

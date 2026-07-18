@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, eq, getTableColumns, sql } from 'drizzle-orm';
+import { and, asc, count, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
 import { booking, property, unit, type Property } from '@sambung/db';
 import { isVerified } from '@sambung/shared';
 import { TenantContext } from '../common/tenant-context.service';
@@ -51,14 +51,23 @@ export type PublicUnitRow = {
 };
 
 // Units under this property with a real price (> 0 - a zero-rupiah unit is a
-// placeholder, not a sellable listing). One of the two inputs to `publishable`;
-// the photo count joins it with #39. Computed via LEFT JOIN + conditional
-// count rather than a correlated subquery: in a single-table select Drizzle
-// strips table qualifiers from columns inside sql`` field fragments, which
-// silently re-scopes the correlation to the inner table. A join keeps every
-// column qualified.
+// placeholder, not a sellable listing) that are also ACTIVE (not archived, and
+// not under an archived property). One of the two inputs to `publishable`; the
+// photo count joins it with #39. Computed via LEFT JOIN + conditional count
+// rather than a correlated subquery: in a single-table select Drizzle strips
+// table qualifiers from columns inside sql`` field fragments, which silently
+// re-scopes the correlation to the inner table. A join keeps every column
+// qualified.
+//
+// The archived terms live INSIDE the count, not in a WHERE (ADR-0005): these
+// queries also feed the owner's dashboard, which must still SHOW archived
+// properties - so we exclude archived units from the tally without hiding the
+// property. `property.archived_at is null` makes an archived property count 0
+// priced units, so it reports publishable:false too.
 const pricedUnitCount = count(
-  sql`case when ${unit.basePriceIdr} > 0 then 1 end`,
+  sql`case when ${unit.basePriceIdr} > 0
+        and ${unit.archivedAt} is null
+        and ${property.archivedAt} is null then 1 end`,
 );
 
 const propertyColumns = getTableColumns(property);
@@ -162,6 +171,13 @@ export class PropertiesRepository {
         .where(and(eq(property.id, id), eq(property.tenantId, tenantId)))
         .returning();
       if (!row) return null;
+      // An archived property has zero sellable units by derivation, so it reports
+      // publishable:false (ADR-0005). Otherwise count only ACTIVE priced units -
+      // the same predicate as the joined pricedUnitCount above, expressed here as
+      // a WHERE because this is a single-table count off the just-updated row.
+      if (row.archivedAt) {
+        return { ...row, pricedUnitCount: 0 };
+      }
       const [counts] = await tx
         .select({ pricedUnitCount: count() })
         .from(unit)
@@ -170,9 +186,38 @@ export class PropertiesRepository {
             eq(unit.propertyId, id),
             eq(unit.tenantId, tenantId),
             sql`${unit.basePriceIdr} > 0`,
+            isNull(unit.archivedAt),
           ),
         );
       return { ...row, pricedUnitCount: counts.pricedUnitCount };
+    });
+  }
+
+  /**
+   * Set (or clear) this property's retirement flag (ADR-0005, #84). Returns false
+   * when the id is unknown or belongs to another tenant.
+   *
+   * Idempotent by construction: archiving keeps the ORIGINAL archived_at
+   * (`coalesce`), so re-archiving is a true no-op that doesn't reset the "retired
+   * on" date; unarchiving clears it. No FOR UPDATE lock, unlike delete - this is a
+   * single-row flag write with no cascade-away race, and an in-flight booking is
+   * honoured rather than raced (ADR-0005). Archiving a Property archives its Units
+   * by DERIVATION (effective-archived reads this OR the unit's own flag), so there
+   * is no cascade UPDATE here.
+   */
+  async setArchived(id: string, archived: boolean): Promise<boolean> {
+    const tenantId = this.tenant.tenantId;
+    return this.db.run(async (tx) => {
+      const rows = await tx
+        .update(property)
+        .set({
+          archivedAt: archived
+            ? sql`coalesce(${property.archivedAt}, now())`
+            : null,
+        })
+        .where(and(eq(property.id, id), eq(property.tenantId, tenantId)))
+        .returning({ id: property.id });
+      return rows.length > 0;
     });
   }
 
@@ -254,10 +299,15 @@ export class PropertiesRepository {
    * one `db.run`, so they share a transaction and a consistent snapshot - a unit
    * created between them cannot make the page half-new.
    *
-   * Returns null when the slug is unknown to THIS tenant. Given PublicScope
-   * resolved the tenant from this very slug, that means the property was deleted
-   * between the two steps - a race, answered with the same 404 as never having
-   * existed, which is the truthful answer by the time we reply.
+   * Returns null when the slug is unknown to THIS tenant OR the property is
+   * archived (ADR-0006): both answer with the same 404 as never having existed.
+   * An archived property is a DELIBERATE take-down, so its page 404s - unlike an
+   * incomplete (unpublishable) one, which still renders (ADR-0004). The slug row
+   * persists, so unarchive brings the exact URL back. (A slug that resolved a
+   * tenant in PublicScope but returns nothing here also covers the delete race.)
+   *
+   * Archived UNITS are filtered out of the list; a live property with a mix shows
+   * only its active units.
    */
   async findPublicBySlug(slug: string): Promise<PublicPropertyRow | null> {
     const tenantId = this.tenant.tenantId;
@@ -273,7 +323,13 @@ export class PropertiesRepository {
           photos: property.photos,
         })
         .from(property)
-        .where(and(eq(property.slug, slug), eq(property.tenantId, tenantId)))
+        .where(
+          and(
+            eq(property.slug, slug),
+            eq(property.tenantId, tenantId),
+            isNull(property.archivedAt),
+          ),
+        )
         .limit(1);
       if (!row) return null;
 
@@ -286,7 +342,13 @@ export class PropertiesRepository {
           minStay: unit.minStay,
         })
         .from(unit)
-        .where(and(eq(unit.propertyId, row.id), eq(unit.tenantId, tenantId)))
+        .where(
+          and(
+            eq(unit.propertyId, row.id),
+            eq(unit.tenantId, tenantId),
+            isNull(unit.archivedAt),
+          ),
+        )
         // Ordered by createdAt without selecting it: the gallery order of the
         // rooms is the order the owner entered them, but a Visitor has no use
         // for the timestamp itself.

@@ -36,6 +36,13 @@
       "when": 1784293270761,
       "tag": "0004_property_slug",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784334417949,
+      "tag": "0005_archive",
+      "breakpoints": true
     }
   ]
 }

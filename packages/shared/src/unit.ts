@@ -62,6 +62,13 @@ export const unitResponseSchema = z.object({
   basePriceIdr: rupiahSchema,
   maxGuests: z.number().int(),
   minStay: z.number().int(),
+  /**
+   * When this Unit was archived, or null if active (ADR-0005, #84). This is the
+   * Unit's OWN flag; it can also be effectively archived by its Property, which
+   * the dashboard composes client-side (Units render under their Property). The
+   * public payload omits it. Read-only, set by POST /units/:id/archive.
+   */
+  archivedAt: z.string().nullable(), // ISO-8601 UTC or null
   createdAt: z.string(), // ISO-8601 UTC
 });
 export type UnitResponse = z.infer<typeof unitResponseSchema>;
@@ -73,4 +80,15 @@ export type UnitResponse = z.infer<typeof unitResponseSchema>;
  */
 export function isSellable(unit: { basePriceIdr: number }): boolean {
   return unit.basePriceIdr > 0;
+}
+
+/**
+ * A Unit or Property is archived when its own `archivedAt` is set (ADR-0005, #84).
+ * Symmetric with `isVerified` / `isSellable`, and a DIFFERENT axis from both:
+ * "archived" is retirement, "sellable" is pricing. This reads the entity's OWN
+ * flag only - effective-archived also considers the parent Property, which the
+ * dashboard composes client-side since Units render under their Property.
+ */
+export function isArchived(entity: { archivedAt: string | null }): boolean {
+  return entity.archivedAt !== null;
 }

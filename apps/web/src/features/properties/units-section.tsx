@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createUnitRequestSchema,
+  isArchived,
   isSellable,
   type CreateUnitRequest,
   type PropertyResponse,
@@ -95,8 +96,18 @@ export function UnitsSection({ property }: { property: PropertyResponse }) {
 
 function UnitRow({ unit, onEdit }: { unit: UnitResponse; onEdit: () => void }) {
   const queryClient = useQueryClient();
+  const archived = isArchived(unit);
   const remove = useMutation({
     mutationFn: () => api.delete(`/units/${unit.id}`),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["properties"] }),
+  });
+
+  // Archive is the reversible retire (ADR-0005): no confirm, unlike delete. One
+  // mutation flips both ways - the verb is whichever the unit isn't now.
+  const setArchived = useMutation({
+    mutationFn: () =>
+      api.post(`/units/${unit.id}/${archived ? "unarchive" : "archive"}`, {}),
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["properties"] }),
   });
@@ -109,17 +120,30 @@ function UnitRow({ unit, onEdit }: { unit: UnitResponse; onEdit: () => void }) {
       : remove.error
         ? "Delete failed - please try again"
         : null;
+  const archiveError = setArchived.error
+    ? `${archived ? "Unarchive" : "Archive"} failed - please try again`
+    : null;
 
   return (
     <>
-      <tr className="border-b border-gray-100">
-        <td className="py-3 font-medium text-gray-900">{unit.name}</td>
-        <td className="py-3">
+      {/* Archived rows are muted, not hidden: the owner keeps seeing their
+          retired inventory as history (it's just gone from guests). */}
+      <tr className={archived ? "border-b border-gray-100 bg-gray-50" : "border-b border-gray-100"}>
+        <td className={`py-3 font-medium ${archived ? "text-gray-400" : "text-gray-900"}`}>
+          {unit.name}
+          {archived && (
+            <span className="ml-2 rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+              Archived
+            </span>
+          )}
+        </td>
+        <td className={`py-3 ${archived ? "text-gray-400" : ""}`}>
           {formatIdr(unit.basePriceIdr)}
           {/* A zero price is storable on purpose (a placeholder, not an error) -
               it just never counts toward publishable, so say so HERE rather than
-              only in the banner at the top of the page. */}
-          {!isSellable(unit) && (
+              only in the banner at the top of the page. Moot once archived, which
+              already doesn't count - so don't stack a second badge. */}
+          {!archived && !isSellable(unit) && (
             <span
               className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
               title="A unit priced at zero doesn't count toward publishing this property"
@@ -128,18 +152,36 @@ function UnitRow({ unit, onEdit }: { unit: UnitResponse; onEdit: () => void }) {
             </span>
           )}
         </td>
-        <td className="py-3">{unit.maxGuests}</td>
-        <td className="py-3">
+        <td className={`py-3 ${archived ? "text-gray-400" : ""}`}>{unit.maxGuests}</td>
+        <td className={`py-3 ${archived ? "text-gray-400" : ""}`}>
           {unit.minStay} night{unit.minStay === 1 ? "" : "s"}
         </td>
         <td className="py-3">
           <div className="flex justify-end gap-1 whitespace-nowrap">
+            {/* Editing a retired unit is meaningless - it's off every sale path -
+                so the edit affordance goes away until it's brought back. */}
+            {!archived && (
+              <button
+                type="button"
+                onClick={onEdit}
+                className="rounded px-2 py-1 font-medium text-brand-700 hover:bg-gray-50"
+              >
+                Edit
+              </button>
+            )}
             <button
               type="button"
-              onClick={onEdit}
-              className="rounded px-2 py-1 font-medium text-brand-700 hover:bg-gray-50"
+              disabled={setArchived.isPending}
+              onClick={() => setArchived.mutate()}
+              className="rounded px-2 py-1 font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50"
             >
-              Edit
+              {setArchived.isPending
+                ? archived
+                  ? "Unarchiving…"
+                  : "Archiving…"
+                : archived
+                  ? "Unarchive"
+                  : "Archive"}
             </button>
             <button
               type="button"
@@ -160,11 +202,11 @@ function UnitRow({ unit, onEdit }: { unit: UnitResponse; onEdit: () => void }) {
           </div>
         </td>
       </tr>
-      {deleteError && (
+      {(deleteError || archiveError) && (
         <tr>
           <td colSpan={5} className="pb-3">
             <p className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
-              {deleteError}
+              {deleteError ?? archiveError}
             </p>
           </td>
         </tr>

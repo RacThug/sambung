@@ -94,14 +94,40 @@ export class UnitsService {
       }
       const n = await this.repo.countBookings(id);
       if (n > 0) {
-        // No "cancel them first": cancelling doesn't remove the row, so it would
-        // promise an escape that doesn't exist. Says why instead.
+        // No "cancel them first" (cancelling doesn't remove the row), but there is
+        // now an exit: archive retires it while keeping the record (ADR-0005, #84).
         throw new ConflictException(
-          `Cannot delete: this unit has ${n} booking${n === 1 ? '' : 's'} - deleting it would destroy that history`,
+          `Cannot delete: this unit has ${n} booking${n === 1 ? '' : 's'} - deleting it would destroy that history. Archive it instead to retire it while keeping the record.`,
         );
       }
       await this.repo.delete(id);
     });
+  }
+
+  /**
+   * Archive / unarchive a unit (ADR-0005, #84). Idempotent - re-archiving keeps
+   * the original `archivedAt`, unarchiving something active does nothing. An
+   * archived unit drops off the public page and out of `publishable`, but its
+   * existing bookings are untouched; the owner still sees it. The repo returns the
+   * updated row directly, so no re-fetch is needed.
+   */
+  async archive(id: string): Promise<UnitResponse> {
+    return this.setArchived(id, true);
+  }
+
+  async unarchive(id: string): Promise<UnitResponse> {
+    return this.setArchived(id, false);
+  }
+
+  private async setArchived(
+    id: string,
+    archived: boolean,
+  ): Promise<UnitResponse> {
+    const row = await this.repo.setArchived(id, archived);
+    if (!row) {
+      throw new NotFoundException('Unit not found');
+    }
+    return this.toResponse(row);
   }
 
   private async assertPropertyOwned(propertyId: string): Promise<void> {
@@ -123,12 +149,14 @@ export class UnitsService {
   }
 
   private toResponse(row: Unit): UnitResponse {
-    const { basePriceIdr, createdAt, ...columns } = row;
+    const { basePriceIdr, createdAt, archivedAt, ...columns } = row;
     return {
       ...columns,
       // The one place a bigint column becomes a JSON number (api-spec §8.4).
       // Returning the raw BigInt would throw TypeError inside JSON.stringify.
       basePriceIdr: toRupiah(basePriceIdr),
+      // Owner-facing: the timestamp of retirement, or null if active (ADR-0005).
+      archivedAt: archivedAt ? archivedAt.toISOString() : null,
       createdAt: createdAt.toISOString(),
     };
   }

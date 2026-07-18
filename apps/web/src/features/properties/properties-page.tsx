@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   createPropertyRequestSchema,
+  isArchived,
   type PropertyResponse,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
@@ -54,32 +55,56 @@ export function PropertiesPage() {
       )}
 
       <ul className="mt-6 space-y-3">
-        {properties?.map((property) => (
-          <li key={property.id}>
-            <Link
-              to="/app/properties/$propertyId"
-              params={{ propertyId: property.id }}
-              className="block rounded-lg border border-gray-200 bg-white p-4 hover:border-brand-600"
-            >
-              <div className="flex items-center gap-2">
-                <span className="font-semibold">{property.name}</span>
-                {property.verified && <VerifiedBadge />}
-              </div>
-              {property.address && (
-                <p className="mt-1 text-sm text-gray-600">{property.address}</p>
-              )}
-              <p className="mt-2 text-sm">
-                {property.publishable ? (
-                  <span className="text-green-700">● Ready to publish</span>
-                ) : (
-                  <span className="text-amber-700">
-                    ○ Incomplete — needs a photo and a priced unit
+        {properties?.map((property) => {
+          const archived = isArchived(property);
+          return (
+            <li key={property.id}>
+              <Link
+                to="/app/properties/$propertyId"
+                params={{ propertyId: property.id }}
+                className={`block rounded-lg border p-4 hover:border-brand-600 ${
+                  archived
+                    ? "border-gray-200 bg-gray-50"
+                    : "border-gray-200 bg-white"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`font-semibold ${archived ? "text-gray-400" : ""}`}
+                  >
+                    {property.name}
                   </span>
+                  {property.verified && <VerifiedBadge />}
+                  {archived && (
+                    <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+                      Archived
+                    </span>
+                  )}
+                </div>
+                {property.address && (
+                  <p
+                    className={`mt-1 text-sm ${archived ? "text-gray-400" : "text-gray-600"}`}
+                  >
+                    {property.address}
+                  </p>
                 )}
-              </p>
-            </Link>
-          </li>
-        ))}
+                <p className="mt-2 text-sm">
+                  {/* Retired trumps the publish checklist - it's offline for
+                      guests regardless of how complete it is (ADR-0006). */}
+                  {archived ? (
+                    <span className="text-gray-500">◌ Archived - hidden from guests</span>
+                  ) : property.publishable ? (
+                    <span className="text-green-700">● Ready to publish</span>
+                  ) : (
+                    <span className="text-amber-700">
+                      ○ Incomplete — needs a photo and a priced unit
+                    </span>
+                  )}
+                </p>
+              </Link>
+            </li>
+          );
+        })}
       </ul>
 
       {dialogOpen && <CreateDialog onClose={() => setDialogOpen(false)} />}
