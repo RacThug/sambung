@@ -153,6 +153,14 @@ For boss-fight / risky work, split implementation from review across two separat
 3. Reviewer is **skeptical by default** — its job is to find the missing edge case ("does a duplicate webhook double-confirm?", "can tenant A read tenant B?"), not to approve.
 4. Fix loop: reviewer finds issue → back to Session 1 → re-review → merge only when clean. **Don't merge a boss fight on one session's say-so.**
 
+**How to run it** - there is no dedicated command; this is a protocol, not a skill. Pick a mechanism, in decreasing strictness:
+- **A fresh Claude Code session** - paste the prompt below + the issue + branch name. Truest clean-room, zero shared context. The gold standard rule 2 describes.
+- **`/code-review`** - spawns Standards + Spec reviewers as subagents that see only their prompt, not the builder's reasoning. Convenient and nearly as independent; run it from the builder's session.
+- **`/code-review ultra`** - multi-agent **cloud** review of the branch. User-triggered and billed; the agent cannot launch it (offer it, don't attempt it).
+- **An independent reviewer subagent** - fresh context fed only the issue + ACs, launchable mid-session; same independence as `/code-review`.
+
+Feed whichever you pick the **issue + acceptance criteria** as ground truth, and **never** the builder's rationale - that hand-off is the independence.
+
 **Reviewer prompt template:**
 > You are a skeptical Staff QA Engineer. Assume this PR has bugs — find them, don't approve it.
 > Issue + acceptance criteria: [paste]. Branch: [name].
