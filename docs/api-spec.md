@@ -168,21 +168,21 @@ The verb for **retiring inventory that has history** - the exit ADR-0002's delet
 
 **Representation & derivation.** `archived_at timestamptz` (nullable) on `unit` and `property`. Effective-archived is **derived, never cascaded**: `unit.archived_at IS NOT NULL OR property.archived_at IS NOT NULL`. Archiving a Property touches only the property row; its Units are hidden by the `OR`, and unarchiving the Property restores exactly the Units that weren't archived on their own account - no cascade write, no restore-marker (ADR-0005).
 
-**What archive hides, and where it's enforced.** The correctness boundary is the **booking chokepoint**, not a global filter (invariant #5): the availability re-validation in §5.3 (and the quote in §5.1) treats an effectively-archived Unit as unavailable → the same `409`/`404` a taken or unknown Unit gets. Everything else filters for UX - a miss there is cosmetic, not a double-booking: the public page (§4.7) drops archived Units and `404`s an archived Property (ADR-0006), and `publishable` (§4.3) stops counting archived Units.
+**What archive hides, and where it's enforced.** The correctness boundary is the **booking chokepoint**, not a global filter (invariant #5). An effectively-archived Unit is refused there, and the code differs by verb: the **quote read** (§5.1) returns **`404`** - indistinguishable from an unknown Unit, matching the public page that hides it; the **booking write** (§5.3) resolves the Unit and then answers **`409`** - "these dates can't be booked", the taken-Unit shape. Both enforce it *after* the pure resolver, never in it ([ADR-0008](adr/0008-a-public-resolver-resolves-it-does-not-judge.md)). Everything else filters for UX - a miss there is cosmetic, not a double-booking: the public page (§4.7) drops archived Units and `404`s an archived Property (ADR-0006), and `publishable` (§4.3) stops counting archived Units.
 
 **What archive keeps.** Existing bookings are untouched - a confirmed future stay still shows up, stays on the reservation list (§5.5), and (M4) **still exports to iCal so an OTA cannot resell those nights** (export is archive-blind for a Unit with bookings). Archive changes sellability, not the ledger; cancel (§5.6) is the separate verb for removing a guest. `channel_connection` rows survive archive untouched; the import-vs-export policy for an archived Unit is an M4 decision.
 
 **Not RLS.** Archive is intra-tenant visibility - the owner must still see their archived inventory, so the predicate is application-level, not a policy (which would hide it from the owner too). A tenant-isolation test covers archive/unarchive; no policy changes.
 
-> **Deferred with the code that consumes it:** the `POST /public/bookings` → `409` refusal for an archived Unit lands with §5.3 (the endpoint doesn't exist yet); the iCal export-archive-blind behavior lands with M4 (channel-sync doesn't exist yet). Both are constraints recorded here so the later build honours them.
+> **Landed / deferred:** the **quote read** `404` for an archived Unit ships with #47 (§5.1). The `POST /public/bookings` → `409` refusal still lands with §5.3 (#48, the endpoint doesn't exist yet); the iCal export-archive-blind behavior lands with M4 (channel-sync doesn't exist yet). Both remaining items are constraints recorded here so the later build honours them.
 
 ---
 
 ## 5. Availability, calendar & bookings - M2 (boss fights #1, #2)
 
-### 5.1 `GET /public/units/:id/availability?from&to` → 200 (no auth)
-The quote endpoint the date-picker calls (FR-CAL-1/2).
-Rules: `from < to`, both `YYYY-MM-DD`, window ≤ 366 nights, else 400.
+### 5.1 `GET /public/units/:id/availability?from&to` → 200 (no auth) - **M2** (#47, boss fight #2)
+The quote endpoint the date-picker calls (FR-CAL-1/2). Shared types: `packages/shared/src/availability.ts` (`availabilityQuerySchema`, `availabilityResponseSchema`).
+Rules: `from < to`, both `YYYY-MM-DD`, window ≤ 366 nights, else 400. Malformed unit UUID → 400; unknown or **effectively-archived** unit → 404 (see below). No past-date check - the quote is a pure, stateless function of `(unit, from, to)`; the picker disables past dates in the UI.
 Response:
 ```json
 {
@@ -191,10 +191,17 @@ Response:
   "totalPriceIdr": 14000000,
   "minStay": 2,
   "reasons": [],
-  "blockedRanges": [ { "from": "2026-08-10", "to": "2026-08-14" } ]
+  "blockedRanges": []
 }
 ```
-`available=false` carries machine-readable `reasons`: `overlap` and/or `min_stay` (localized message text per `?lang`). Price = `basePriceIdr × nights` (v1 pricing; no seasonal rates - PRD non-goal). `blockedRanges` = occupying bookings clipped to the queried window, **half-open**, with no source/guest information leaked.
+- **`blockedRanges`** = every *occupying* booking (`pending_payment`|`confirmed`) intersecting `[from,to)`, clipped to the window, **half-open**, contiguous/overlapping ranges **coalesced into maximal intervals**, and carrying `{from,to}` only - no `source`/`guest`/`bookingId`/`status` ever. It is **unconditional**: always the occupied nights in the window. So the picker uses this one endpoint in two modes - query the visible month to grey out booked nights (ignore `available`/price), then query the concrete selection to quote. Coalescing also means a Visitor never sees the *seam* between two adjacent bookings (a checkout-day = next check-in), only "these nights are unavailable".
+- **`available`** = `blockedRanges` empty **and** `nights ≥ minStay`. Because `blockedRanges` is unconditional, a non-empty one *is* the overlap signal - there is no separate availability query. (So for one window, `available:true` ⟺ `blockedRanges` empty.)
+- **`reasons`** = machine-readable slugs, subset of `overlap` (blockedRanges non-empty) and `min_stay` (`nights < minStay`); both may be present. **Slugs only, no prose** - the response is language-neutral (§1); the SPA composes localized copy from the slug + `minStay`/`blockedRanges` using its own i18n. `?lang` is accepted (public-endpoint convention) but unused here.
+- **`totalPriceIdr`** = `basePriceIdr × nights`, always computed (v1 pricing; no seasonal rates - PRD non-goal). A zero-priced (placeholder) unit quotes honestly at `0`; whether it can actually be *booked* is the write chokepoint's call (§5.3), not the read's.
+
+**Tenant scope & archive.** No auth, but a tenant: `PublicScope.enterFromUnitId(id)` resolves the tenant from the unit id (one column, owner connection) exactly as `enterFromSlug` does for a slug ([ADR-0003](adr/0003-a-visitor-is-a-principal.md), [ADR-0008](adr/0008-a-public-resolver-resolves-it-does-not-judge.md)). The resolver stays pure - it 404s only a *nonexistent* unit; the **effectively-archived** check (`unit.archived_at IS NOT NULL OR property.archived_at IS NOT NULL` → 404, §4.8) is enforced in `AvailabilityService` at the chokepoint, from the same unit-fetch that reads `basePriceIdr`/`minStay`.
+
+**The interval math is the DB's.** Overlap and clipping run in Postgres with the *same* `daterange(check_in, check_out, '[)') && / *` operators as the `booking_no_overlap` exclusion constraint (db-design §4.2/4.3), so the read can never say "free" for a stay the write would reject; `nights`/price/min-stay/coalesce are pure functions in `@sambung/shared`. `AvailabilityService.quote()` is the single interval authority - §5.3's in-transaction re-check calls the same service and joins its transaction (#72), so the read and the write share one definition of "overlap".
 
 ### 5.2 `GET /units/:id/calendar?from&to` → 200 (auth) - owner calendar (FR-CAL-3)
 Same shape but full-fat: each range carries `bookingId, source, status, guestName?`, so the dashboard can color-code direct/airbnb/manual and show holds.
