@@ -184,14 +184,39 @@ export class PropertiesService {
       }
       const n = await this.repo.countBookings(id);
       if (n > 0) {
-        // No "cancel them first": cancelling doesn't remove the row, so it would
-        // promise an escape that doesn't exist. Says why instead.
+        // No "cancel them first" (cancelling doesn't remove the row), but there is
+        // now an exit: archive retires it while keeping the record (ADR-0005, #84).
         throw new ConflictException(
-          `Cannot delete: this property has ${n} booking${n === 1 ? '' : 's'} - deleting it would destroy that history`,
+          `Cannot delete: this property has ${n} booking${n === 1 ? '' : 's'} - deleting it would destroy that history. Archive it instead to retire it while keeping the record.`,
         );
       }
       await this.repo.delete(id);
     });
+  }
+
+  /**
+   * Archive / unarchive a property (ADR-0005, #84). Idempotent - re-archiving is a
+   * no-op that keeps the original `archivedAt`, unarchiving something active does
+   * nothing. Archiving hides the property from guests (its public page 404s,
+   * ADR-0006) and archives its Units by derivation; the owner still sees it here.
+   * Re-fetches via `get` so the response carries the recomputed `publishable`.
+   */
+  archive(id: string): Promise<PropertyResponse> {
+    return this.setArchived(id, true);
+  }
+
+  unarchive(id: string): Promise<PropertyResponse> {
+    return this.setArchived(id, false);
+  }
+
+  private async setArchived(
+    id: string,
+    archived: boolean,
+  ): Promise<PropertyResponse> {
+    if (!(await this.repo.setArchived(id, archived))) {
+      throw new NotFoundException('Property not found');
+    }
+    return this.get(id);
   }
 
   /**
@@ -207,7 +232,7 @@ export class PropertiesService {
   }
 
   private toResponse(row: PropertyRow): PropertyResponse {
-    const { pricedUnitCount, createdAt, photos, ...columns } = row;
+    const { pricedUnitCount, createdAt, photos, archivedAt, ...columns } = row;
     return {
       ...columns,
       photos: photos.map((key) => ({
@@ -219,6 +244,8 @@ export class PropertiesService {
         photoCount: photos.length,
         pricedUnitCount,
       }),
+      // Owner-facing: the timestamp of retirement, or null if active (ADR-0005).
+      archivedAt: archivedAt ? archivedAt.toISOString() : null,
       createdAt: createdAt.toISOString(),
     };
   }

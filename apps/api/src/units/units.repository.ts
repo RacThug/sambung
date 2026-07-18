@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, eq, sql } from 'drizzle-orm';
 import { booking, property, unit, type Unit } from '@sambung/db';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
@@ -92,6 +92,31 @@ export class UnitsRepository {
       tx
         .update(unit)
         .set(patch)
+        .where(and(eq(unit.id, id), eq(unit.tenantId, tenantId)))
+        .returning(),
+    );
+    return row ?? null;
+  }
+
+  /**
+   * Set (or clear) this unit's retirement flag (ADR-0005, #84). Returns the
+   * updated Unit, or null when the id is unknown or belongs to another tenant.
+   *
+   * Idempotent: archiving keeps the ORIGINAL archived_at (`coalesce`), so
+   * re-archiving is a no-op that doesn't reset the "retired on" date; unarchiving
+   * clears it. No FOR UPDATE lock - a single-row flag write has no cascade-away
+   * race, and an in-flight booking is honoured, not raced (ADR-0005).
+   */
+  async setArchived(id: string, archived: boolean): Promise<Unit | null> {
+    const tenantId = this.tenant.tenantId;
+    const [row] = await this.db.run((tx) =>
+      tx
+        .update(unit)
+        .set({
+          archivedAt: archived
+            ? sql`coalesce(${unit.archivedAt}, now())`
+            : null,
+        })
         .where(and(eq(unit.id, id), eq(unit.tenantId, tenantId)))
         .returning(),
     );

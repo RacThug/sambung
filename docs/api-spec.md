@@ -118,10 +118,10 @@ Tenant-scoped list, `createdAt` ascending. Empty tenant → `[]` (never other te
 `404` for another tenant's id or an unknown id (indistinguishable). `400` malformed UUID.
 
 ### 4.3 `POST /properties` → 201 · `PATCH /properties/:id` → 200 - M1
-Fields: `name` (required, 2-160), `address?`, `latitude?`/`longitude?` (valid ranges), `description?`, `licenseNo?` (NIB). Response includes derived `verified: boolean` - true iff `licenseNo` is non-empty (FR-PROP-3). A public page needs ≥1 photo + ≥1 unit with a price **above zero** to render "complete" (FR-PROP-1 AC) - the API exposes `publishable: boolean` computed from that rule. A zero-rupiah unit is storable (§4.6) but never counts toward publishability: it's a placeholder, not a sellable listing.
+Fields: `name` (required, 2-160), `address?`, `latitude?`/`longitude?` (valid ranges), `description?`, `licenseNo?` (NIB). Response includes derived `verified: boolean` - true iff `licenseNo` is non-empty (FR-PROP-3). A public page needs ≥1 photo + ≥1 unit with a price **above zero** to render "complete" (FR-PROP-1 AC) - the API exposes `publishable: boolean` computed from that rule. A zero-rupiah unit is storable (§4.6) but never counts toward publishability: it's a placeholder, not a sellable listing. An **archived** unit (or any unit under an archived property) also never counts - `publishable` is `isSellable AND active`, so a property whose only priced unit is archived reports `publishable: false` (§4.8, [ADR-0005](adr/0005-archived-is-derived-not-cascaded.md)). `PropertyResponse` and `UnitResponse` carry `archivedAt: string | null` (the owner sees their own retired inventory); the public payload never does.
 
 ### 4.4 `DELETE /properties/:id` → 204 - **Built** (M1)
-**Guarded:** if **any** booking has ever referenced a unit under it - past, cancelled and expired included - → `409` naming the count. Same rule for `DELETE /units/:id`. Delete is only for inventory that was never booked; retiring inventory that has history is **archive** (M2, #84).
+**Guarded:** if **any** booking has ever referenced a unit under it - past, cancelled and expired included - → `409` naming the count **and pointing to archive as the exit** (§4.8). Same rule for `DELETE /units/:id`. Delete is only for inventory that was never booked; retiring inventory that has history is **archive** (§4.8, #84) - the two are orthogonal verbs, delete destroys the row, archive hides it and keeps the ledger.
 
 Two layers, per invariant #5: the service guard produces the count and the message, and both `booking → unit` FKs are `on delete no action` so the database refuses too ([ADR-0002](adr/0002-deleting-inventory-never-destroys-the-ledger.md)). The FK is deliberately **not** mapped in the constraint map - the guard locks the unit before counting, so nothing can slip in behind it, and a FK that fires anyway means a code path skipped the guard: a 500, not a 409.
 
@@ -134,8 +134,8 @@ Shared types: `packages/shared/src/photo.ts` (`presignPhotoRequestSchema`, `pres
 - `PropertyResponse` carries `photos: [{ key, url }]` (order = gallery order, url = `STORAGE_PUBLIC_BASE_URL/<key>`); `publishable` counts these photos.
 
 ### 4.6 Units - **Built** (#45)
-`POST /properties/:id/units` → 201, `GET /properties/:id/units` → 200 (`createdAt` asc), `PATCH /units/:id` → 200, `DELETE /units/:id` → 204 (guarded, §4.4).
-Shared types: `packages/shared/src/unit.ts` (`createUnitRequestSchema`, `updateUnitRequestSchema`, `unitResponseSchema`, `isSellable`).
+`POST /properties/:id/units` → 201, `GET /properties/:id/units` → 200 (`createdAt` asc, **includes archived** - it's the owner's history), `PATCH /units/:id` → 200, `DELETE /units/:id` → 204 (guarded, §4.4), `POST /units/:id/archive` → 200, `POST /units/:id/unarchive` → 200 (§4.8).
+Shared types: `packages/shared/src/unit.ts` (`createUnitRequestSchema`, `updateUnitRequestSchema`, `unitResponseSchema`, `isSellable`, `isArchived`).
 
 Fields: `name`, `basePriceIdr` (int ≥ 0; a 0 price is storable but keeps the property unpublishable - §4.3), `maxGuests` (int ≥ 1, default 2), `minStay` (nights, int ≥ 1, default 1). The DB CHECKs mirror these bounds - a bypassed app check still cannot store garbage. Every field is mutable: a booking snapshots its own `totalPriceIdr`, and `minStay` applies when booking, so neither is retroactive. `404` for another tenant's property or unit id (indistinguishable from unknown).
 
@@ -146,7 +146,7 @@ Fields: `name`, `basePriceIdr` (int ≥ 0; a 0 price is storable but keeps the p
 ### 4.7 `GET /public/properties/:slug` → 200 - **Built** (#46, no auth)
 Shared types: `packages/shared/src/public-property.ts` (`publicPropertyResponseSchema`).
 
-`PublicPropertyResponse = { slug, name, address, description, verified, photos: [{ url }], units: [{ id, name, basePriceIdr, maxGuests, minStay }] }`. `404` unknown slug - the only failure.
+`PublicPropertyResponse = { slug, name, address, description, verified, photos: [{ url }], units: [{ id, name, basePriceIdr, maxGuests, minStay }] }`. `404` for an unknown slug **or an archived property** - the two are indistinguishable, by design (§4.8). Archived *units* are filtered out of the `units` array; a live property with a mix shows only its active units.
 
 **A malformed slug is a `404`, not the `400` §1 mandates for a malformed UUID.** A string that can't match `SLUG_PATTERN` can't exist in the column (`property_slug_format` guarantees it), so "no such page" is the true answer, not a euphemism - and it's what a guest with a mistyped link needs to read. §1's actual principle, refuse before touching the database, is upheld: `SlugParamPipe` rejects at the boundary. This is not optional politeness - taking the slug raw made `%00` a NUL byte, an unmapped `22021`, and a **500 on the one route with no auth in front of it** (found in review of #46).
 
@@ -159,6 +159,22 @@ Shared types: `packages/shared/src/public-property.ts` (`publicPropertyResponseS
 **Known and accepted: public photo URLs embed the tenant and property UUIDs.** The URL is `STORAGE_PUBLIC_BASE_URL/<key>` and keys are `<tenantId>/<propertyId>/<uuid>.<ext>` (§4.5), so omitting the `key` field changes nothing - the URL *is* the key. Those ids are identifiers, not capabilities: RLS scopes on a GUC set from a verified JWT or a slug resolution, never from a value a visitor supplies, so knowing one grants nothing. The alternatives are worse - re-keying means migrating storage and losing the prefix check that makes `PATCH /photos` ownership-safe, and proxying bytes discards #39's "the API never proxies bytes" and R2's zero-egress. Read "no tenant internals" as the payload's *fields*, which is what it constrains.
 
 **Schema:** `property.slug` is globally unique (the URL carries no tenant, so the slug is what finds one), minted once at create from the name, and **never moved by a rename** (ADR-0004). Collisions are resolved by the mint loop, never surfaced: `INSERT ... ON CONFLICT (slug) DO NOTHING`, retried with a random suffix. `property_slug_key` is deliberately absent from the constraint map - with `ON CONFLICT` it cannot raise, so if it ever does, a path skipped the mint: a 500, not a 409.
+
+### 4.8 Archive - M2 ([ADR-0005](adr/0005-archived-is-derived-not-cascaded.md), [ADR-0006](adr/0006-an-archived-property-is-retired-not-addressed.md), #84)
+
+The verb for **retiring inventory that has history** - the exit ADR-0002's delete guard pointed to but didn't yet have. An archived Unit/Property keeps its bookings and payments, disappears from guests, and stays visible to the owner as history.
+
+`POST /units/:id/archive` → 200 · `POST /units/:id/unarchive` → 200 · `POST /properties/:id/archive` → 200 · `POST /properties/:id/unarchive` → 200. Each returns the updated resource. **Idempotent:** re-archiving keeps the original `archivedAt`; unarchiving something active is a no-op, not a 409. `404` for another tenant's id (indistinguishable from unknown). Verb-subresources, not a `PATCH`-a-field: archive is a transition like `POST /bookings/:id/cancel` (§5.6), and `archivedAt` appears in no request schema - like `slug`, it is set by a transition, not edited.
+
+**Representation & derivation.** `archived_at timestamptz` (nullable) on `unit` and `property`. Effective-archived is **derived, never cascaded**: `unit.archived_at IS NOT NULL OR property.archived_at IS NOT NULL`. Archiving a Property touches only the property row; its Units are hidden by the `OR`, and unarchiving the Property restores exactly the Units that weren't archived on their own account - no cascade write, no restore-marker (ADR-0005).
+
+**What archive hides, and where it's enforced.** The correctness boundary is the **booking chokepoint**, not a global filter (invariant #5): the availability re-validation in §5.3 (and the quote in §5.1) treats an effectively-archived Unit as unavailable → the same `409`/`404` a taken or unknown Unit gets. Everything else filters for UX - a miss there is cosmetic, not a double-booking: the public page (§4.7) drops archived Units and `404`s an archived Property (ADR-0006), and `publishable` (§4.3) stops counting archived Units.
+
+**What archive keeps.** Existing bookings are untouched - a confirmed future stay still shows up, stays on the reservation list (§5.5), and (M4) **still exports to iCal so an OTA cannot resell those nights** (export is archive-blind for a Unit with bookings). Archive changes sellability, not the ledger; cancel (§5.6) is the separate verb for removing a guest. `channel_connection` rows survive archive untouched; the import-vs-export policy for an archived Unit is an M4 decision.
+
+**Not RLS.** Archive is intra-tenant visibility - the owner must still see their archived inventory, so the predicate is application-level, not a policy (which would hide it from the owner too). A tenant-isolation test covers archive/unarchive; no policy changes.
+
+> **Deferred with the code that consumes it:** the `POST /public/bookings` → `409` refusal for an archived Unit lands with §5.3 (the endpoint doesn't exist yet); the iCal export-archive-blind behavior lands with M4 (channel-sync doesn't exist yet). Both are constraints recorded here so the later build honours them.
 
 ---
 

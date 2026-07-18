@@ -56,6 +56,12 @@ export const propertyResponseSchema = z.object({
   verified: z.boolean(),
   /** Derived: public page can render complete (FR-PROP-1 AC) - see isPublishable. */
   publishable: z.boolean(),
+  /**
+   * When this Property was archived (retired), or null if active (ADR-0005, #84).
+   * Owner-facing only: the PUBLIC payload never carries it - an archived Property
+   * simply 404s (ADR-0006). Read-only, set by POST /properties/:id/archive.
+   */
+  archivedAt: z.string().nullable(), // ISO-8601 UTC or null
   createdAt: z.string(), // ISO-8601 UTC
 });
 export type PropertyResponse = z.infer<typeof propertyResponseSchema>;

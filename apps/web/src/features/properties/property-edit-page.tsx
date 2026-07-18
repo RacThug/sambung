@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import {
+  isArchived,
   isVerified,
   updatePropertyRequestSchema,
   type PropertyResponse,
@@ -34,19 +35,36 @@ export function PropertyEditPage() {
     return <p className="text-gray-600">Property not found.</p>;
   }
 
+  const archived = isArchived(property);
+
   return (
     <section>
       <div className="flex items-center gap-2">
         <h1 className="text-2xl font-bold">{property.name}</h1>
         {property.verified && <VerifiedBadge />}
+        {archived && (
+          <span className="rounded bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">
+            Archived
+          </span>
+        )}
       </div>
-      <PublicLink property={property} />
+      <PublicLink property={property} archived={archived} />
 
-      {!property.publishable && (
-        <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          The public page is live, but incomplete — it needs at least one photo
-          and one unit with a price before it's worth sharing.
+      {/* When retired, the "incomplete" nudge is moot - lead with the retirement
+          state and its exit instead (ADR-0005/0006). */}
+      {archived ? (
+        <p className="mt-2 rounded-md bg-gray-100 px-3 py-2 text-sm text-gray-600">
+          This property is retired. Its public page is offline and its units
+          can't be booked - existing bookings are untouched. Unarchive it below
+          to bring it back.
         </p>
+      ) : (
+        !property.publishable && (
+          <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            The public page is live, but incomplete — it needs at least one photo
+            and one unit with a price before it's worth sharing.
+          </p>
+        )
       )}
 
       {/* key: remount the form when the server row changes identity */}
@@ -55,6 +73,8 @@ export function PropertyEditPage() {
       <PhotosSection property={property} />
 
       <UnitsSection property={property} />
+
+      <ArchiveZone property={property} archived={archived} />
 
       <DangerZone property={property} />
     </section>
@@ -74,10 +94,26 @@ export function PropertyEditPage() {
  * would imply a publish step that does not exist and never will - if that
  * changes, it changes as an explicit flag, not by inference from photos.
  */
-function PublicLink({ property }: { property: PropertyResponse }) {
+function PublicLink({
+  property,
+  archived,
+}: {
+  property: PropertyResponse;
+  archived: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const path = `/p/${property.slug}`;
   const url = window.location.origin + path;
+
+  // A retired property's page 404s (ADR-0006), so don't dangle a link that reads
+  // as live. The slug is reserved - unarchive brings this exact URL back.
+  if (archived) {
+    return (
+      <p className="mt-2 text-sm text-gray-400">
+        Public page offline while archived: <span className="line-through">{url}</span>
+      </p>
+    );
+  }
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -257,6 +293,62 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
         )}
       </div>
     </form>
+  );
+}
+
+/**
+ * Retire / restore the whole property (ADR-0005). Deliberately NOT the red delete
+ * zone: archive is reversible and keeps every booking - it hides the property
+ * from guests, it doesn't destroy anything. Archiving here retires the units too,
+ * by derivation; unarchive restores exactly the ones not retired on their own.
+ */
+function ArchiveZone({
+  property,
+  archived,
+}: {
+  property: PropertyResponse;
+  archived: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const setArchived = useMutation({
+    mutationFn: () =>
+      api.post(
+        `/properties/${property.id}/${archived ? "unarchive" : "archive"}`,
+        {},
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["properties"] }),
+  });
+
+  return (
+    <div className="mt-6 rounded-lg border border-gray-200 bg-white p-6">
+      <h2 className="text-lg font-semibold">
+        {archived ? "Restore property" : "Retire property"}
+      </h2>
+      <p className="mt-1 text-sm text-gray-500">
+        {archived
+          ? "Bring this property and its units back onto the public page and new-booking paths."
+          : "Take this property offline for guests while keeping its booking and payment history. Reversible any time."}
+      </p>
+      {setArchived.isError && (
+        <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
+          {archived ? "Unarchive" : "Archive"} failed - please try again
+        </p>
+      )}
+      <button
+        type="button"
+        disabled={setArchived.isPending}
+        onClick={() => setArchived.mutate()}
+        className="mt-4 rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+      >
+        {setArchived.isPending
+          ? archived
+            ? "Unarchiving…"
+            : "Archiving…"
+          : archived
+            ? "Unarchive property"
+            : "Archive property"}
+      </button>
+    </div>
   );
 }
 

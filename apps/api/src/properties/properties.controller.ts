@@ -83,4 +83,19 @@ export class PropertiesController {
   ): Promise<PropertyResponse> {
     return this.properties.updatePhotos(id, dto);
   }
+
+  // Archive / unarchive (api-spec §4.8, ADR-0005). Verb-subresources, not a PATCH
+  // field: archive is a transition like POST /bookings/:id/cancel, and archivedAt
+  // is in no request schema. 200 + the updated resource; idempotent.
+  @Post(':id/archive')
+  @HttpCode(200)
+  archive(@Param('id', ParseUUIDPipe) id: string): Promise<PropertyResponse> {
+    return this.properties.archive(id);
+  }
+
+  @Post(':id/unarchive')
+  @HttpCode(200)
+  unarchive(@Param('id', ParseUUIDPipe) id: string): Promise<PropertyResponse> {
+    return this.properties.unarchive(id);
+  }
 }

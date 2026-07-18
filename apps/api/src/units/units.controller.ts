@@ -70,4 +70,19 @@ export class UnitsController {
   remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.units.remove(id);
   }
+
+  // Archive / unarchive (api-spec §4.8, ADR-0005). Verb-subresources, not a PATCH
+  // field: archive is a transition, and archivedAt is in no request schema. 200 +
+  // the updated resource; idempotent.
+  @Post(':id/archive')
+  @HttpCode(200)
+  archive(@Param('id', ParseUUIDPipe) id: string): Promise<UnitResponse> {
+    return this.units.archive(id);
+  }
+
+  @Post(':id/unarchive')
+  @HttpCode(200)
+  unarchive(@Param('id', ParseUUIDPipe) id: string): Promise<UnitResponse> {
+    return this.units.unarchive(id);
+  }
 }

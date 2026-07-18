@@ -107,6 +107,12 @@ export const property = pgTable(
     // array order = gallery order. Bytes live in S3-compatible storage (#39);
     // the row stores only keys. Publishability needs at least one.
     photos: text("photos").array().notNull().default(sql`'{}'::text[]`),
+    // Retirement flag (ADR-0005, #84). NULL = active. Archiving a Property hides
+    // its Units by DERIVATION: effective-archived reads this OR the unit's own
+    // flag, so archiving never writes to unit rows and unarchive restores exactly
+    // the Units that weren't retired on their own account. Set by a transition
+    // (POST /properties/:id/archive), so - like slug - it is in no request schema.
+    archivedAt: timestamptz("archived_at"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -157,6 +163,12 @@ export const unit = pgTable(
     basePriceIdr: bigint("base_price_idr", { mode: "bigint" }).notNull(),
     maxGuests: integer("max_guests").notNull().default(2),
     minStay: integer("min_stay").notNull().default(1),
+    // Retirement flag (ADR-0005, #84). NULL = active. Effective-archived is this
+    // OR the parent property's archived_at - derived, not cascaded. "Active" (not
+    // archived) is a DIFFERENT axis from isSellable (priced): a Unit counts toward
+    // publishable only when it is both. The booking chokepoint (§5.3), not this
+    // column's presence in a WHERE, is what makes selling an archived Unit a bug.
+    archivedAt: timestamptz("archived_at"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -189,6 +201,12 @@ export const unit = pgTable(
 );
 
 // ---- Channels ------------------------------------------------------------------
+// Archive (ADR-0005, #84) does NOT touch these rows - it is inventory-only. Two
+// M4 constraints ride on that: (1) the iCal EXPORT feed must stay archive-blind
+// for a Unit that still has bookings, or archiving would tell an OTA those nights
+// are free and cause a real double-booking; (2) whether iCal IMPORT keeps running
+// against an archived Unit is an M4 decision. Recorded here because M4 is where
+// they get enforced.
 export const channelConnection = pgTable(
   "channel_connection",
   {

@@ -48,6 +48,30 @@ describe("properties list (§4.4)", () => {
     expect(screen.getAllByText(/Incomplete/)).toHaveLength(1);
   });
 
+  // Archive (ADR-0006, #84): a retired property is shown distinctly, and its
+  // retirement trumps the publish checklist - it's offline for guests regardless
+  // of how complete it is.
+  it("shows an archived property distinctly, not its publishable state", async () => {
+    stubFetch({
+      "GET /api/properties": () =>
+        json([
+          property({
+            id: "aaaaaaaa-0000-0000-0000-000000000003",
+            name: "Retired Villa",
+            publishable: true,
+            archivedAt: "2026-07-18T00:00:00.000Z",
+          }),
+        ]),
+    });
+    renderAt("/app/properties");
+
+    expect(await screen.findByText("Retired Villa")).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+    expect(screen.getByText(/hidden from guests/i)).toBeInTheDocument();
+    // Even though publishable is true, "Ready to publish" must not show.
+    expect(screen.queryByText(/Ready to publish/)).not.toBeInTheDocument();
+  });
+
   it("maps create-dialog validation errors to the name field without calling the API", async () => {
     const calls = stubFetch({
       "GET /api/properties": () => json([]),
