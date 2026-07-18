@@ -53,6 +53,13 @@ A Property's permanent public address (`/p/seminyak-beach-villa`). Minted once f
 never moved by a rename - it is where the Property lives, not what it is called.
 _Avoid_: url, permalink, handle
 
+**Archived**:
+Inventory the Owner has retired. It keeps its bookings and payments, disappears from the public page
+and every new-booking path, and stays visible to the Owner as history. A Unit is Archived on its own
+account or by inheriting an Archived Property - the effective state is derived from both, never stored
+twice. Distinct from delete, which is only for inventory that was never booked.
+_Avoid_: deleted, hidden, disabled, deactivated, unpublished
+
 ### Bookings
 
 **Stay**:
