@@ -11,6 +11,22 @@
 import { z } from "zod";
 import { rupiahSchema } from "./money";
 
+/**
+ * The ceiling on a nightly rate. NOT a JS-representability bound like
+ * rupiahSchema's MAX_SAFE_INTEGER - a DOMAIN bound: no real Bali accommodation
+ * costs a billion rupiah a night (~USD 60k), so a value above it is a fat-finger
+ * or an attack, not a price.
+ *
+ * It is also what keeps the availability quote safe. The quote computes
+ * basePriceIdr x nights, up to MAX_AVAILABILITY_NIGHTS (366); with the price
+ * bounded here the product tops out near 3.66e11, far under MAX_SAFE_INTEGER
+ * (~9.007e15), so toRupiah can never overflow and 500 the no-auth endpoint.
+ * Found in the #47 review: without this cap a write-accepted price x a long
+ * window threw RangeError -> 500. Capping at the source makes the overflow
+ * unrepresentable rather than something to catch downstream.
+ */
+export const MAX_NIGHTLY_RATE_IDR = 1_000_000_000;
+
 export const createUnitRequestSchema = z.object({
   /**
    * Unique within the property, enforced by `unit_property_name_uniq` - zod
@@ -24,8 +40,14 @@ export const createUnitRequestSchema = z.object({
    * A zero price is deliberately storable (api-spec §4.6): it's a placeholder,
    * not an error. It just never counts toward `publishable`, so the property
    * stays unlisted until it's priced (§4.3).
+   *
+   * Capped at MAX_NIGHTLY_RATE_IDR - a domain ceiling that also keeps
+   * basePriceIdr x nights from overflowing the availability quote (#47 review).
+   * Mirrored by the `unit_base_price_max` DB CHECK: rejected twice over (#45).
    */
-  basePriceIdr: rupiahSchema,
+  basePriceIdr: rupiahSchema.refine((n) => n <= MAX_NIGHTLY_RATE_IDR, {
+    message: `must be at most ${MAX_NIGHTLY_RATE_IDR}`,
+  }),
   /**
    * The lower bounds mirror the DB CHECKs (`unit_max_guests_positive`,
    * `unit_min_stay_positive`) - that's the "rejected twice over" of #45.

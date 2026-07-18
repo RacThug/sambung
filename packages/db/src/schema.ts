@@ -195,6 +195,13 @@ export const unit = pgTable(
       foreignColumns: [property.id, property.tenantId],
     }).onDelete("cascade"),
     check("unit_base_price_nonneg", sql`${t.basePriceIdr} >= 0`),
+    // Upper bound mirrors MAX_NIGHTLY_RATE_IDR in @sambung/shared (kept in sync by
+    // hand - SQL can't import the constant). A DOMAIN ceiling on a nightly rate,
+    // and the layer that makes the #47 quote overflow unrepresentable even to a
+    // raw insert: base_price_idr x 366 nights stays far under MAX_SAFE_INTEGER, so
+    // toRupiah can't overflow and 500 the no-auth endpoint. Rejected twice over
+    // (#45): zod rejects it at the API, this CHECK behind a bypass.
+    check("unit_base_price_max", sql`${t.basePriceIdr} <= 1000000000`),
     check("unit_max_guests_positive", sql`${t.maxGuests} > 0`),
     check("unit_min_stay_positive", sql`${t.minStay} >= 1`),
   ],
