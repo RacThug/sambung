@@ -5,7 +5,7 @@ import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import { eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
-import { booking, property, tenant, unit } from '@sambung/db';
+import { booking, payment, property, tenant, unit } from '@sambung/db';
 import type {
   AuthResponse,
   BookingDetail,
@@ -489,5 +489,30 @@ describe('Owner bookings (block / walk-in / detail / cancel)', () => {
     expect((await cancelAs(tokenA, bId)).status).toBe(404);
     // And tenant B's booking is untouched.
     expect((await rowById(bId)).status).toBe('confirmed');
+  });
+
+  it('marks the refund manual when cancelling a paid booking (AC #3)', async () => {
+    // The only path to a paid booking at M2 is a seeded payment row - there is no
+    // pay endpoint until M3. Prove the branch anyway: the AC names it explicitly.
+    const paidId = await seed({
+      tenantId: tenantAId,
+      unitId: unitStdId,
+      status: 'confirmed',
+      source: 'direct',
+      checkIn: '2029-03-10',
+      checkOut: '2029-03-14',
+    });
+    await dbs.db.insert(payment).values({
+      bookingId: paidId,
+      provider: 'midtrans',
+      amountIdr: 4_000_000n,
+      status: 'paid',
+    });
+
+    const res = await cancelAs(tokenA, paidId);
+    expect(res.status).toBe(200);
+    const c = bodyOf<CancelBookingResponse>(res);
+    expect(c.status).toBe('cancelled');
+    expect(c.refund).toBe('manual');
   });
 });
