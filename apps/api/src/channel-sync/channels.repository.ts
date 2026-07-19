@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, eq } from 'drizzle-orm';
+import { and, asc, count, eq, sql } from 'drizzle-orm';
 import {
   booking,
   channelConnection,
@@ -181,6 +181,12 @@ export class ChannelsRepository {
             eq(booking.unitId, unitId),
             eq(booking.tenantId, tenantId),
             eq(booking.status, 'confirmed'),
+            // Only nights an OTA still cares about: drop stays that fully ended
+            // before today, so the feed doesn't grow unbounded with years of
+            // history. `>= current_date` (inclusive) keeps an in-progress stay -
+            // its check_out is still in the future - and errs to the safe side of
+            // any timezone slop, which is fine for a coarse availability feed.
+            sql`${booking.checkOut} >= current_date`,
           ),
         )
         .orderBy(asc(booking.checkIn), asc(booking.id)),

@@ -45,6 +45,7 @@ describe('Channel sync (#55)', () => {
   let tenantAId: string;
   let unitAId: string;
   let tokenB: string;
+  let tenantBId: string;
 
   async function registerTenant(label: string): Promise<AuthResponse> {
     const res = await request(server())
@@ -108,6 +109,7 @@ describe('Channel sync (#55)', () => {
 
     const b = await registerTenant('chan-b');
     tokenB = b.accessToken;
+    tenantBId = b.tenant.id;
     createdTenantIds.push(b.tenant.id);
   });
 
@@ -310,6 +312,22 @@ describe('Channel sync (#55)', () => {
       ).toHaveLength(0);
     });
 
+    it('reports zero kept when no bookings were imported', async () => {
+      const conn = bodyOf<ChannelConnectionResponse>(
+        await connect(unitAId, {
+          channel: 'vrbo',
+          importIcalUrl: 'https://vrbo.com/ical/z.ics',
+        }).expect(201),
+      );
+      const res = await request(server())
+        .delete(`/api/channels/${conn.id}`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+      expect(bodyOf<DisconnectChannelResponse>(res)).toEqual({
+        importedBookingsKept: 0,
+      });
+    });
+
     it('404s an unknown connection id', async () => {
       await request(server())
         .delete(`/api/channels/${randomUUID()}`)
@@ -403,6 +421,86 @@ describe('Channel sync (#55)', () => {
         .get(`/api/public/units/${unit.id}/calendar.ics`)
         .expect(200);
       expect(res.text.match(/BEGIN:VEVENT/g)).toHaveLength(1);
+    });
+
+    // The no-auth cross-tenant guard, made EXPLICIT (not proof-by-construction):
+    // the feed is scoped to the unit's own tenant under RLS, so another tenant's
+    // bookings - even on a unit with the same shape - must never appear in it.
+    it('never leaks another tenant’s bookings into a unit’s feed', async () => {
+      // Tenant A's export unit, with its own confirmed booking.
+      const aUnit = await createUnit(tokenA);
+      await dbs.db.insert(booking).values({
+        tenantId: tenantAId,
+        unitId: aUnit.id,
+        source: 'direct',
+        status: 'confirmed',
+        checkIn: daysFromToday(5),
+        checkOut: daysFromToday(7),
+        guestName: 'Tenant A guest',
+      });
+      // Tenant B's unit, with a confirmed booking on DISTINCTIVE dates.
+      const bUnit = await createUnit(tokenB);
+      const [bBooking] = await dbs.db
+        .insert(booking)
+        .values({
+          tenantId: tenantBId,
+          unitId: bUnit.id,
+          source: 'direct',
+          status: 'confirmed',
+          checkIn: daysFromToday(200),
+          checkOut: daysFromToday(203),
+          guestName: 'Tenant B guest',
+        })
+        .returning({ id: booking.id });
+
+      const res = await request(server())
+        .get(`/api/public/units/${aUnit.id}/calendar.ics`)
+        .expect(200);
+      const ics = res.text;
+      const yyyymmdd = (iso: string) => iso.replace(/-/g, '');
+
+      // A's booking is present; exactly one event - nothing of B's crossed over.
+      expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(1);
+      expect(ics).toContain(`DTSTART;VALUE=DATE:${yyyymmdd(daysFromToday(5))}`);
+      // None of B's identity or dates leaked.
+      expect(ics).not.toContain(bBooking.id);
+      expect(ics).not.toContain(yyyymmdd(daysFromToday(200)));
+      expect(ics).not.toContain(yyyymmdd(daysFromToday(203)));
+    });
+
+    // The `check_out >= current_date` floor: a stay that fully ended before today
+    // is dropped, so the feed stays bounded. A current/future stay still appears.
+    it('excludes bookings that fully ended before today', async () => {
+      const unit = await createUnit(tokenA);
+      await dbs.db.insert(booking).values([
+        {
+          tenantId: tenantAId,
+          unitId: unit.id,
+          source: 'direct',
+          status: 'confirmed',
+          checkIn: daysFromToday(-40),
+          checkOut: daysFromToday(-38), // ended weeks ago
+          guestName: 'Past guest',
+        },
+        {
+          tenantId: tenantAId,
+          unitId: unit.id,
+          source: 'direct',
+          status: 'confirmed',
+          checkIn: daysFromToday(8),
+          checkOut: daysFromToday(11), // future
+          guestName: 'Future guest',
+        },
+      ]);
+
+      const res = await request(server())
+        .get(`/api/public/units/${unit.id}/calendar.ics`)
+        .expect(200);
+      const ics = res.text;
+      const yyyymmdd = (iso: string) => iso.replace(/-/g, '');
+      expect(ics.match(/BEGIN:VEVENT/g)).toHaveLength(1);
+      expect(ics).toContain(`DTSTART;VALUE=DATE:${yyyymmdd(daysFromToday(8))}`);
+      expect(ics).not.toContain(yyyymmdd(daysFromToday(-40)));
     });
 
     it('404s a unit that does not exist', async () => {

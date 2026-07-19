@@ -41,6 +41,12 @@ const PROBE_TIMEOUT_MS = 8_000;
 // Read enough to recognise an iCalendar without slurping a huge feed: the header
 // is at the very top, and this is a smoke test, not the importer.
 const MAX_SNIFF_BYTES = 64 * 1024;
+// A real OTA feed rarely redirects more than once or twice (http→https, a CDN
+// hop). Cap it so a redirect loop can't spin, and follow each hop MANUALLY.
+const MAX_REDIRECTS = 5;
+// The 3xx codes fetch would auto-follow; we intercept them to re-validate the
+// target host before making the next request.
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 /**
  * The real adapter: an https GET over `fetch`, no library.
@@ -50,57 +56,86 @@ const MAX_SNIFF_BYTES = 64 * 1024;
  * webpage URL instead of the .ics export) is worth the extra check - it turns a
  * silent future import failure into an immediate, legible `error` status.
  *
- * A private / loopback host is refused before the fetch (SSRF hygiene): the server
- * makes this request on the owner's behalf, and though it only ever leaks a
- * boolean (reachable + looks-like-a-calendar), pointing it at an internal address
- * is never a legitimate OTA feed. Not exhaustive - it blocks host literals, not
- * DNS-rebinding - and a per-connection token plus a full egress allowlist are the
- * documented hardening path (ADR-0016).
+ * SSRF: the server makes this request on the owner's behalf, so a private /
+ * loopback host is refused - AND redirects are followed MANUALLY, re-checking the
+ * block on every hop. `redirect: 'follow'` would validate only the first URL and
+ * then let a public host `302` to `http://169.254.169.254/…` or the Postgres /
+ * Garage host, which the pool would silently follow: the guard has to hold across
+ * hops, not just at the door. Even so it only ever leaks a boolean (reachable +
+ * looks-like-a-calendar, never the body). Not exhaustive - it blocks host
+ * LITERALS, not a hostname that resolves to a private IP (DNS rebinding); a
+ * per-connection token plus connect-time IP checks / a full egress allowlist are
+ * the documented hardening path (ADR-0016).
  */
 @Injectable()
 export class HttpIcalFetcher implements IcalFetcher {
   private readonly logger = new Logger(HttpIcalFetcher.name);
 
   async probe(url: string): Promise<IcalProbeResult> {
-    let parsed: URL;
+    let current: URL;
     try {
-      parsed = new URL(url);
+      current = new URL(url);
     } catch {
       return { ok: false, error: 'Not a valid URL' };
     }
-    if (parsed.protocol !== 'https:') {
-      return { ok: false, error: 'Feed URL must be https' };
-    }
-    if (isBlockedHost(parsed.hostname)) {
-      return { ok: false, error: 'Feed host is not allowed' };
+
+    // Follow redirects by hand so the https + private-host checks below run on
+    // EVERY hop, not just the initial URL (the SSRF fix - see the class doc).
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      if (current.protocol !== 'https:') {
+        return { ok: false, error: 'Feed URL must be https' };
+      }
+      if (isBlockedHost(current.hostname)) {
+        return { ok: false, error: 'Feed host is not allowed' };
+      }
+
+      let res: Response;
+      try {
+        res = await fetch(current, {
+          method: 'GET',
+          // Do NOT auto-follow: we re-validate each hop's target ourselves.
+          redirect: 'manual',
+          signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+          headers: { Accept: 'text/calendar, text/plain;q=0.9, */*;q=0.1' },
+        });
+      } catch (cause) {
+        // DNS / connection failure OR the timeout abort. Not our bug and not the
+        // owner's request failing - just a feed we could not reach right now.
+        this.logger.warn(
+          `iCal probe unreachable for ${current.host}: ${String(cause)}`,
+        );
+        return { ok: false, error: 'Feed is unreachable' };
+      }
+
+      if (REDIRECT_STATUSES.has(res.status)) {
+        const location = res.headers.get('location');
+        if (!location) {
+          // A 3xx we cannot follow safely (no Location, or an opaque-redirect
+          // response on a runtime that hides it). Fail closed rather than guess.
+          return { ok: false, error: 'Feed redirect could not be verified' };
+        }
+        let next: URL;
+        try {
+          next = new URL(location, current); // resolves relative redirects
+        } catch {
+          return { ok: false, error: 'Feed redirect is invalid' };
+        }
+        current = next; // re-validated at the top of the next iteration
+        continue;
+      }
+
+      if (!res.ok) {
+        return { ok: false, error: `Feed responded ${res.status}` };
+      }
+
+      const head = await readHead(res).catch(() => '');
+      if (!head.includes('BEGIN:VCALENDAR')) {
+        return { ok: false, error: 'Response is not an iCalendar feed' };
+      }
+      return { ok: true, error: null };
     }
 
-    let res: Response;
-    try {
-      res = await fetch(parsed, {
-        method: 'GET',
-        redirect: 'follow',
-        signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-        headers: { Accept: 'text/calendar, text/plain;q=0.9, */*;q=0.1' },
-      });
-    } catch (cause) {
-      // DNS / connection failure OR the timeout abort. Not our bug and not the
-      // owner's request failing - just a feed we could not reach right now.
-      this.logger.warn(
-        `iCal probe unreachable for ${parsed.host}: ${String(cause)}`,
-      );
-      return { ok: false, error: 'Feed is unreachable' };
-    }
-
-    if (!res.ok) {
-      return { ok: false, error: `Feed responded ${res.status}` };
-    }
-
-    const head = await readHead(res).catch(() => '');
-    if (!head.includes('BEGIN:VCALENDAR')) {
-      return { ok: false, error: 'Response is not an iCalendar feed' };
-    }
-    return { ok: true, error: null };
+    return { ok: false, error: 'Too many redirects' };
   }
 }
 
