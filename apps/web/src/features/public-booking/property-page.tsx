@@ -36,10 +36,10 @@ export function PropertyPage() {
     return (
       <main className="mx-auto max-w-3xl px-6 py-16 text-center">
         <title>{missing ? "Property not found - Sambung" : "Sambung"}</title>
-        <h1 className="text-2xl font-semibold text-gray-900">
+        <h1 className="font-display text-2xl font-semibold text-foreground">
           {missing ? "This page doesn’t exist" : "Something went wrong"}
         </h1>
-        <p className="mt-2 text-gray-600">
+        <p className="mt-2 text-muted-foreground">
           {missing
             ? "The link may be mistyped, or the property is no longer listed."
             : "We couldn’t load this property. Please try again."}
@@ -58,28 +58,28 @@ export function PropertyPage() {
 
       <header className="mt-8">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-foreground">
             {data.name}
           </h1>
           {/* FR-PROP-3: the badge is the licence being on file, nothing else. */}
           {data.verified && <VerifiedBadge />}
         </div>
-        {data.address && <p className="mt-2 text-gray-600">{data.address}</p>}
+        {data.address && <p className="mt-2 text-muted-foreground">{data.address}</p>}
       </header>
 
       {data.description && (
-        <p className="mt-6 whitespace-pre-line leading-relaxed text-gray-700">
+        <p className="mt-6 whitespace-pre-line leading-relaxed text-foreground">
           {data.description}
         </p>
       )}
 
       <section className="mt-10">
-        <h2 className="text-lg font-semibold text-gray-900">Rooms</h2>
+        <h2 className="text-lg font-semibold text-foreground">Rooms</h2>
         {data.units.length === 0 ? (
           // Publishable never gates this page (ADR-0004), so "nothing to sell
           // yet" is a state a guest can really land on. Say so plainly rather
           // than rendering an empty heading.
-          <p className="mt-2 text-gray-500">
+          <p className="mt-2 text-muted-foreground">
             No rooms are listed yet. Please check back soon.
           </p>
         ) : (
@@ -87,11 +87,11 @@ export function PropertyPage() {
             {data.units.map((unit) => (
               <li
                 key={unit.id}
-                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-lg border border-gray-200 p-4"
+                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-lg border border-border p-4"
               >
                 <div>
-                  <p className="font-medium text-gray-900">{unit.name}</p>
-                  <p className="text-sm text-gray-500">
+                  <p className="font-medium text-foreground">{unit.name}</p>
+                  <p className="text-sm text-muted-foreground">
                     Up to {unit.maxGuests}{" "}
                     {unit.maxGuests === 1 ? "guest" : "guests"}
                     {unit.minStay > 1 && ` · ${unit.minStay}-night minimum`}
@@ -102,13 +102,13 @@ export function PropertyPage() {
                       "Rp 0" would read as free. */}
                   {unit.basePriceIdr > 0 ? (
                     <>
-                      <span className="font-semibold text-gray-900">
+                      <span className="font-semibold tabular-nums text-foreground">
                         {formatIdr(unit.basePriceIdr)}
                       </span>
-                      <span className="text-sm text-gray-500"> / night</span>
+                      <span className="text-sm text-muted-foreground"> / night</span>
                     </>
                   ) : (
-                    <span className="text-sm text-gray-500">
+                    <span className="text-sm text-muted-foreground">
                       Price on request
                     </span>
                   )}
@@ -183,12 +183,12 @@ function Gallery({
 function PropertySkeleton() {
   return (
     <main className="mx-auto max-w-3xl animate-pulse px-6 py-10">
-      <div className="aspect-[4/3] w-full rounded-xl bg-gray-200" />
-      <div className="mt-8 h-8 w-2/3 rounded bg-gray-200" />
-      <div className="mt-3 h-4 w-1/3 rounded bg-gray-200" />
+      <div className="aspect-[4/3] w-full rounded-xl bg-muted" />
+      <div className="mt-8 h-8 w-2/3 rounded bg-muted" />
+      <div className="mt-3 h-4 w-1/3 rounded bg-muted" />
       <div className="mt-8 space-y-3">
-        <div className="h-20 rounded-lg bg-gray-100" />
-        <div className="h-20 rounded-lg bg-gray-100" />
+        <div className="h-20 rounded-lg bg-muted" />
+        <div className="h-20 rounded-lg bg-muted" />
       </div>
     </main>
   );

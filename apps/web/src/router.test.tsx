@@ -25,7 +25,8 @@ afterEach(() => {
 describe("route tree", () => {
   it("renders the home page at /", async () => {
     renderAt("/");
-    expect(await screen.findByText("Sambung")).toBeInTheDocument();
+    // The wordmark is the lowercase brand lockup (design-system.md §1).
+    expect(await screen.findByText("sambung")).toBeInTheDocument();
   });
 
   it("renders the property page at /p/$slug from the slug in the URL", async () => {

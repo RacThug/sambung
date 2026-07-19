@@ -1,12 +1,131 @@
-/* Sambung shared Tailwind v4 entry + design tokens.
+/* Sambung shared Tailwind v4 entry + design tokens (design-system.md, ADR-0007).
    Import this once from the web app: @import "@sambung/config/tailwind.css";
-   Tailwind v4 is CSS-first — theme tokens live here, no tailwind.config.js needed. */
+   Tailwind v4 is CSS-first - theme tokens live here, no tailwind.config.js.
+
+   THE ONE RULE: pages speak SEMANTIC tokens only (bg-background, text-primary,
+   text-muted-foreground, ...). The raw ramps below live in THIS file alone and
+   define what each semantic name points at; a raw `stone-*` / `terra-*` utility
+   in a feature file is a review flag (design-system.md §6). Retheming is a token
+   swap here, never a find-and-replace across the app. */
 @import "tailwindcss";
 
 @theme {
-  /* Placeholder brand tokens — refine in M5 polish. */
-  --color-brand-50: #eff6ff;
-  --color-brand-500: #3b82f6;
-  --color-brand-600: #2563eb;
-  --color-brand-900: #1e3a8a;
+  /* -- Type -------------------------------------------------------------------
+     Plus Jakarta Sans for all UI/body (a humanist sans made for Jakarta); ZH
+     renders through the appended system CJK stack (self-hosting a CJK face is
+     multiple MB for no v1 gain - design-system.md §3). Fraunces (display serif)
+     appears ONLY where a guest forms a first impression: public headings,
+     property names, the wordmark - never dashboard chrome. */
+  --font-sans:
+    "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", sans-serif;
+  --font-display:
+    "Fraunces", ui-serif, Georgia, Cambria, "Times New Roman", "Songti SC",
+    "STSong", "SimSun", serif;
+
+  /* -- Accent: terracotta (private ramp) --------------------------------------
+     Tuned brown-ward so it never reads as error-red. Means "Sambung is talking /
+     act here" - the accent is NOT a status (status speaks through the semantic
+     trio only). 600 is the workhorse: CTAs, wordmark, links, focus ring
+     (white text 5.6:1, AA). Neutrals use Tailwind's built-in warm `stone`. */
+  --color-terra-50: #fbf3ee;
+  --color-terra-100: #f6e3d8;
+  --color-terra-200: #edc5b0;
+  --color-terra-300: #e1a184;
+  --color-terra-400: #d47c57;
+  --color-terra-500: #c05f35;
+  --color-terra-600: #a84c26;
+  --color-terra-700: #8a3d1e;
+  --color-terra-800: #6d301a;
+  --color-terra-900: #572715;
+}
+
+/* -- Semantic layer -----------------------------------------------------------
+   The names every page uses. Values are concrete stone/terra/trio hex so the
+   ramps stay self-contained in this file. Light theme only in v1 (page-spec: a
+   theme switch is a non-goal); this architecture keeps dark POSSIBLE via a
+   future `.dark` block overriding these same vars, not promised. */
+:root {
+  --radius: 0.5rem;
+
+  --background: #fafaf9; /* stone-50  - the surface everything sits on */
+  --foreground: #1c1917; /* stone-900 - primary text */
+  --card: #ffffff;
+  --card-foreground: #1c1917; /* stone-900 */
+  --popover: #ffffff;
+  --popover-foreground: #1c1917; /* stone-900 */
+
+  --primary: #a84c26; /* terra-600 - CTAs, links, wordmark */
+  --primary-foreground: #fafaf9; /* stone-50  - text on terracotta */
+  --secondary: #f5f5f4; /* stone-100 - quiet fills, secondary buttons */
+  --secondary-foreground: #292524; /* stone-800 */
+  --muted: #f5f5f4; /* stone-100 */
+  --muted-foreground: #78716c; /* stone-500 - captions, meta */
+  --accent: #fbf3ee; /* terra-50  - tinted hover/selected fill */
+  --accent-foreground: #6d301a; /* terra-800 - text on the tint */
+
+  /* Status - the semantic trio (design-system.md §2), contrast-checked on white */
+  --destructive: #dc2626; /* danger  red-600  (white text 4.5:1 AA) */
+  --destructive-foreground: #ffffff;
+  --success: #16a34a; /* success green-600 */
+  --success-foreground: #ffffff;
+  --warning: #d97706; /* warning amber-600 */
+  --warning-foreground: #ffffff;
+
+  --border: #e7e5e4; /* stone-200 */
+  --input: #e7e5e4; /* stone-200 */
+  --ring: #a84c26; /* terra-600 - focus ring is the accent */
+}
+
+/* Expose the semantic layer as Tailwind color/radius utilities. `inline` means
+   the utility resolves to the var's value, so `bg-background`, `text-primary`,
+   `border-border`, `rounded-lg` all work and stay swap-able from :root above. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* Base: default every element's border to the token (borders only show with a
+   width - shadcn convention), and set the app's type + surface once. */
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
 }

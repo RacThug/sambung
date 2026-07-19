@@ -9,6 +9,7 @@ import {
 import { api, ApiError } from "../../lib/api-client";
 import { setSession } from "../../lib/auth";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { Wordmark } from "@/components/wordmark";
 
 const route = getRouteApi("/register");
 
@@ -64,12 +65,14 @@ export function RegisterPage() {
 
   return (
     <main className="mx-auto max-w-sm p-8">
-      <h1 className="text-2xl font-bold text-brand-600">Sambung</h1>
-      <p className="mt-1 text-gray-600">Create your owner account</p>
+      <h1>
+        <Wordmark className="text-2xl" />
+      </h1>
+      <p className="mt-1 text-muted-foreground">Create your owner account</p>
 
       <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">
+          <span className="text-sm font-medium text-foreground">
             Business name
           </span>
           <input
@@ -77,55 +80,61 @@ export function RegisterPage() {
             autoComplete="organization"
             value={tenantName}
             onChange={(e) => setTenantName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+            className="mt-1 w-full rounded-md border border-input px-3 py-2"
           />
           {fieldErrors.tenantName && (
-            <p className="mt-1 text-sm text-red-600">{fieldErrors.tenantName}</p>
+            <p className="mt-1 text-sm text-destructive">
+              {fieldErrors.tenantName}
+            </p>
           )}
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Email</span>
+          <span className="text-sm font-medium text-foreground">Email</span>
           <input
             type="email"
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+            className="mt-1 w-full rounded-md border border-input px-3 py-2"
           />
           {emailError && (
-            <p className="mt-1 text-sm text-red-600">{emailError}</p>
+            <p className="mt-1 text-sm text-destructive">{emailError}</p>
           )}
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-gray-700">Password</span>
+          <span className="text-sm font-medium text-foreground">Password</span>
           <input
             type="password"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+            className="mt-1 w-full rounded-md border border-input px-3 py-2"
           />
           {fieldErrors.password && (
-            <p className="mt-1 text-sm text-red-600">{fieldErrors.password}</p>
+            <p className="mt-1 text-sm text-destructive">
+              {fieldErrors.password}
+            </p>
           )}
         </label>
 
-        {submitError && <p className="text-sm text-red-600">{submitError}</p>}
+        {submitError && (
+          <p className="text-sm text-destructive">{submitError}</p>
+        )}
 
         <button
           type="submit"
           disabled={register.isPending}
-          className="w-full rounded-md bg-brand-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-50"
         >
           {register.isPending ? "Creating account…" : "Create account"}
         </button>
       </form>
 
-      <p className="mt-4 text-sm text-gray-600">
+      <p className="mt-4 text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Link to="/login" search={{ next }} className="text-brand-600 underline">
+        <Link to="/login" search={{ next }} className="text-primary underline">
           Sign in
         </Link>
       </p>

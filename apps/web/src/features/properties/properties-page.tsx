@@ -20,7 +20,7 @@ export function PropertiesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   if (isLoading) {
-    return <p className="text-gray-500">Loading properties…</p>;
+    return <p className="text-muted-foreground">Loading properties…</p>;
   }
 
   return (
@@ -31,7 +31,7 @@ export function PropertiesPage() {
           <button
             type="button"
             onClick={() => setDialogOpen(true)}
-            className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
           >
             New property
           </button>
@@ -39,15 +39,15 @@ export function PropertiesPage() {
       </div>
 
       {properties && properties.length === 0 && (
-        <div className="mt-12 rounded-lg border border-dashed border-gray-300 p-12 text-center">
+        <div className="mt-12 rounded-lg border border-dashed border-input p-12 text-center">
           <h2 className="text-lg font-semibold">Add your first property</h2>
-          <p className="mt-1 text-gray-600">
+          <p className="mt-1 text-muted-foreground">
             List a villa or guesthouse to start taking direct bookings.
           </p>
           <button
             type="button"
             onClick={() => setDialogOpen(true)}
-            className="mt-4 rounded-md bg-brand-600 px-4 py-2 font-medium text-white"
+            className="mt-4 rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground"
           >
             New property
           </button>
@@ -62,28 +62,28 @@ export function PropertiesPage() {
               <Link
                 to="/app/properties/$propertyId"
                 params={{ propertyId: property.id }}
-                className={`block rounded-lg border p-4 hover:border-brand-600 ${
+                className={`block rounded-lg border p-4 hover:border-primary ${
                   archived
-                    ? "border-gray-200 bg-gray-50"
-                    : "border-gray-200 bg-white"
+                    ? "border-border bg-muted"
+                    : "border-border bg-card"
                 }`}
               >
                 <div className="flex items-center gap-2">
                   <span
-                    className={`font-semibold ${archived ? "text-gray-400" : ""}`}
+                    className={`font-semibold ${archived ? "text-muted-foreground" : ""}`}
                   >
                     {property.name}
                   </span>
                   {property.verified && <VerifiedBadge />}
                   {archived && (
-                    <span className="rounded bg-gray-200 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
                       Archived
                     </span>
                   )}
                 </div>
                 {property.address && (
                   <p
-                    className={`mt-1 text-sm ${archived ? "text-gray-400" : "text-gray-600"}`}
+                    className={`mt-1 text-sm ${archived ? "text-muted-foreground" : "text-muted-foreground"}`}
                   >
                     {property.address}
                   </p>
@@ -92,11 +92,11 @@ export function PropertiesPage() {
                   {/* Retired trumps the publish checklist - it's offline for
                       guests regardless of how complete it is (ADR-0006). */}
                   {archived ? (
-                    <span className="text-gray-500">◌ Archived - hidden from guests</span>
+                    <span className="text-muted-foreground">◌ Archived - hidden from guests</span>
                   ) : property.publishable ? (
-                    <span className="text-green-700">● Ready to publish</span>
+                    <span className="text-success">● Ready to publish</span>
                   ) : (
-                    <span className="text-amber-700">
+                    <span className="text-warning">
                       ○ Incomplete — needs a photo and a priced unit
                     </span>
                   )}
@@ -146,43 +146,43 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 flex items-center justify-center bg-foreground/40 p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="create-property-title"
     >
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg"
+        className="w-full max-w-md rounded-lg bg-card p-6 shadow-lg"
         noValidate
       >
         <h2 id="create-property-title" className="text-lg font-semibold">
           New property
         </h2>
         <label className="mt-4 block">
-          <span className="text-sm font-medium text-gray-700">Name</span>
+          <span className="text-sm font-medium text-foreground">Name</span>
           <input
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"
+            className="mt-1 w-full rounded-md border border-input px-3 py-2"
           />
           {fieldErrors.name && (
-            <p className="mt-1 text-sm text-red-600">{fieldErrors.name}</p>
+            <p className="mt-1 text-sm text-destructive">{fieldErrors.name}</p>
           )}
         </label>
         <div className="mt-6 flex justify-end gap-3">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-4 py-2 text-sm font-medium text-gray-700"
+            className="rounded-md px-4 py-2 text-sm font-medium text-foreground"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={create.isPending}
-            className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
           >
             {create.isPending ? "Creating…" : "Create"}
           </button>
