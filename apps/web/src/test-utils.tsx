@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   rupiahSchema,
   type AuthResponse,
+  type ChannelConnectionResponse,
   type PropertyResponse,
   type PublicPropertyResponse,
   type PublicUnit,
@@ -149,6 +150,23 @@ export function unitResponse(
     createdAt: "2026-07-01T00:00:00.000Z",
     ...rest,
     basePriceIdr: rupiahSchema.parse(basePriceIdr),
+  };
+}
+
+/** One ChannelConnectionResponse factory, same reason as the others. */
+export function channelConnectionResponse(
+  overrides: Partial<ChannelConnectionResponse> = {},
+): ChannelConnectionResponse {
+  return {
+    id: "cccccccc-0000-0000-0000-000000000001",
+    unitId: unitResponse().id,
+    channel: "airbnb",
+    importIcalUrl: "https://www.airbnb.com/calendar/ical/12345.ics",
+    lastSyncedAt: "2026-07-19T00:00:00.000Z",
+    lastStatus: "ok",
+    lastError: null,
+    createdAt: "2026-07-19T00:00:00.000Z",
+    ...overrides,
   };
 }
 

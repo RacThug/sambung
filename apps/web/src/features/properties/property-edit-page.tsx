@@ -12,14 +12,15 @@ import { api, ApiError } from "../../lib/api-client";
 import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { FormField } from "@/components/form-field";
+import { ChannelsSection } from "./channels-section";
 import { PhotosSection } from "./photos-section";
 import { UnitsSection } from "./units-section";
 import { VerifiedBadge } from "./verified-badge";
 
 const route = getRouteApi("/app/properties/$propertyId");
 
-// The property workbench (page-spec §4.5): details, photos and units; channels
-// (M4) dock alongside them later.
+// The property workbench (page-spec §4.5): details, photos, units, and channels
+// (the per-unit OTA sync + export links, #55).
 export function PropertyEditPage() {
   const { propertyId } = route.useParams();
   const { data: property, isLoading } = useQuery({
@@ -75,6 +76,8 @@ export function PropertyEditPage() {
       <PhotosSection property={property} />
 
       <UnitsSection property={property} />
+
+      <ChannelsSection property={property} />
 
       <ArchiveZone property={property} archived={archived} />
 

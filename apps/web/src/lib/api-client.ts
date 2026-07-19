@@ -127,5 +127,7 @@ export const api = {
   getBlob,
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
-  delete: (path: string) => request<undefined>("DELETE", path),
+  // Generic: a 204 delete resolves to undefined, a 200 delete (channel disconnect,
+  // which returns how many imported bookings were kept - api-spec §7.4) to its body.
+  delete: <T = undefined>(path: string) => request<T>("DELETE", path),
 };

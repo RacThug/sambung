@@ -53,6 +53,9 @@ export function describeConflict(body: ConflictBody): string {
       return body.status === "confirmed"
         ? "This booking is already confirmed."
         : "This hold has lapsed - please pick your dates again.";
+    // Field-level (sits under the channel select), no terminal period.
+    case "channel_already_connected":
+      return "This channel is already connected to this unit";
     default:
       return assertNever(body);
   }

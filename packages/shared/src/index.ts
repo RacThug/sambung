@@ -21,6 +21,7 @@ export * from "./availability";
 export * from "./auth";
 export * from "./booking";
 export * from "./booking-list";
+export * from "./channel";
 export * from "./conflict";
 export * from "./money";
 export * from "./payment";
