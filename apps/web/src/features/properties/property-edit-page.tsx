@@ -10,6 +10,7 @@ import {
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { FormField } from "@/components/form-field";
 import { PhotosSection } from "./photos-section";
 import { UnitsSection } from "./units-section";
 import { VerifiedBadge } from "./verified-badge";
@@ -191,20 +192,8 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
     save.mutate(parsed.data);
   }
 
-  const field = (
-    label: string,
-    name: keyof typeof form,
-    input: React.ReactNode,
-  ) => (
-    <label className="block">
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      {input}
-      {fieldErrors[name] && (
-        <p className="mt-1 text-sm text-destructive">{fieldErrors[name]}</p>
-      )}
-    </label>
-  );
-
+  // Shared by the custom controls below (textarea, the license composite); the
+  // plain inputs get the same class from FormField's default.
   const inputClass = "mt-1 w-full rounded-md border border-input px-3 py-2";
 
   return (
@@ -215,65 +204,59 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
     >
       <h2 className="text-lg font-semibold">Details</h2>
 
-      {field(
-        "Name",
-        "name",
-        <input value={form.name} onChange={set("name")} className={inputClass} />,
-      )}
-      {field(
-        "Address",
-        "address",
-        <input
-          value={form.address}
-          onChange={set("address")}
-          className={inputClass}
-        />,
-      )}
+      <FormField
+        label="Name"
+        value={form.name}
+        onChange={set("name")}
+        error={fieldErrors.name}
+      />
+      <FormField
+        label="Address"
+        value={form.address}
+        onChange={set("address")}
+        error={fieldErrors.address}
+      />
       <div className="grid grid-cols-2 gap-4">
-        {field(
-          "Latitude",
-          "latitude",
-          <input
-            inputMode="decimal"
-            value={form.latitude}
-            onChange={set("latitude")}
-            className={inputClass}
-          />,
-        )}
-        {field(
-          "Longitude",
-          "longitude",
-          <input
-            inputMode="decimal"
-            value={form.longitude}
-            onChange={set("longitude")}
-            className={inputClass}
-          />,
-        )}
+        <FormField
+          label="Latitude"
+          inputMode="decimal"
+          value={form.latitude}
+          onChange={set("latitude")}
+          error={fieldErrors.latitude}
+        />
+        <FormField
+          label="Longitude"
+          inputMode="decimal"
+          value={form.longitude}
+          onChange={set("longitude")}
+          error={fieldErrors.longitude}
+        />
       </div>
-      {field(
-        "Description",
-        "description",
-        <textarea
-          rows={4}
-          value={form.description}
-          onChange={set("description")}
-          className={inputClass}
-        />,
-      )}
-      {field(
-        "License number (NIB)",
-        "licenseNo",
-        <div className="flex items-center gap-3">
-          <input
-            value={form.licenseNo}
-            onChange={set("licenseNo")}
+      <FormField label="Description" error={fieldErrors.description}>
+        {(field) => (
+          <textarea
+            rows={4}
+            value={form.description}
+            onChange={set("description")}
             className={inputClass}
+            {...field}
           />
-          {/* Live preview: the badge the public page will show (FR-PROP-3). */}
-          {isVerified(form.licenseNo) && <VerifiedBadge />}
-        </div>,
-      )}
+        )}
+      </FormField>
+      <FormField label="License number (NIB)" error={fieldErrors.licenseNo}>
+        {(field) => (
+          <div className="flex items-center gap-3">
+            <input
+              value={form.licenseNo}
+              onChange={set("licenseNo")}
+              className={inputClass}
+              {...field}
+            />
+            {/* Live preview: the badge the public page will show (FR-PROP-3). */}
+            {isVerified(form.licenseNo) && <VerifiedBadge />}
+          </div>
+        )}
+      </FormField>
 
       <div className="flex items-center gap-3">
         <button

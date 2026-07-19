@@ -11,17 +11,17 @@ import {
   stubFetch,
 } from "../../test-utils";
 
-// Labels matched by prefix: once a field error renders inside the <label>,
-// the accessible name becomes "Email Email already registered" and an exact
-// match stops finding the input.
+// Exact labels: FormField keeps the error out of the <label> (a sibling <p>
+// wired by aria-describedby), so a rendered error no longer mutates the input's
+// accessible name and "Email" keeps matching even after a submit fails (#71).
 function fillForm(overrides: Partial<RegisterRequest> = {}) {
-  fireEvent.change(screen.getByLabelText(/^Business name/), {
+  fireEvent.change(screen.getByLabelText("Business name"), {
     target: { value: overrides.tenantName ?? "Bali Villas Co" },
   });
-  fireEvent.change(screen.getByLabelText(/^Email/), {
+  fireEvent.change(screen.getByLabelText("Email"), {
     target: { value: overrides.email ?? "owner@test.dev" },
   });
-  fireEvent.change(screen.getByLabelText(/^Password/), {
+  fireEvent.change(screen.getByLabelText("Password"), {
     target: { value: overrides.password ?? "s3cret-pass" },
   });
 }
@@ -126,11 +126,15 @@ describe("register page (§3.4)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
     const error = await screen.findByText("Email already registered");
-    // On the email field, not a generic banner: same <label> as the input.
-    expect(error.closest("label")?.querySelector("input")).toHaveAttribute(
-      "type",
-      "email",
-    );
+    const emailInput = screen.getByLabelText("Email");
+    // On the email field, not a generic banner - and wired as a *description*,
+    // never folded into the accessible name (#71). The input stays reachable by
+    // its exact label, is marked invalid, and points at this error.
+    expect(emailInput).toHaveAttribute("type", "email");
+    expect(emailInput).toHaveAttribute("aria-invalid", "true");
+    expect(emailInput).toHaveAccessibleName("Email");
+    expect(emailInput).toHaveAccessibleDescription("Email already registered");
+    expect(emailInput.getAttribute("aria-describedby")).toBe(error.id);
     expect(router.state.location.pathname).toBe("/register");
   });
 

@@ -5,6 +5,7 @@ import { loginRequestSchema, type AuthResponse } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { setSession } from "../../lib/auth";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { FormField } from "@/components/form-field";
 import { Wordmark } from "@/components/wordmark";
 
 const route = getRouteApi("/login");
@@ -57,35 +58,23 @@ export function LoginPage() {
       <p className="mt-1 text-muted-foreground">Sign in to your dashboard</p>
 
       <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
-        <label className="block">
-          <span className="text-sm font-medium text-foreground">Email</span>
-          <input
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded-md border border-input px-3 py-2"
-          />
-          {fieldErrors.email && (
-            <p className="mt-1 text-sm text-destructive">{fieldErrors.email}</p>
-          )}
-        </label>
+        <FormField
+          label="Email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          error={fieldErrors.email}
+        />
 
-        <label className="block">
-          <span className="text-sm font-medium text-foreground">Password</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border border-input px-3 py-2"
-          />
-          {fieldErrors.password && (
-            <p className="mt-1 text-sm text-destructive">
-              {fieldErrors.password}
-            </p>
-          )}
-        </label>
+        <FormField
+          label="Password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          error={fieldErrors.password}
+        />
 
         {submitError && (
           <p className="text-sm text-destructive">{submitError}</p>
