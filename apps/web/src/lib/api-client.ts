@@ -57,16 +57,20 @@ async function send(method: string, path: string, body?: unknown) {
   });
 }
 
-async function request<T>(
+/**
+ * Send with the session's 401-retry, returning the raw Response. One silent
+ * refresh, then one retry; a second 401 ends the session. Auth endpoints are
+ * exempt — their 401s are answers ("wrong password", "no cookie"), not
+ * expired-token noise. (page-spec §2) Shared by the JSON `request` and the binary
+ * `getBlob` so a CSV download refreshes exactly like every other authed read.
+ */
+async function sendWithSession(
   method: string,
   path: string,
   body?: unknown,
-): Promise<T> {
+): Promise<Response> {
   let res = await send(method, path, body);
 
-  // 401-retry: one silent refresh, then one retry; a second 401 ends the
-  // session. Auth endpoints are exempt — their 401s are answers ("wrong
-  // password", "no cookie"), not expired-token noise. (page-spec §2)
   if (res.status === 401 && !path.startsWith("/auth")) {
     if (await refreshSession()) {
       res = await send(method, path, body);
@@ -81,10 +85,22 @@ async function request<T>(
       }
     }
   }
+  return res;
+}
 
+async function errorFrom(res: Response): Promise<ApiError> {
+  const envelope = (await res.json().catch(() => ({}))) as ErrorEnvelope;
+  return new ApiError(res.status, envelope);
+}
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const res = await sendWithSession(method, path, body);
   if (!res.ok) {
-    const envelope = (await res.json().catch(() => ({}))) as ErrorEnvelope;
-    throw new ApiError(res.status, envelope);
+    throw await errorFrom(res);
   }
   if (res.status === 204) {
     return undefined as T;
@@ -92,8 +108,23 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
+/**
+ * A GET whose body is not JSON — the reservations CSV export (#59). It carries the
+ * Bearer token (so a plain `<a href>` can't stand in) and the same 401-retry as
+ * `request`, but reads the response as a Blob for the browser to download. A non-2xx
+ * still surfaces as an `ApiError` off the JSON error envelope.
+ */
+async function getBlob(path: string): Promise<Blob> {
+  const res = await sendWithSession("GET", path);
+  if (!res.ok) {
+    throw await errorFrom(res);
+  }
+  return res.blob();
+}
+
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
+  getBlob,
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   delete: (path: string) => request<undefined>("DELETE", path),

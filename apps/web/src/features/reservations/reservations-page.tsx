@@ -1,6 +1,7 @@
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { todayIso } from "../../lib/date";
+import { ExportCsvButton } from "./export-csv-button";
 import { ReservationFilters } from "./reservation-filters";
 import { ReservationsTable } from "./reservations-table";
 import {
@@ -34,12 +35,16 @@ export function ReservationsPage() {
   );
   const isFiltered = hasActiveFilters(search);
 
-  const { properties, units, bookings } = useReservations({
+  // The exact filters the list queries with (resolved window included), so the CSV
+  // export and the on-screen table are the same view (#59).
+  const filters = {
     window,
     propertyId: search.propertyId,
     status: search.status,
     source: search.source,
-  });
+  };
+
+  const { properties, units, bookings } = useReservations(filters);
 
   const onPatch = (partial: Partial<ReservationsSearch>) =>
     void navigate({
@@ -51,9 +56,10 @@ export function ReservationsPage() {
 
   return (
     <section>
-      <h1 className="mb-4 text-xl font-semibold text-foreground">
-        Reservations
-      </h1>
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <h1 className="text-xl font-semibold text-foreground">Reservations</h1>
+        <ExportCsvButton filters={filters} />
+      </div>
 
       <ReservationFilters
         search={search}
