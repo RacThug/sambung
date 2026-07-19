@@ -56,6 +56,7 @@ describe('Photo GC sweeper', () => {
   const bucket = process.env.STORAGE_BUCKET!;
 
   let tenantId: string;
+  let tenantBId: string;
   let emptyTenantId: string;
   let propId: string;
 
@@ -72,8 +73,11 @@ describe('Photo GC sweeper', () => {
     return auth;
   }
 
-  /** A well-formed, test-owned key under the property's prefix. */
+  /** A well-formed, test-owned key under tenant A's property prefix. */
   const keyFor = () => `${tenantId}/${propId}/${randomUUID()}.jpg`;
+
+  /** A well-formed, test-owned key under a DIFFERENT tenant's prefix. */
+  const keyForB = () => `${tenantBId}/${randomUUID()}/${randomUUID()}.jpg`;
 
   /** Seed a real object of a given size. Tracked for cleanup. */
   async function putObject(key: string, body: Buffer): Promise<void> {
@@ -133,6 +137,8 @@ describe('Photo GC sweeper', () => {
 
     const a = await registerTenant('GC Tenant A');
     tenantId = a.tenant.id;
+    const b = await registerTenant('GC Tenant B');
+    tenantBId = b.tenant.id;
     const empty = await registerTenant('GC Tenant Empty');
     emptyTenantId = empty.tenant.id;
 
@@ -222,6 +228,55 @@ describe('Photo GC sweeper', () => {
     expect(result.evictedOversize).toBeGreaterThanOrEqual(1);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(bigKey));
     warn.mockRestore();
+  });
+
+  it('never touches a tenant outside the sweep scope (tenant-scoped listing)', async () => {
+    // An aged, unreferenced orphan under tenant B - exactly what an in-scope
+    // sweep WOULD reclaim. The regression guard: a sweep scoped to tenant A must
+    // not even list tenant B's prefix, so a future refactor that broke the
+    // scoping would delete this object and trip the test.
+    const foreignOrphan = keyForB();
+    await putObject(foreignOrphan, SMALL);
+
+    await sweeper.sweep(aged(), [tenantId]); // scoped to A; B is out of scope
+
+    expect(await objectExists(foreignOrphan)).toBe(true);
+  });
+
+  it('evicts an oversize object with no gallery reference (the no-strip path), logs loudly', async () => {
+    // The oversize backstop must fire even when nothing references the object -
+    // the branch where there is no gallery to strip, only bytes to reclaim.
+    const bigOrphan = keyFor();
+    await putObject(bigOrphan, OVERSIZE); // oversize, never referenced
+
+    const warn = jest.spyOn(Logger.prototype, 'warn');
+    const result = await sweeper.sweep(new Date(), [tenantId]);
+
+    expect(await objectExists(bigOrphan)).toBe(false); // evicted, grace-independent
+    expect(result.evictedOversize).toBeGreaterThanOrEqual(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(bigOrphan));
+    warn.mockRestore();
+  });
+
+  it('the scheduled entry point sweeps every tenant (allTenantIds), sparing fresh + referenced', async () => {
+    // Cover the actual @Cron entry point: sweepOrphanedPhotos() passes no scope,
+    // so it exercises allTenantIds() + the full listing loop - the path the
+    // explicitly-scoped tests never reach.
+    const refFresh = keyFor();
+    const orphanFresh = keyFor();
+    await putObject(refFresh, SMALL);
+    await putObject(orphanFresh, SMALL);
+    await setGallery([refFresh]);
+
+    const result = await sweeper.sweepOrphanedPhotos();
+
+    // Both are seconds old (inside the 24 h window), so a real-clock sweep leaves
+    // them - referenced or not. We assert on our own keys, never on counts: an
+    // all-tenant sweep may legitimately reclaim genuine orphans elsewhere.
+    expect(await objectExists(refFresh)).toBe(true);
+    expect(await objectExists(orphanFresh)).toBe(true);
+    expect(typeof result.deletedOrphans).toBe('number');
+    expect(typeof result.evictedOversize).toBe('number');
   });
 
   it('is safe on a tenant whose prefix holds no objects (empty bucket path)', async () => {
