@@ -94,11 +94,13 @@ describe('Auth (FR-AUTH-1)', () => {
       .expect(401);
   });
 
-  it('rejects a duplicate email (409)', async () => {
+  it('rejects a duplicate email (409) with a machine-readable slug', async () => {
     const addr = email();
     await register({ email: addr });
     const dup = await register({ email: addr });
     expect(dup.status).toBe(409);
+    // The client switches on the slug, not prose (#82, api-spec §8.2).
+    expect((dup.body as { code?: string }).code).toBe('email_taken');
   });
 
   it('handles a concurrent duplicate signup as 409, never 500', async () => {

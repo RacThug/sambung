@@ -97,8 +97,10 @@ describe('DbError mapping', () => {
       const mapped = mapDbError(await duplicateEmail());
       expect(mapped).toBeInstanceOf(ConflictException);
       expect(mapped?.getStatus()).toBe(409);
+      // The machine-readable slug is what the client switches on (#82); the
+      // human `message` rides along for logs but is not the contract.
       expect(mapped?.getResponse()).toMatchObject({
-        message: 'Email already registered',
+        code: 'email_taken',
       });
     });
 

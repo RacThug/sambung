@@ -6,7 +6,8 @@ import {
   type AuthResponse,
   type RegisterRequest,
 } from "@sambung/shared";
-import { api, ApiError } from "../../lib/api-client";
+import { api } from "../../lib/api-client";
+import { conflictOf, describeConflict } from "../../lib/conflict";
 import { setSession } from "../../lib/auth";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { FormField } from "@/components/form-field";
@@ -52,15 +53,17 @@ export function RegisterPage() {
     register.mutate(parsed.data);
   }
 
-  // 409 = duplicate email, so it belongs on the email field (api-spec §3.1);
+  // The only 409 register can raise is a taken email, and it belongs on the
+  // email field (api-spec §3.1). We switch on the machine-readable slug, not the
+  // bare status, and render our OWN copy (#82) - the server sends no prose here;
   // anything else gets a generic retry line.
-  const emailTaken =
-    register.error instanceof ApiError && register.error.status === 409;
-  const emailError = emailTaken
-    ? "Email already registered"
-    : fieldErrors.email;
+  const conflict = conflictOf(register.error);
+  const emailError =
+    conflict?.code === "email_taken"
+      ? describeConflict(conflict)
+      : fieldErrors.email;
   const submitError =
-    register.error && !emailTaken
+    register.error && !conflict
       ? "Something went wrong - please try again"
       : null;
 

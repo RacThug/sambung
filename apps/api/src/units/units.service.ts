@@ -1,8 +1,4 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   toRupiah,
   type CreateUnitRequest,
@@ -10,6 +6,7 @@ import {
   type UpdateUnitRequest,
 } from '@sambung/shared';
 import type { Unit } from '@sambung/db';
+import { unitHasBookings } from '../common/db-error/conflicts';
 import { TenantDbService } from '../db/tenant-db.service';
 import { UnitsRepository } from './units.repository';
 
@@ -105,11 +102,10 @@ export class UnitsService {
       }
       const n = await this.repo.countBookings(id);
       if (n > 0) {
-        // No "cancel them first" (cancelling doesn't remove the row), but there is
-        // now an exit: archive retires it while keeping the record (ADR-0005, #84).
-        throw new ConflictException(
-          `Cannot delete: this unit has ${n} booking${n === 1 ? '' : 's'} - deleting it would destroy that history. Archive it instead to retire it while keeping the record.`,
-        );
+        // No "cancel them first" (cancelling doesn't remove the row): archive
+        // retires it while keeping the record (ADR-0005, #84). The count rides as
+        // data, not prose - the web owns the copy and composes it (#82, ADR-0012).
+        throw unitHasBookings(n);
       }
       await this.repo.delete(id);
     });

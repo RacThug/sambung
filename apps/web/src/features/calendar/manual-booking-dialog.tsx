@@ -6,6 +6,7 @@ import {
   type CreateOwnerBookingResponse,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
+import { conflictOf, describeConflict } from "../../lib/conflict";
 import { formatIdr } from "../../lib/money";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { addDays } from "./calendar-model";
@@ -132,9 +133,14 @@ function ManualBookingForm({
     save.mutate(parsed.data);
   };
 
-  const bannerError =
-    save.error instanceof ApiError && save.error.status !== 400
-      ? save.error.message
+  // A 409 (overlap / archived) comes back with a machine-readable slug; compose
+  // our own copy from it (#82, ADR-0011), never the server's sentence. Any other
+  // non-field error is a generic failure.
+  const conflict = conflictOf(save.error);
+  const bannerError = conflict
+    ? describeConflict(conflict)
+    : save.error instanceof ApiError && save.error.status !== 400
+      ? "Something went wrong - please try again"
       : null;
 
   return (

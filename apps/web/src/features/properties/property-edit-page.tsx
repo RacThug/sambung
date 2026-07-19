@@ -9,6 +9,7 @@ import {
   type UpdatePropertyRequest,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
+import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { FormField } from "@/components/form-field";
 import { PhotosSection } from "./photos-section";
@@ -347,13 +348,14 @@ function DangerZone({ property }: { property: PropertyResponse }) {
     },
   });
 
-  // The 409 path renders the reason: "this property has n bookings…" (ADR-0002).
-  const deleteError =
-    remove.error instanceof ApiError && remove.error.status === 409
-      ? remove.error.message
-      : remove.error
-        ? "Delete failed - please try again"
-        : null;
+  // The 409 carries a machine-readable slug + a count (ADR-0002); the web
+  // composes the copy from that data, never the server's sentence (#82).
+  const conflict = conflictOf(remove.error);
+  const deleteError = conflict
+    ? describeConflict(conflict)
+    : remove.error
+      ? "Delete failed - please try again"
+      : null;
 
   return (
     <div className="mt-6 rounded-lg border border-destructive/20 bg-destructive/10 p-6">

@@ -113,8 +113,9 @@ describe("register page (§3.4)", () => {
         json(
           {
             statusCode: 409,
-            message: "Email already registered",
             error: "Conflict",
+            code: "email_taken",
+            message: "Email already registered",
           },
           409,
         ),
@@ -144,8 +145,9 @@ describe("register page (§3.4)", () => {
         json(
           {
             statusCode: 409,
-            message: "Email already registered",
             error: "Conflict",
+            code: "email_taken",
+            message: "Email already registered",
           },
           409,
         ),

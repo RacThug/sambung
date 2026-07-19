@@ -393,7 +393,13 @@ describe('Property CRUD', () => {
         .delete(`/api/properties/${created.id}`)
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(409);
-      expect(bodyOf<{ message: string }>(res).message).toContain('2');
+      // The count is machine-readable data, not prose (#82, ADR-0012): the web
+      // renders the copy. Both bookings count - a future confirmed and an in-house
+      // hold - so the guard sees 2.
+      expect(bodyOf<{ code: string; count: number }>(res)).toMatchObject({
+        code: 'property_has_bookings',
+        count: 2,
+      });
 
       // Still alive.
       await request(server())
@@ -441,10 +447,14 @@ describe('Property CRUD', () => {
         .delete(`/api/properties/${created.id}`)
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(409);
-      expect(bodyOf<{ message: string }>(res).message).toContain('3');
-      // Never "cancel them first" - cancelling doesn't remove the row, so two of
-      // these three are already cancelled/expired and it would be a lie.
-      expect(bodyOf<{ message: string }>(res).message).not.toContain('cancel');
+      // All three count - past confirmed, future cancelled, future expired - so
+      // the guard sees 3, carried as data (#82, ADR-0012). There is no "cancel
+      // them first" escape (cancelling doesn't remove the row); the slug + count
+      // can't imply one, and the web owns the copy.
+      expect(bodyOf<{ code: string; count: number }>(res)).toMatchObject({
+        code: 'property_has_bookings',
+        count: 3,
+      });
 
       // The point of the guard: the money is still there.
       const payments = await dbs.db
