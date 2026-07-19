@@ -319,11 +319,14 @@ describe('Unit CRUD', () => {
         .delete(`/api/units/${created.id}`)
         .set('Authorization', `Bearer ${tokenA}`)
         .expect(409);
-      const { message } = bodyOf<{ message: string }>(res);
-      expect(message).toContain('1 booking');
-      // No "cancel them first" - it's already cancelled, and cancelling never
-      // removes the row. The message must not promise an escape that isn't there.
-      expect(message).not.toContain('cancel');
+      // The count is machine-readable DATA, not baked into an English sentence
+      // (#82, ADR-0012): the web composes "This unit has 1 booking…" and owns the
+      // copy. No server prose to render, so nothing to promise "cancel them first"
+      // - there's no such escape, and the slug + count can't accidentally imply one.
+      expect(bodyOf<{ code: string; count: number }>(res)).toMatchObject({
+        code: 'unit_has_bookings',
+        count: 1,
+      });
 
       expect(
         await dbs.db.select().from(payment).where(eq(payment.bookingId, b.id)),

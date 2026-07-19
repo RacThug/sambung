@@ -459,7 +459,11 @@ describe('Owner bookings (block / walk-in / detail / cancel)', () => {
     expect((await cancelAs(tokenA, bookingId)).status).toBe(200);
     const second = await cancelAs(tokenA, bookingId);
     expect(second.status).toBe(409);
-    expect(bodyOf<{ status: string }>(second).status).toBe('cancelled');
+    // Slug names the conflict; the terminal `status` rides as data (#82).
+    expect(bodyOf<{ code: string; status: string }>(second)).toMatchObject({
+      code: 'booking_not_cancellable',
+      status: 'cancelled',
+    });
   });
 
   it('refuses cancelling an already-expired booking with a 409', async () => {
