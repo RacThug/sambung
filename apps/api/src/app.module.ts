@@ -13,6 +13,7 @@ import { THROTTLE_SENSITIVE } from './common/throttle/throttle.decorator';
 import { DbModule } from './db/db.module';
 import { AuthModule } from './auth/auth.module';
 import { BookingsModule } from './bookings/bookings.module';
+import { PaymentsModule } from './payments/payments.module';
 import { PropertiesModule } from './properties/properties.module';
 import { UnitsModule } from './units/units.module';
 
@@ -79,6 +80,7 @@ import { UnitsModule } from './units/units.module';
     PropertiesModule,
     UnitsModule,
     BookingsModule,
+    PaymentsModule,
   ],
   controllers: [AppController],
   providers: [

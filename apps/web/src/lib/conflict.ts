@@ -47,6 +47,12 @@ export function describeConflict(body: ConflictBody): string {
       return body.status === "cancelled"
         ? "This booking is already cancelled."
         : "This booking has already expired.";
+    case "booking_not_payable":
+      // The hold lapsed (swept to `expired`) or the booking already moved on. In
+      // every case the guest must start over - the dates are no longer held.
+      return body.status === "confirmed"
+        ? "This booking is already confirmed."
+        : "This hold has lapsed - please pick your dates again.";
     default:
       return assertNever(body);
   }

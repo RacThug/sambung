@@ -77,6 +77,7 @@ export function propertyResponse(
     longitude: null,
     description: null,
     licenseNo: null,
+    depositPct: 100,
     photos: [],
     verified: false,
     publishable: false,

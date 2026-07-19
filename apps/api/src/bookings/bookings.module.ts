@@ -22,6 +22,8 @@ import { PublicBookingsController } from './public-bookings.controller';
 //
 // AvailabilityService is exported because #48's booking write reuses quote() as
 // its in-transaction availability re-check - the one interval authority.
+// BookingsRepository is exported so the payments module (#52) reuses its
+// opportunistic hold-sweep (expireLapsedHolds) - one definition of the sweep.
 @Module({
   imports: [AuthModule], // provides JwtAuthGuard for the authed read
   controllers: [
@@ -38,6 +40,6 @@ import { PublicBookingsController } from './public-bookings.controller';
     BookingsQueryRepository,
     HoldSweeperService,
   ],
-  exports: [AvailabilityService],
+  exports: [AvailabilityService, BookingsRepository],
 })
 export class BookingsModule {}

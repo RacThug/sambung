@@ -19,6 +19,15 @@ const clearableText = (max: number) =>
     .nullable()
     .transform((v) => (v ? v : null));
 
+/**
+ * The Deposit percentage (ADR-0015, #52): share of a booking's total collected
+ * online at checkout. 1-100 integer percent, default 100 (pay in full). Mirrored
+ * by the `property_deposit_pct_range` DB CHECK. 0 is excluded on purpose - "pay
+ * nothing to book" is not this pay-to-confirm funnel.
+ */
+export const DEFAULT_DEPOSIT_PCT = 100;
+export const depositPctSchema = z.number().int().min(1).max(100);
+
 export const createPropertyRequestSchema = z.object({
   name: z.string().trim().min(2).max(160),
   address: clearableText(400).optional(),
@@ -27,6 +36,8 @@ export const createPropertyRequestSchema = z.object({
   description: clearableText(5000).optional(),
   /** NIB / KBLI 55193 - presence drives the "Verified" badge (FR-PROP-3). */
   licenseNo: clearableText(120).optional(),
+  /** Deposit % (api #10). Optional at create; the DB defaults it to 100. */
+  depositPct: depositPctSchema.optional(),
 });
 export type CreatePropertyRequest = z.infer<typeof createPropertyRequestSchema>;
 
@@ -50,6 +61,12 @@ export const propertyResponseSchema = z.object({
   longitude: z.number().nullable(),
   description: z.string().nullable(),
   licenseNo: z.string().nullable(),
+  /**
+   * Deposit % collected online at checkout (ADR-0015, #52). Always present -
+   * the column is NOT NULL default 100 - so the edit page reads a real number,
+   * never a blank that means "100".
+   */
+  depositPct: depositPctSchema,
   /** Gallery, in order: storage key + public URL per photo (#39). */
   photos: z.array(z.object({ key: z.string(), url: z.string() })),
   /** Derived: license present (FR-PROP-3). Never stored - see isVerified. */

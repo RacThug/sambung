@@ -25,6 +25,7 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -113,6 +114,14 @@ export const property = pgTable(
     // the Units that weren't retired on their own account. Set by a transition
     // (POST /properties/:id/archive), so - like slug - it is in no request schema.
     archivedAt: timestamptz("archived_at"),
+    // The Deposit: share of a booking's total collected online at checkout
+    // (ADR-0015, #52). Per-Property percent, 1-100, default 100 (pay in full).
+    // The pay endpoint multiplies totalPriceIdr by this (BigInt, floored) to get
+    // the amount charged and snapshots it onto the payment row; a booking always
+    // keeps its FULL price, this only scales what is taken now. Editable via
+    // PATCH /properties/:id (api #10) - unlike slug/archivedAt it IS in a request
+    // schema, because it is a setting the owner tunes, not a transition.
+    depositPct: smallint("deposit_pct").notNull().default(100),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -130,6 +139,11 @@ export const property = pgTable(
     // external input, so this guards our own slugify rather than a caller: a
     // malformed slug means a broken URL, and that should fail at the write.
     check("property_slug_format", sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$'`),
+    // A percent, not a money amount: 1-100. 0 would mean "pay nothing to book",
+    // which is not this pay-to-confirm funnel (ADR-0015). Mirrors depositPctSchema
+    // in @sambung/shared - the DB backstops a bypassed app check, like the price
+    // bounds above.
+    check("property_deposit_pct_range", sql`${t.depositPct} between 1 and 100`),
   ],
 );
 
