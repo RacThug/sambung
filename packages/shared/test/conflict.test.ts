@@ -11,6 +11,7 @@ describe("conflictCodeSchema", () => {
   it("is the exact closed set of 409 slugs", () => {
     expect([...conflictCodeSchema.options].sort()).toEqual([
       "booking_not_cancellable",
+      "booking_not_payable",
       "dates_unavailable",
       "email_taken",
       "property_has_bookings",
