@@ -23,6 +23,15 @@ import type {
  * this in tests, and an owner may not have configured it yet). An actual pay
  * attempt without a server key fails loud with a message naming the missing var.
  */
+/**
+ * Cap on the Snap call. It runs INSIDE the pay transaction, which holds a
+ * `FOR UPDATE` lock on the booking (the serialization that makes retry reuse one
+ * row - ADR-0015). Without a bound, a hung provider would pin a pooled connection
+ * AND that row lock for undici's ~300s default; this fails fast instead, so the
+ * hold survives for a retry (BadGateway) rather than starving the pool.
+ */
+const SNAP_TIMEOUT_MS = 8_000;
+
 @Injectable()
 export class MidtransGateway implements PaymentGateway {
   readonly provider: PaymentProvider = 'midtrans';
@@ -50,6 +59,8 @@ export class MidtransGateway implements PaymentGateway {
     try {
       res = await fetch(baseUrl, {
         method: 'POST',
+        // Bound the time this call - and the row lock around it - can be held.
+        signal: AbortSignal.timeout(SNAP_TIMEOUT_MS),
         headers: {
           Authorization: `Basic ${auth}`,
           'Content-Type': 'application/json',
@@ -84,7 +95,8 @@ export class MidtransGateway implements PaymentGateway {
         }),
       });
     } catch (cause) {
-      // Network / DNS failure reaching Midtrans - upstream is down, not our bug.
+      // Network / DNS failure OR the SNAP_TIMEOUT_MS abort - upstream is down or
+      // too slow, not our bug. Either way the hold survives for a retry.
       this.logger.error(`Midtrans unreachable: ${String(cause)}`);
       throw new BadGatewayException('Payment provider is unreachable');
     }

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 import { booking, payment, property, unit } from '@sambung/db';
 import type { BookingStatus, PaymentProvider } from '@sambung/shared';
@@ -115,8 +115,8 @@ export class PaymentsRepository {
    * The booking's open (pending) payment session, or null if none exists yet.
    * `raw_payload` holds the Provider session `{ token, redirectUrl }` (ADR-0015);
    * a pending row is only ever written WITH a session (mint happens after the
-   * gateway succeeds), so a malformed payload here is corruption - the service
-   * fails loud rather than papering over it.
+   * gateway succeeds), so a malformed payload here is corruption - this throws
+   * (500) rather than returning null and papering over it with a duplicate mint.
    */
   async findOpenSession(bookingId: string): Promise<OpenSession | null> {
     const rows = await this.db.run((tx) =>
@@ -145,7 +145,14 @@ export class PaymentsRepository {
       typeof session?.token !== 'string' ||
       typeof session?.redirectUrl !== 'string'
     ) {
-      return null;
+      // A pending row is only ever written WITH a valid session (the mint happens
+      // after the gateway succeeds), so a malformed payload here is corruption.
+      // Fail LOUD - returning null would send the caller down the mint path and
+      // silently create a SECOND pending row (nothing constrains one-per-booking
+      // but this lock + reuse), which is worse than a 500 naming the bad row.
+      throw new InternalServerErrorException(
+        'An open payment has a malformed session payload',
+      );
     }
     return {
       provider: row.provider as PaymentProvider,

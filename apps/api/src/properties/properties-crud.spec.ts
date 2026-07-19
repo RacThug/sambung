@@ -352,6 +352,82 @@ describe('Property CRUD', () => {
     });
   });
 
+  // Deposit % (api #10, #52, ADR-0015): editable on the property, bounds
+  // validated at BOTH the zod boundary (400) and the property_deposit_pct_range
+  // CHECK (the backstop for a bypassed app check).
+  describe('deposit % (payment setting)', () => {
+    it('defaults a new property to 100% (pay in full)', async () => {
+      const created = await createProperty(tokenA, {
+        name: 'Deposit Default Villa',
+      });
+      expect(created.depositPct).toBe(100);
+    });
+
+    it('accepts a deposit % at create', async () => {
+      const created = await createProperty(tokenA, {
+        name: 'Deposit Create Villa',
+        depositPct: 50,
+      });
+      expect(created.depositPct).toBe(50);
+    });
+
+    it('PATCHes the deposit % and persists it', async () => {
+      const created = await createProperty(tokenA, {
+        name: 'Deposit Edit Villa',
+      });
+      const res = await request(server())
+        .patch(`/api/properties/${created.id}`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ depositPct: 30 })
+        .expect(200);
+      expect(bodyOf<PropertyResponse>(res).depositPct).toBe(30);
+
+      const [row] = await dbs.db
+        .select()
+        .from(property)
+        .where(eq(property.id, created.id));
+      expect(row.depositPct).toBe(30);
+    });
+
+    // 0 (pay nothing), 101 (over), -5 (negative), 50.5 (non-integer) all fail.
+    it.each([0, 101, -5, 50.5])(
+      'rejects deposit=%s with a 400',
+      async (bad) => {
+        const created = await createProperty(tokenA, {
+          name: `Deposit Bad ${bad} Villa`,
+        });
+        await request(server())
+          .patch(`/api/properties/${created.id}`)
+          .set('Authorization', `Bearer ${tokenA}`)
+          .send({ depositPct: bad })
+          .expect(400);
+      },
+    );
+
+    it('the DB CHECK backstops a bypassed app check', async () => {
+      // Bypass the zod boundary entirely (owner connection, raw insert). Drizzle
+      // wraps the pg error, so the constraint name is on `.cause`, not the top
+      // message ("Failed query: …") - assert the specific CHECK fired, not just
+      // that some error did.
+      const err = await dbs.db
+        .insert(property)
+        .values({
+          tenantId: tenantAId,
+          name: 'Deposit Bypass Villa',
+          slug: `deposit-bypass-${randomUUID()}`,
+          depositPct: 200,
+        })
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(err).toBeTruthy();
+      expect(
+        (err as { cause?: { constraint?: string } }).cause?.constraint,
+      ).toBe('property_deposit_pct_range');
+    });
+  });
+
   describe('DELETE /api/properties/:id', () => {
     it('deletes a property without bookings (204) and cascades its units', async () => {
       const created = await createProperty(tokenA, { name: 'Doomed Villa' });

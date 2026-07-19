@@ -52,9 +52,10 @@ export class PaymentsService {
       // a retry reuses the first's row rather than minting a second.
       const ctx = await this.repo.lockAndLoad(bookingId);
       if (!ctx) {
-        // Resolved a tenant a moment ago but the row is gone now - a delete race.
-        // Same 409 shape a lapsed hold gets would be a lie (it doesn't exist), so
-        // this is the not-found path via the resolver's own 404 semantics.
+        // Resolved a tenant a moment ago but the row is gone now - effectively
+        // unreachable, since a booking with any history is never hard-deleted
+        // (ADR-0002). Treat it as not payable (`expired`): whatever it was, it is
+        // no longer a live hold, which is exactly what this 409 says.
         throw bookingNotPayable('expired');
       }
 
