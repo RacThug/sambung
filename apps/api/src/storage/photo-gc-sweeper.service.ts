@@ -156,6 +156,8 @@ export class PhotoGcSweeperService {
    * something we can't date.
    */
   private isOld(obj: StorageObject, cutoff: number): boolean {
-    return obj.lastModified !== undefined && obj.lastModified.getTime() < cutoff;
+    return (
+      obj.lastModified !== undefined && obj.lastModified.getTime() < cutoff
+    );
   }
 }

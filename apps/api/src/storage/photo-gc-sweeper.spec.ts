@@ -60,11 +60,13 @@ describe('Photo GC sweeper', () => {
   let propId: string;
 
   async function registerTenant(name: string): Promise<AuthResponse> {
-    const res = await request(server()).post('/api/auth/register').send({
-      tenantName: name,
-      email: `gc+${randomUUID()}@test.dev`,
-      password: 'supersecret1',
-    });
+    const res = await request(server())
+      .post('/api/auth/register')
+      .send({
+        tenantName: name,
+        email: `gc+${randomUUID()}@test.dev`,
+        password: 'supersecret1',
+      });
     const auth = bodyOf<AuthResponse>(res);
     createdTenantIds.push(auth.tenant.id);
     return auth;
