@@ -1,10 +1,11 @@
-import { getRouteApi } from "@tanstack/react-router";
+import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import type { PublicPropertyResponse } from "@sambung/shared";
+import type { PublicPropertyResponse, PublicUnit } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { formatIdr } from "../../lib/money";
 import { VerifiedBadge } from "../properties/verified-badge";
 import { PropertyMeta } from "./property-meta";
+import { AvailabilityPicker } from "./availability-picker";
 
 const route = getRouteApi("/p/$slug");
 
@@ -19,6 +20,26 @@ const route = getRouteApi("/p/$slug");
  */
 export function PropertyPage() {
   const { slug } = route.useParams();
+  const search = route.useSearch();
+  const navigate = useNavigate();
+
+  // Which unit's picker is open, and its picked stay - all in the URL, so a
+  // shared link reproduces the exact view (page-spec §3.1). Merge-update the
+  // search so setting dates keeps `unit`, and opening a unit keeps the dates.
+  const openUnit = (unit?: string) =>
+    void navigate({
+      to: "/p/$slug",
+      params: { slug },
+      search: (prev) => ({ ...prev, unit }),
+    });
+  const setDates = (dates: { from?: string; to?: string }) =>
+    void navigate({
+      to: "/p/$slug",
+      params: { slug },
+      search: (prev) => ({ ...prev, ...dates }),
+      // Picking dates shouldn't stack a history entry per click.
+      replace: true,
+    });
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["public-property", slug],
@@ -85,40 +106,111 @@ export function PropertyPage() {
         ) : (
           <ul className="mt-4 space-y-3">
             {data.units.map((unit) => (
-              <li
-                key={unit.id}
-                className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-lg border border-border p-4"
-              >
-                <div>
-                  <p className="font-medium text-foreground">{unit.name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    Up to {unit.maxGuests}{" "}
-                    {unit.maxGuests === 1 ? "guest" : "guests"}
-                    {unit.minStay > 1 && ` · ${unit.minStay}-night minimum`}
-                  </p>
-                </div>
-                <p className="text-right">
-                  {/* A zero price is a placeholder, not an offer (§4.6) - quoting
-                      "Rp 0" would read as free. */}
-                  {unit.basePriceIdr > 0 ? (
-                    <>
-                      <span className="font-semibold tabular-nums text-foreground">
-                        {formatIdr(unit.basePriceIdr)}
-                      </span>
-                      <span className="text-sm text-muted-foreground"> / night</span>
-                    </>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">
-                      Price on request
-                    </span>
-                  )}
-                </p>
+              <li key={unit.id}>
+                <UnitCard
+                  unit={unit}
+                  slug={slug}
+                  open={search.unit === unit.id}
+                  from={search.from}
+                  to={search.to}
+                  onOpen={() => openUnit(unit.id)}
+                  onClose={() => openUnit(undefined)}
+                  onDates={setDates}
+                />
               </li>
             ))}
           </ul>
         )}
       </section>
     </main>
+  );
+}
+
+/**
+ * One room: the summary (name, capacity, min-stay, price) and its availability
+ * picker. The picker opens only when this unit is the one named in `?unit`
+ * (page-spec §3.1), so the URL alone decides which is expanded and a deep link
+ * lands on the right one.
+ *
+ * A zero-priced unit is a placeholder, not an offer (api-spec §4.6): it shows
+ * "not bookable yet" and no picker or CTA - the sell-gate proper is #48.
+ */
+function UnitCard({
+  unit,
+  slug,
+  open,
+  from,
+  to,
+  onOpen,
+  onClose,
+  onDates,
+}: {
+  unit: PublicUnit;
+  slug: string;
+  open: boolean;
+  from?: string;
+  to?: string;
+  onOpen: () => void;
+  onClose: () => void;
+  onDates: (dates: { from?: string; to?: string }) => void;
+}) {
+  const bookable = unit.basePriceIdr > 0;
+
+  return (
+    <div className="rounded-lg border border-border p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <div>
+          <p className="font-medium text-foreground">{unit.name}</p>
+          <p className="text-sm text-muted-foreground">
+            Up to {unit.maxGuests} {unit.maxGuests === 1 ? "guest" : "guests"}
+            {unit.minStay > 1 && ` · ${unit.minStay}-night minimum`}
+          </p>
+        </div>
+        <p className="text-right">
+          {bookable ? (
+            <>
+              <span className="font-semibold tabular-nums text-foreground">
+                {formatIdr(unit.basePriceIdr)}
+              </span>
+              <span className="text-sm text-muted-foreground"> / night</span>
+            </>
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              Price on request
+            </span>
+          )}
+        </p>
+      </div>
+
+      {!bookable ? (
+        <p className="mt-3 text-sm text-muted-foreground">Not bookable yet.</p>
+      ) : open ? (
+        <>
+          <AvailabilityPicker
+            unit={unit}
+            slug={slug}
+            from={from}
+            to={to}
+            onChange={onDates}
+          />
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-3 text-sm text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Close
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="mt-3 inline-flex items-center rounded-md border border-input px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+        >
+          Check availability
+        </button>
+      )}
+    </div>
   );
 }
 
