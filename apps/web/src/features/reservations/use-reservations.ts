@@ -19,20 +19,28 @@ export interface ReservationFilters {
 }
 
 /**
- * Build `GET /bookings` from the reservation filters (§5.5, all optional, AND-ed).
- * `status`/`source` go on as REPEATED keys (`?status=a&status=b`) - the API's
- * repeatable set-filter, which its `repeatable()` preprocessor eats - not the
- * JSON-array form the browser URL uses; the page's URL and the API's query are
- * deliberately different strings.
+ * The `GET /bookings` query string from the reservation filters (§5.5, all
+ * optional, AND-ed). `status`/`source` go on as REPEATED keys (`?status=a&status=b`)
+ * - the API's repeatable set-filter, which its `repeatable()` preprocessor eats -
+ * not the JSON-array form the browser URL uses; the page's URL and the API's query
+ * are deliberately different strings.
+ *
+ * Exported so the CSV export (#59) builds its query the SAME way: the export must
+ * respect the exact filters the list shows, so it shares this one builder rather
+ * than re-deriving the string.
  */
-function bookingsPath(filters: ReservationFilters): string {
+export function bookingsQueryString(filters: ReservationFilters): string {
   const q = new URLSearchParams();
   q.set("from", filters.window.from);
   q.set("to", filters.window.to);
   if (filters.propertyId) q.set("propertyId", filters.propertyId);
   for (const s of filters.status ?? []) q.append("status", s);
   for (const s of filters.source ?? []) q.append("source", s);
-  return `/bookings?${q.toString()}`;
+  return q.toString();
+}
+
+function bookingsPath(filters: ReservationFilters): string {
+  return `/bookings?${bookingsQueryString(filters)}`;
 }
 
 /**

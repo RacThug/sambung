@@ -41,6 +41,23 @@ export interface BookingDetailRow extends BookingListRow {
   unitName: string;
 }
 
+/** The DB-shaped row for the CSV export (#59): the fields a reservations sheet
+ * needs, with the property/unit NAMES joined in (a bare `unitId` is useless in a
+ * spreadsheet). A projection of the same rows `list` returns - same filters, same
+ * tenant scope - widened with names, not a second read path. */
+export interface BookingExportRow {
+  id: string;
+  guestName: string | null;
+  guestCount: number | null;
+  checkIn: string;
+  checkOut: string;
+  source: BookingSource;
+  status: BookingStatus;
+  totalPriceIdr: bigint | null;
+  propertyName: string;
+  unitName: string;
+}
+
 // Dumb repository: Drizzle queries only, via the tenant-scoped (RLS) client. The
 // tenant is ambient (#76) and every query ALSO filters by tenant_id - one source,
 // two layers, guarding the one env var (DATABASE_URL vs APP_DATABASE_URL) that
@@ -63,9 +80,16 @@ export class BookingsQueryRepository {
    * availability read and the exclusion constraint use (db-design §4.2/4.3), so a
    * stay straddling either edge matches - never a parallel copy of "overlap".
    */
-  list(filters: BookingListFilters): Promise<BookingListRow[]> {
-    const tenantId = this.tenant.tenantId;
-    const conds: SQL[] = [eq(booking.tenantId, tenantId)];
+  /**
+   * The filters `GET /bookings` and its CSV twin AND together (api-spec §5.5).
+   * Extracted so the list and the export apply the BYTE-IDENTICAL predicate - "the
+   * export respects the same active filters" is then true by construction, not by
+   * two copies that could drift. Always scoped by `tenant_id` (the second layer
+   * beside RLS, architecture §3.3); `propertyId` references the joined `unit`, so
+   * both callers must inner-join it.
+   */
+  private conditions(filters: BookingListFilters): SQL[] {
+    const conds: SQL[] = [eq(booking.tenantId, this.tenant.tenantId)];
 
     if (filters.from && filters.to) {
       conds.push(
@@ -84,6 +108,11 @@ export class BookingsQueryRepository {
     if (filters.source && filters.source.length > 0) {
       conds.push(inArray(booking.source, [...filters.source]));
     }
+    return conds;
+  }
+
+  list(filters: BookingListFilters): Promise<BookingListRow[]> {
+    const conds = this.conditions(filters);
 
     return this.db.run((tx) =>
       tx
@@ -107,6 +136,47 @@ export class BookingsQueryRepository {
         .where(and(...conds))
         // check-in is the sort key (api-spec §5.5); id breaks ties so a page of
         // same-day bookings has a stable order.
+        .orderBy(asc(booking.checkIn), asc(booking.id)),
+    );
+  }
+
+  /**
+   * The CSV export's rows (#59): the SAME filtered, tenant-scoped, check-in-sorted
+   * rows as `list` (same `conditions`, same order), widened with the property and
+   * unit NAMES a spreadsheet needs. Joins `property` for its name and re-asserts
+   * tenant consistency on both join keys, exactly like `getById`. Not a second
+   * filter path - a second SELECT over one predicate.
+   */
+  listForExport(filters: BookingListFilters): Promise<BookingExportRow[]> {
+    const conds = this.conditions(filters);
+
+    return this.db.run((tx) =>
+      tx
+        .select({
+          id: booking.id,
+          guestName: booking.guestName,
+          guestCount: booking.guestCount,
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          source: booking.source,
+          status: booking.status,
+          totalPriceIdr: booking.totalPriceIdr,
+          propertyName: property.name,
+          unitName: unit.name,
+        })
+        .from(booking)
+        .innerJoin(
+          unit,
+          and(eq(unit.id, booking.unitId), eq(unit.tenantId, booking.tenantId)),
+        )
+        .innerJoin(
+          property,
+          and(
+            eq(property.id, unit.propertyId),
+            eq(property.tenantId, unit.tenantId),
+          ),
+        )
+        .where(and(...conds))
         .orderBy(asc(booking.checkIn), asc(booking.id)),
     );
   }

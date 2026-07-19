@@ -5,6 +5,7 @@ import {
   type CreateBookingResponse,
 } from '@sambung/shared';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
+import { ThrottleSensitive } from '../common/throttle/throttle.decorator';
 import { BookingsService } from './bookings.service';
 
 /**
@@ -21,6 +22,11 @@ import { BookingsService } from './bookings.service';
 export class PublicBookingsController {
   constructor(private readonly bookings: BookingsService) {}
 
+  // No-auth write → the tighter `sensitive` throttler (api-spec §8.3, #59). One
+  // real guest posts once; a script flooding holds to grief the calendar is what
+  // this stops (its dead holds would sweep, but the row-flood and lock churn are
+  // the abuse). Its own per-handler bucket, independent of the auth routes'.
+  @ThrottleSensitive()
   @Post()
   create(
     @Body(new ZodValidationPipe(createBookingRequestSchema))
