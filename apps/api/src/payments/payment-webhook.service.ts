@@ -29,7 +29,7 @@ type ApplyResult =
       kind: 'amount_mismatch';
       bookingId: string;
       expected: bigint;
-      got: number;
+      got: bigint;
     }
   | { kind: 'settlement'; bookingId: string; confirmed: boolean }
   | { kind: 'failure'; bookingId: string }
@@ -155,7 +155,8 @@ export class PaymentWebhookService {
     // Cross-check the settled amount against the snapshot (defense in depth).
     // The signature already covers gross_amount, so a mismatch means our record
     // and the Provider disagree - refuse to confirm, record + flag for review.
-    if (BigInt(event.grossAmountIdr) !== pay.amountIdr) {
+    // Both sides are bigint (invariant #6): no float ever enters the comparison.
+    if (event.grossAmountIdr !== pay.amountIdr) {
       return {
         kind: 'amount_mismatch',
         bookingId: pay.bookingId,
@@ -257,14 +258,21 @@ export class PaymentWebhookService {
 
   /**
    * The FR-NOTIF-1 seam: confirmation email to guest + owner on `confirmed`. A
-   * real provider (Resend free tier / SMTP) is a follow-up issue; today this is
-   * a logged no-op. Wrapped so a side-effect failure can NEVER fail the webhook
-   * (api-spec §6.2 step 3) - the booking is already confirmed and the money is in.
+   * real provider (Resend free tier / SMTP) is a follow-up issue (#119); today
+   * this is a logged no-op.
+   *
+   * The invariant this seam must keep (api-spec §6.2 step 3): a side-effect
+   * failure can NEVER fail the webhook - the booking is already confirmed and the
+   * money is in. The try/catch below is inert around a synchronous `log`; when
+   * the real, ASYNC sender lands it MUST be awaited-and-caught (or fire-and-forget
+   * with a `.catch`) INSIDE here, so an unawaited rejection cannot escape to the
+   * caller. `void` return is deliberate: `afterCommit` runs post-commit and does
+   * not await this.
    */
   private notifyConfirmed(bookingId: string): void {
     try {
       this.logger.log(
-        `[notify] booking ${bookingId} confirmed - would email guest + owner (FR-NOTIF-1, deferred)`,
+        `[notify] booking ${bookingId} confirmed - would email guest + owner (FR-NOTIF-1, deferred to #119)`,
       );
     } catch (err) {
       this.logger.error(

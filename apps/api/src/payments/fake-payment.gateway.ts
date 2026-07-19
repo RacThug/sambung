@@ -66,7 +66,9 @@ export class FakePaymentGateway implements PaymentGateway {
       providerEventId: `${b.transactionId}:${b.transactionStatus}`,
       orderId: b.orderId,
       outcome: midtransOutcome(b.transactionStatus),
-      grossAmountIdr: b.grossAmountIdr,
+      // Money as bigint (invariant #6) - the test body carries a plain number for
+      // convenience; widen it here, the one place the fake meets the port.
+      grossAmountIdr: BigInt(b.grossAmountIdr),
       raw: body,
     };
   }

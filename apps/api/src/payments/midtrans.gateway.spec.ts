@@ -48,7 +48,7 @@ describe('MidtransGateway.verifyAndParse', () => {
     expect(event.providerEventId).toBe('txn-1:settlement');
     expect(event.orderId).toBe('order-1');
     expect(event.outcome).toBe('settlement');
-    expect(event.grossAmountIdr).toBe(4_000_000);
+    expect(event.grossAmountIdr).toBe(4_000_000n);
     expect(event.raw).toMatchObject({ order_id: 'order-1' });
   });
 

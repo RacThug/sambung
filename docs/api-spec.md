@@ -246,7 +246,7 @@ Errors: 404 unknown id; 409 wrong status (`confirmed`, `expired`, `cancelled`) o
 
 ### 6.2 `POST /webhooks/payment/:provider` → 200 - **the idempotency path**
 Provider delivers **at-least-once**; this endpoint must be duplicate-proof and race-proof:
-1. Verify the provider signature (Midtrans `signature_key`) → 401 on mismatch; unknown `:provider` → 404. Raw payload stored on the `payment` row.
+1. Verify the provider signature (Midtrans `signature_key`) → 401 on mismatch; unknown `:provider` → 404. Verified raw payload stored on the `payment_event` row (ADR-0018) - **not** on `payment.raw_payload`, which holds the open Snap session a pay-retry reads back (ADR-0015), so a `failure` event can't destroy a session the guest still needs.
 2. **In one transaction:** INSERT `payment_event (provider, providerEventId)` - a unique-violation means "already processed" → commit nothing, return 200. Otherwise apply the transition: settlement → `payment.status=paid`, `booking.status=confirmed`; failure/expiry → `payment.status=failed` (booking stays `pending_payment` until the hold sweeper expires it).
    *The event insert and the state change share the transaction* - a crash between them must replay, not drop, the event.
 3. Post-commit side effects: confirmation email to guest + owner (FR-NOTIF-1). Side-effect failure never fails the webhook (log + retry queue-less v1: resend from the confirmation page).

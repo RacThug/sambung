@@ -2,10 +2,10 @@ import { Body, Controller, HttpCode, Param, Post } from '@nestjs/common';
 import { PaymentWebhookService } from './payment-webhook.service';
 
 /**
- * The payment provider's callback - `POST /webhooks/payment/:provider` (api-spec
+ * The payment provider's webhook - `POST /webhooks/payment/:provider` (api-spec
  * §6.2, boss fight #4, #53). UNAUTHENTICATED: the caller is a payment Provider,
  * not a user - there is no token. It is NOT a `/public` funnel route either; it
- * is a machine-to-machine callback, so it lives under `/webhooks`.
+ * is a machine-to-machine webhook, so it lives under `/webhooks`.
  *
  * Thin as ever: the service verifies the signature, translates the payload, and
  * runs the idempotent transaction. The body is typed `unknown` on purpose - it is

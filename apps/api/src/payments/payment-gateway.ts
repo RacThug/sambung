@@ -68,9 +68,10 @@ export interface ParsedPaymentEvent {
   orderId: string;
   /** What this event means for the booking/payment state machine. */
   outcome: PaymentOutcome;
-  /** The amount the Provider reports, in whole IDR - cross-checked against the
-   * snapshot on the payment row (a mismatch is refused, never confirmed). */
-  grossAmountIdr: number;
+  /** The amount the Provider reports, in whole IDR as a `bigint` - money never
+   * transits a JS `number` (invariant #6). Cross-checked against the snapshot on
+   * the payment row (a mismatch is refused, never confirmed). */
+  grossAmountIdr: bigint;
   /** The verified payload, stored verbatim on `payment_event` for audit. */
   raw: unknown;
 }

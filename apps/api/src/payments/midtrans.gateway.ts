@@ -216,21 +216,28 @@ export class MidtransGateway implements PaymentGateway {
       throw new UnauthorizedException('Invalid webhook signature');
     }
 
-    // Whole IDR (invariant #6). Midtrans sends "10000.00"; the fraction is always
-    // .00 for IDR, but round defensively rather than truncate.
-    const grossAmountIdr = Math.round(Number(n.gross_amount));
-    if (!Number.isFinite(grossAmountIdr)) {
-      throw new BadRequestException('Webhook gross_amount is not a number');
-    }
-
     return {
       providerEventId: `${n.transaction_id}:${n.transaction_status}`,
       orderId: n.order_id,
       outcome: midtransOutcome(n.transaction_status, n.fraud_status),
-      grossAmountIdr,
+      grossAmountIdr: parseGrossAmountIdr(n.gross_amount),
       raw: n,
     };
   }
+}
+
+/**
+ * Parse Midtrans's `gross_amount` ("10000.00") to whole-rupiah `bigint` WITHOUT
+ * going through a JS `number` (invariant #6 - money is never a float). IDR has no
+ * sub-unit, so the fraction is always `.00`; we take the integer part and widen
+ * straight to bigint. A non-numeric integer part is a malformed body (→ 400).
+ */
+function parseGrossAmountIdr(gross: string): bigint {
+  const intPart = gross.split('.')[0];
+  if (!/^\d+$/.test(intPart)) {
+    throw new BadRequestException('Webhook gross_amount is not a whole number');
+  }
+  return BigInt(intPart);
 }
 
 /**
