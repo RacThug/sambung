@@ -15,6 +15,11 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "incremental": true,
+    // Don't clear the screen on each watch recompile. `nest start --watch` runs
+    // tsc in watch mode, whose default reporter emits a clear-screen (ESC[2J[3J[H)
+    // that wiped the sibling `web:dev` (Vite) output from the shared turbo dev
+    // terminal - so `pnpm dev` looked like it only ran the API.
+    "preserveWatchOutput": true,
     "skipLibCheck": true,
     "strictNullChecks": true,
     "forceConsistentCasingInFileNames": true,

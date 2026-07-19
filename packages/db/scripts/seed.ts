@@ -49,6 +49,18 @@ const DEMO_PASSWORD = "sambung123";
 const DEMO_PASSWORD_HASH =
   "$2b$12$l/JDRuTK3RV2ZPO5tKDPrOJ7DvutHzlXTbFqTUgwFrO4GI1HPts.y";
 
+// Sample bookings are anchored to the CURRENT month, not fixed calendar dates,
+// so the unified calendar's default view (this month) is populated the moment
+// you seed - a fixed August date silently falls outside the view once the month
+// passes. Only the DATES move with time; the stable demo surface (ids, slugs,
+// logins) stays fixed. `day(n)` = the nth day of the current month, half-open.
+const monthAnchor = new Date();
+const monthStart = `${monthAnchor.getFullYear()}-${String(monthAnchor.getMonth() + 1).padStart(2, "0")}-01`;
+const day = (offset: number): string =>
+  new Date(Date.parse(`${monthStart}T00:00:00Z`) + offset * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
 async function main() {
   await db.transaction(async (tx) => {
     // --- wipe (FK-safe order) so the seed is idempotent ---
@@ -121,10 +133,42 @@ async function main() {
 
     // --- units (4) ---
     await tx.insert(unit).values([
-      { id: U_VILLA, propertyId: P_SEMINYAK, tenantId: T1, name: "Whole Villa", basePriceIdr: 3_500_000n, maxGuests: 4, minStay: 2 },
-      { id: U_GARDEN, propertyId: P_SEMINYAK, tenantId: T1, name: "Garden Room", basePriceIdr: 1_200_000n, maxGuests: 2, minStay: 1 },
-      { id: U_SURF, propertyId: P_CANGGU, tenantId: T1, name: "Surf Loft", basePriceIdr: 950_000n, maxGuests: 2, minStay: 1 },
-      { id: U_RIVER, propertyId: P_UBUD, tenantId: T2, name: "Riverside Suite", basePriceIdr: 2_100_000n, maxGuests: 2, minStay: 2 },
+      {
+        id: U_VILLA,
+        propertyId: P_SEMINYAK,
+        tenantId: T1,
+        name: "Whole Villa",
+        basePriceIdr: 3_500_000n,
+        maxGuests: 4,
+        minStay: 2,
+      },
+      {
+        id: U_GARDEN,
+        propertyId: P_SEMINYAK,
+        tenantId: T1,
+        name: "Garden Room",
+        basePriceIdr: 1_200_000n,
+        maxGuests: 2,
+        minStay: 1,
+      },
+      {
+        id: U_SURF,
+        propertyId: P_CANGGU,
+        tenantId: T1,
+        name: "Surf Loft",
+        basePriceIdr: 950_000n,
+        maxGuests: 2,
+        minStay: 1,
+      },
+      {
+        id: U_RIVER,
+        propertyId: P_UBUD,
+        tenantId: T2,
+        name: "Riverside Suite",
+        basePriceIdr: 2_100_000n,
+        maxGuests: 2,
+        minStay: 2,
+      },
     ]);
 
     // --- a channel connection (Airbnb) on the Whole Villa ---
@@ -147,8 +191,8 @@ async function main() {
         unitId: U_VILLA,
         source: "direct",
         status: "confirmed",
-        checkIn: "2026-08-01",
-        checkOut: "2026-08-05",
+        checkIn: day(4),
+        checkOut: day(8),
         guestName: "Wayan D.",
         guestPhone: "+62 812-0000-0001",
         guestEmail: "wayan@example.com",
@@ -163,8 +207,8 @@ async function main() {
         unitId: U_VILLA,
         source: "airbnb",
         status: "confirmed",
-        checkIn: "2026-08-10",
-        checkOut: "2026-08-14",
+        checkIn: day(13),
+        checkOut: day(17),
         guestName: "Airbnb guest",
         channelConnectionId: CC_AIRBNB,
         externalUid: "airbnb-evt-0001@airbnb.com", // idempotent re-sync key
@@ -175,8 +219,8 @@ async function main() {
         unitId: U_GARDEN,
         source: "direct",
         status: "pending_payment",
-        checkIn: "2026-08-03",
-        checkOut: "2026-08-06",
+        checkIn: day(6),
+        checkOut: day(9),
         guestName: "Komang S.",
         guestPhone: "+62 812-0000-0002",
         guestCount: 2,
@@ -189,8 +233,8 @@ async function main() {
         unitId: U_SURF,
         source: "manual_block",
         status: "confirmed",
-        checkIn: "2026-08-15",
-        checkOut: "2026-08-18",
+        checkIn: day(17),
+        checkOut: day(20),
         guestName: null,
       },
       // Riverside Suite (tenant 2): a direct confirmed booking.
@@ -199,8 +243,8 @@ async function main() {
         unitId: U_RIVER,
         source: "direct",
         status: "confirmed",
-        checkIn: "2026-09-01",
-        checkOut: "2026-09-04",
+        checkIn: day(8),
+        checkOut: day(11),
         guestName: "Asian traveler",
         guestPhone: "+86 138-0000-0003",
         guestCount: 2,
