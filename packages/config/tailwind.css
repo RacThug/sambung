@@ -129,3 +129,21 @@
     text-rendering: optimizeLegibility;
   }
 }
+
+/* -- Calendar source palette (#49, ADR-0010) ----------------------------------
+   A categorical DATAVIZ palette keyed to booking source - deliberately distinct
+   from the single brand accent (the accent is not a status, design-system.md §2;
+   source is a category, not a status either, but it needs five distinguishable
+   hues one accent cannot give). The OTA hues match each channel's own brand so an
+   owner recognizes them at a glance (the design doc anticipated these); `direct`
+   is the brand terracotta (a Sambung-direct booking), `manual` a neutral stone.
+   Consumed via var() in the calendar's inline bar styles, since the source - and
+   thus the colour - is chosen per row at runtime (Tailwind can't scan a dynamic
+   class name). Owned by #49, kept here so all ramps still live in one file. */
+:root {
+  --source-direct: #a84c26; /* terracotta - booked direct through Sambung */
+  --source-airbnb: #ff5a5f; /* Airbnb coral */
+  --source-booking-com: #003580; /* Booking.com navy */
+  --source-vrbo: #2f80ed; /* a clear blue, distinct from the Booking navy */
+  --source-manual: #78716c; /* stone-500 - a manual block / maintenance */
+}

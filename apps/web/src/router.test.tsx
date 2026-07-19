@@ -94,12 +94,13 @@ describe("auth guard (/app/*)", () => {
     ).toBeInTheDocument();
   });
 
-  it("redirects /app to the properties list", async () => {
+  it("redirects /app to the calendar (the dashboard home)", async () => {
     setSession(authResponse());
     stubFetch({ "GET /api/properties": () => json([]) });
     const router = renderAt("/app");
-    await screen.findByText("Properties");
-    expect(router.state.location.pathname).toBe("/app/properties");
+    // The calendar toolbar renders regardless of the body's data state.
+    await screen.findByText("Today");
+    expect(router.state.location.pathname).toBe("/app/calendar");
   });
 
   it("redirects an already-authed visitor away from /login", async () => {
@@ -107,7 +108,7 @@ describe("auth guard (/app/*)", () => {
     stubFetch({ "GET /api/properties": () => json([]) });
     const router = renderAt("/login");
     await screen.findByText("Test Tenant");
-    expect(router.state.location.pathname).toBe("/app/properties");
+    expect(router.state.location.pathname).toBe("/app/calendar");
   });
 
   it("skips the login form when the refresh cookie still holds a session", async () => {
@@ -118,7 +119,7 @@ describe("auth guard (/app/*)", () => {
     });
     const router = renderAt("/login");
     await screen.findByText("Test Tenant");
-    expect(router.state.location.pathname).toBe("/app/properties");
+    expect(router.state.location.pathname).toBe("/app/calendar");
   });
 
   it("redirects an already-authed visitor away from /register", async () => {
@@ -126,7 +127,7 @@ describe("auth guard (/app/*)", () => {
     stubFetch({ "GET /api/properties": () => json([]) });
     const router = renderAt("/register");
     await screen.findByText("Test Tenant");
-    expect(router.state.location.pathname).toBe("/app/properties");
+    expect(router.state.location.pathname).toBe("/app/calendar");
   });
 
   it("skips the register form when the refresh cookie still holds a session", async () => {
@@ -136,7 +137,7 @@ describe("auth guard (/app/*)", () => {
     });
     const router = renderAt("/register");
     await screen.findByText("Test Tenant");
-    expect(router.state.location.pathname).toBe("/app/properties");
+    expect(router.state.location.pathname).toBe("/app/calendar");
   });
 });
 
