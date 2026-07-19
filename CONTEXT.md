@@ -78,8 +78,17 @@ _Avoid_: reservation, lock, pending
 
 **Availability**:
 Which nights a Unit is free, derived from the absence of an Occupying booking - never stored
-(invariant #3). A question you ask the booking rows, not a table you keep.
-_Avoid_: vacancy, openings, calendar
+(invariant #3). A question you ask the booking rows, not a table you keep. Not "the Calendar":
+the Calendar is the Owner's occupancy view, availability is the derived free/busy its gaps imply.
+_Avoid_: vacancy, openings
+
+**Calendar**:
+The Owner's cross-Unit occupancy view (the dashboard home, `/app/calendar`): every Unit's Occupying
+bookings over a window, drawn as bars colored by source (direct / airbnb / booking_com / vrbo /
+manual) with Holds hatched. It shows the positive space - who is in, and through which channel - so it
+is the opposite of Availability, which is the negative space its gaps imply. One Unit per row; a
+Cancelled or expired booking is not Occupying, so it never draws a bar.
+_Avoid_: availability, schedule, agenda, timeline
 
 **Quote**:
 The answer to "can this Unit host this Stay, and at what price": whether the nights are free, the
