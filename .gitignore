@@ -29,3 +29,7 @@ Thumbs.db
 # Test / coverage
 coverage/
 .obsidian/
+
+# Local dev tooling (treehouse worktree pool - personal, machine-specific)
+treehouse.toml
+.treehouse/
