@@ -12,6 +12,8 @@ import { LoginPage } from "./features/auth/login-page";
 import { RegisterPage } from "./features/auth/register-page";
 import { authSearchSchema } from "./features/auth/auth-search";
 import { AppShell } from "./features/dashboard/app-shell";
+import { CalendarPage } from "./features/calendar/calendar-page";
+import { calendarSearchSchema } from "./features/calendar/calendar-search";
 import { PropertiesPage } from "./features/properties/properties-page";
 import { PropertyEditPage } from "./features/properties/property-edit-page";
 import { ensureSession } from "./lib/auth";
@@ -80,13 +82,22 @@ const appRoute = createRoute({
   component: AppShell,
 });
 
-// Dashboard home. Properties for now; the unified calendar takes over in M2.
+// Dashboard home = the unified calendar (page-spec §4.1, #49). /app lands there.
 const appIndexRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/",
   beforeLoad: () => {
-    throw redirect({ to: "/app/properties" });
+    throw redirect({ to: "/app/calendar" });
   },
+});
+
+const calendarRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "calendar",
+  // ?from&to&propertyId are external input (a pasted URL); zod at the boundary,
+  // degrading bad values to the default month rather than crashing the home page.
+  validateSearch: calendarSearchSchema,
+  component: CalendarPage,
 });
 
 const propertiesRoute = createRoute({
@@ -107,7 +118,12 @@ export const routeTree = rootRoute.addChildren([
   propertyRoute,
   loginRoute,
   registerRoute,
-  appRoute.addChildren([appIndexRoute, propertiesRoute, propertyEditRoute]),
+  appRoute.addChildren([
+    appIndexRoute,
+    calendarRoute,
+    propertiesRoute,
+    propertyEditRoute,
+  ]),
 ]);
 
 export const router = createRouter({ routeTree });

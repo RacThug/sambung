@@ -66,9 +66,10 @@ describe("register page (§3.4)", () => {
     fillForm();
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
 
-    // No second login step: the signup response IS the session.
+    // No second login step: the signup response IS the session. The dashboard
+    // home is the unified calendar now (#49).
     expect(await screen.findByText("Test Tenant")).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/app/properties");
+    expect(router.state.location.pathname).toBe("/app/calendar");
     expect(calls.filter((c) => c === "POST /api/auth/register")).toHaveLength(1);
   });
 

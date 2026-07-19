@@ -22,7 +22,15 @@ export function AppShell() {
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-3">
           <nav className="flex items-center gap-6">
-            <Wordmark className="text-lg" />
+            <Link to="/app/calendar" aria-label="Sambung home">
+              <Wordmark className="text-lg" />
+            </Link>
+            <Link
+              to="/app/calendar"
+              className="text-sm font-medium text-foreground hover:text-primary"
+            >
+              Calendar
+            </Link>
             <Link
               to="/app/properties"
               className="text-sm font-medium text-foreground hover:text-primary"
