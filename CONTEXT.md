@@ -76,6 +76,20 @@ _Avoid_: active, blocking, live
 A booking that has claimed a Stay while its guest pays, and lapses on its own if they don't.
 _Avoid_: reservation, lock, pending
 
+**Walk-in**:
+A booking the Owner records directly for a real Guest - by phone, in person, over WhatsApp - born
+`confirmed` with no online payment. Its source is `direct`: a walk-in is direct business, just not
+self-service. "Walk-in vs online" is derived (a confirmed direct booking with no payment), never a
+stored source.
+_Avoid_: offline booking, manual booking, phone booking
+
+**Block**:
+Nights the Owner holds against booking for a non-Guest reason - maintenance, personal use, a deal
+done off Sambung. A `manual_block` booking, born `confirmed`, with no Guest and no price. It Occupies
+the calendar exactly like a Stay but sells nothing, and is lifted by cancelling it (the same verb as
+any booking), which frees the nights instantly.
+_Avoid_: manual block, hold, reservation, closure, lock
+
 **Availability**:
 Which nights a Unit is free, derived from the absence of an Occupying booking - never stored
 (invariant #3). A question you ask the booking rows, not a table you keep. Not "the Calendar":
