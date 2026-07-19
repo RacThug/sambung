@@ -1,16 +1,72 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   BadGatewayException,
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { z } from 'zod';
 import type { PaymentProvider } from '@sambung/shared';
 import type {
   CreateSessionInput,
+  ParsedPaymentEvent,
   PaymentGateway,
+  PaymentOutcome,
   PaymentSession,
 } from './payment-gateway';
+
+/**
+ * The Midtrans HTTP notification (docs: "HTTP(S) POST notification"). Only the
+ * fields we verify or act on - a webhook is external input, so it is validated
+ * at the boundary (zod) before anything trusts it (invariant: trust no external
+ * input). `gross_amount` stays the STRING Midtrans sent ("10000.00"): the
+ * signature is computed over that exact text, so re-serializing it would break
+ * the hash. `passthrough()` keeps the rest of the body for the audit payload.
+ */
+const midtransNotificationSchema = z
+  .object({
+    order_id: z.string().min(1),
+    status_code: z.string().min(1),
+    gross_amount: z.string().min(1),
+    signature_key: z.string().min(1),
+    transaction_status: z.string().min(1),
+    transaction_id: z.string().min(1),
+    fraud_status: z.string().optional(),
+  })
+  .passthrough();
+
+/**
+ * Midtrans transaction_status (+ fraud_status for card captures) → the app's
+ * outcome vocabulary. `capture` needs the fraud check: `accept` is money in,
+ * `challenge` is still pending review, anything else is a denial. Everything we
+ * don't explicitly act on (refund, chargeback, authorize) is `ignore` - recorded
+ * for the audit trail, but never driving a transition we haven't designed.
+ */
+export function midtransOutcome(
+  transactionStatus: string,
+  fraudStatus?: string,
+): PaymentOutcome {
+  switch (transactionStatus) {
+    case 'capture':
+      if (fraudStatus === 'accept') return 'settlement';
+      if (fraudStatus === 'challenge') return 'pending';
+      return 'failure';
+    case 'settlement':
+      return 'settlement';
+    case 'pending':
+      return 'pending';
+    case 'deny':
+    case 'cancel':
+    case 'expire':
+    case 'failure':
+      return 'failure';
+    default:
+      return 'ignore';
+  }
+}
 
 /**
  * The one Provider adapter (ADR-0015). Talks to Midtrans Snap over `fetch` - no
@@ -123,4 +179,67 @@ export class MidtransGateway implements PaymentGateway {
     }
     return { token: body.token, redirectUrl: body.redirect_url };
   }
+
+  /**
+   * Verify the notification's `signature_key` and translate it (api-spec §6.2,
+   * #53). Midtrans signs `sha512(order_id + status_code + gross_amount +
+   * ServerKey)` over the PARSED fields - not the raw body - so no raw-body
+   * middleware is needed; we recompute the hash from the validated fields and
+   * compare in constant time.
+   *
+   * Throws before trusting anything: `BadRequestException` (→ 400) if the body
+   * is malformed, `UnauthorizedException` (→ 401) if the signature does not match
+   * (api-spec §6.2). The idempotency key is `transaction_id:transaction_status`
+   * so a redelivery collapses but a real pending→settlement does not (ADR-0018).
+   */
+  verifyAndParse(body: unknown): ParsedPaymentEvent {
+    const parsed = midtransNotificationSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException('Malformed webhook payload');
+    }
+    const n = parsed.data;
+
+    const serverKey = this.config.get<string>('MIDTRANS_SERVER_KEY');
+    if (!serverKey) {
+      // Ours to fix, not the caller's: we can't verify without the key. 500 so
+      // the provider retries once we're configured, rather than a false 401.
+      throw new InternalServerErrorException(
+        'Payments are not configured (MIDTRANS_SERVER_KEY is unset)',
+      );
+    }
+
+    const expected = createHash('sha512')
+      .update(n.order_id + n.status_code + n.gross_amount + serverKey)
+      .digest('hex');
+    if (!timingSafeEqualHex(expected, n.signature_key)) {
+      this.logger.warn(`Webhook signature mismatch for order ${n.order_id}`);
+      throw new UnauthorizedException('Invalid webhook signature');
+    }
+
+    // Whole IDR (invariant #6). Midtrans sends "10000.00"; the fraction is always
+    // .00 for IDR, but round defensively rather than truncate.
+    const grossAmountIdr = Math.round(Number(n.gross_amount));
+    if (!Number.isFinite(grossAmountIdr)) {
+      throw new BadRequestException('Webhook gross_amount is not a number');
+    }
+
+    return {
+      providerEventId: `${n.transaction_id}:${n.transaction_status}`,
+      orderId: n.order_id,
+      outcome: midtransOutcome(n.transaction_status, n.fraud_status),
+      grossAmountIdr,
+      raw: n,
+    };
+  }
+}
+
+/**
+ * Constant-time hex-string compare. `timingSafeEqual` throws on unequal-length
+ * buffers, so the length guard is required - and it leaks only length, which for
+ * a real sha512 signature is always 128 chars anyway. A forged signature of the
+ * wrong length is rejected here without timing signal past its length.
+ */
+function timingSafeEqualHex(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }

@@ -375,6 +375,11 @@ export const paymentEvent = pgTable(
       onDelete: "set null",
       onUpdate: "cascade",
     }),
+    // The verified provider payload, kept WITH the event it records (#53,
+    // migration 0010). Distinct from payment.raw_payload, which holds the open
+    // Snap session a pay-retry reads back (ADR-0015): the webhook never touches
+    // that, so a failure event can't destroy a still-usable session.
+    rawPayload: jsonb("raw_payload"),
     receivedAt: timestamptz("received_at").notNull().defaultNow(),
   },
   (t) => [
