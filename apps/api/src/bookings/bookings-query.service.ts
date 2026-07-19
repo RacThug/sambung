@@ -1,14 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   bookingDetailSchema,
+  countNights,
   toRupiah,
   type BookingDetail,
   type BookingRow,
   type ListBookingsQuery,
 } from '@sambung/shared';
+import { bookingsToCsv, type BookingCsvRow } from './bookings-csv';
 import {
   BookingsQueryRepository,
   type BookingDetailRow,
+  type BookingExportRow,
   type BookingListRow,
 } from './bookings-query.repository';
 
@@ -33,6 +36,45 @@ export class BookingsQueryService {
       source: query.source,
     });
     return rows.map((row) => this.toRow(row));
+  }
+
+  /**
+   * The reservations list as a CSV document (api-spec §5.5 CSV twin, #59). Uses
+   * the repository's export query, which shares `list`'s exact filter predicate,
+   * so the export respects the SAME active filters as `GET /bookings` by
+   * construction. Money crosses to the CSV straight from the `bigint` as exact
+   * decimal digits - never through a float - so a large rupiah value is unmangled.
+   */
+  async exportCsv(query: ListBookingsQuery): Promise<string> {
+    const rows = await this.repo.listForExport({
+      from: query.from,
+      to: query.to,
+      propertyId: query.propertyId,
+      unitId: query.unitId,
+      status: query.status,
+      source: query.source,
+    });
+    return bookingsToCsv(rows.map((row) => this.toCsvRow(row)));
+  }
+
+  private toCsvRow(row: BookingExportRow): BookingCsvRow {
+    return {
+      bookingId: row.id,
+      property: row.propertyName,
+      unit: row.unitName,
+      // Raw guest name; a manual_block (or a contactless walk-in) has none.
+      guest: row.guestName ?? '',
+      checkIn: row.checkIn,
+      checkOut: row.checkOut,
+      nights: String(countNights(row.checkIn, row.checkOut)),
+      source: row.source,
+      status: row.status,
+      guests: row.guestCount === null ? '' : String(row.guestCount),
+      // bigint -> exact decimal string. NOT toRupiah/Number: this side never needs
+      // a JS number, and the string is the whole point (no float, no separators, no
+      // 1.23e9). A block carries no price -> empty cell.
+      totalIdr: row.totalPriceIdr === null ? '' : row.totalPriceIdr.toString(),
+    };
   }
 
   /** One booking in full for the detail view (api-spec §5.7, #50). 404 when the

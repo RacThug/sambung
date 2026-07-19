@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   Param,
   ParseUUIDPipe,
@@ -47,6 +48,19 @@ export class BookingsController {
     query: ListBookingsQuery,
   ): Promise<BookingRow[]> {
     return this.reads.list(query);
+  }
+
+  // CSV twin of the list (api-spec §5.5, #59) - the SAME filters, `text/csv`.
+  // Declared BEFORE `:id` so `export.csv` is a literal route, not a booking id.
+  // `@Header` makes Nest send the returned string as a CSV attachment, not JSON.
+  @Get('export.csv')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="reservations.csv"')
+  exportCsv(
+    @Query(new ZodValidationPipe(listBookingsQuerySchema))
+    query: ListBookingsQuery,
+  ): Promise<string> {
+    return this.reads.exportCsv(query);
   }
 
   // Manual block / walk-in (api-spec §5.4, ADR-0011). Body is discriminated on
