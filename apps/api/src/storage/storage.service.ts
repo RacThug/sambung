@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  DeleteObjectsCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   PutBucketCorsCommand,
   PutBucketWebsiteCommand,
   PutObjectCommand,
@@ -17,6 +19,18 @@ import {
 
 /** Short-lived: the browser uploads immediately after asking. */
 const PRESIGN_EXPIRES_SECONDS = 300;
+
+/** S3 DeleteObjects caps at 1000 keys per request; the GC sweep chunks to it. */
+const DELETE_BATCH_MAX = 1000;
+
+/** One stored object as the GC sweep needs to reason about it (ADR-0016). */
+export interface StorageObject {
+  key: string;
+  /** Bytes. Drives the oversize-eviction backstop. */
+  size: number;
+  /** Server-set on PUT. Drives the grace window (never-race-an-upload). */
+  lastModified: Date | undefined;
+}
 
 /**
  * Magic-byte checks per whitelisted type, against the object's first 12
@@ -134,6 +148,62 @@ export class StorageService {
       return head.length >= 12 && check(head);
     } catch {
       return false; // missing object or unreadable - either way, not linkable
+    }
+  }
+
+  /**
+   * List every object under a prefix, following pagination to the end (S3 caps a
+   * page at 1000 keys). The GC sweep (ADR-0016) calls this per `<tenantId>/`
+   * prefix - never the bare bucket - so it only ever sees objects it has
+   * authority over. Safe on an empty prefix: `Contents` is absent, so we return
+   * `[]`.
+   */
+  async listObjects(prefix: string): Promise<StorageObject[]> {
+    const objects: StorageObject[] = [];
+    let continuationToken: string | undefined;
+    do {
+      const page = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+      for (const o of page.Contents ?? []) {
+        // A listed object always has a Key; Size/LastModified are typed optional
+        // by the SDK. Default size 0 (harmless - never trips the oversize check);
+        // leave lastModified undefined so the sweep treats it as too-new to
+        // delete (conservative - an object we can't date, we don't reclaim).
+        if (o.Key) {
+          objects.push({
+            key: o.Key,
+            size: o.Size ?? 0,
+            lastModified: o.LastModified,
+          });
+        }
+      }
+      continuationToken = page.IsTruncated
+        ? page.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
+    return objects;
+  }
+
+  /**
+   * Batch-delete objects by key, chunked to the S3 1000-per-request cap. A
+   * no-op on an empty list. Used by the GC sweep to reclaim orphans and evict
+   * oversize objects.
+   */
+  async deleteObjects(keys: string[]): Promise<void> {
+    for (let i = 0; i < keys.length; i += DELETE_BATCH_MAX) {
+      const chunk = keys.slice(i, i + DELETE_BATCH_MAX);
+      if (chunk.length === 0) continue;
+      await this.client.send(
+        new DeleteObjectsCommand({
+          Bucket: this.bucket,
+          Delete: { Objects: chunk.map((Key) => ({ Key })) },
+        }),
+      );
     }
   }
 

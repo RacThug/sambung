@@ -1,9 +1,16 @@
 import { Logger, Module, type OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PhotoGcSweeperService } from './photo-gc-sweeper.service';
 import { StorageService } from './storage.service';
 
+// PhotoGcSweeperService is the orphaned-photo GC cron (#69, ADR-0016). It lives
+// here, beside StorageService whose list/delete it drives, and reads `property`
+// directly via the global DbService (owner connection) - the same cross-tenant
+// shape as the M2 hold sweeper. @nestjs/schedule discovers its @Cron at runtime;
+// it stays injectable so tests drive sweep(now) directly (ScheduleModule is
+// skipped under NODE_ENV=test, so no tick lands mid-suite).
 @Module({
-  providers: [StorageService],
+  providers: [StorageService, PhotoGcSweeperService],
   exports: [StorageService],
 })
 export class StorageModule implements OnApplicationBootstrap {
