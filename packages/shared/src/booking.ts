@@ -27,6 +27,22 @@ export const bookingStatusSchema = z.enum([
 ]);
 export type BookingStatus = z.infer<typeof bookingStatusSchema>;
 
+/**
+ * The two statuses that hold a Unit's calendar against everyone else - the
+ * glossary's "Occupying" (CONTEXT.md), as one shared constant. This is the
+ * single source of truth for that set, referenced by every place that must agree
+ * on it: the availability read (scoped to exactly the statuses the
+ * `booking_no_overlap` exclusion constraint's WHERE covers), the booking write's
+ * in-transaction re-check, and the unified calendar's `?status=` filter (#49,
+ * ADR-0010) - the calendar names these two so a Cancelled/expired booking, which
+ * frees its nights, never draws a phantom bar.
+ *
+ * A subset of `bookingStatusSchema.options`, asserted by a test so the two can't
+ * drift; the web app may import this (never `packages/db`, invariant #1).
+ */
+export const OCCUPYING_STATUSES = ["pending_payment", "confirmed"] as const;
+export type OccupyingStatus = (typeof OCCUPYING_STATUSES)[number];
+
 /** booking.source - pinned to the `booking_source` pgEnum by a test (§8.6). */
 export const bookingSourceSchema = z.enum([
   "direct",

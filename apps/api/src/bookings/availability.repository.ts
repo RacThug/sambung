@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { booking, property, unit } from '@sambung/db';
-import type { BlockedRange } from '@sambung/shared';
+import { OCCUPYING_STATUSES, type BlockedRange } from '@sambung/shared';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
 
@@ -15,10 +15,11 @@ export interface UnitPricing {
 }
 
 // "Occupying" = a booking that holds the calendar against everyone else
-// (api-spec §1). Exactly the set inside the booking_no_overlap exclusion
+// (CONTEXT.md). Exactly the set inside the booking_no_overlap exclusion
 // constraint's WHERE - the read must scope to the same statuses the write's
-// correctness guard does, or the quote could disagree with the constraint.
-const OCCUPYING = ['pending_payment', 'confirmed'] as const;
+// correctness guard does, or the quote could disagree with the constraint. Now
+// the shared OCCUPYING_STATUSES: the availability read, the booking write's
+// re-check, and the calendar's ?status= filter all name one list (ADR-0010).
 
 // Dumb repository: Drizzle queries only, via the tenant-scoped (RLS) client. The
 // tenant is ambient (#76) and every query still filters by tenant_id anyway - the
@@ -88,7 +89,7 @@ export class AvailabilityRepository {
           and(
             eq(booking.unitId, unitId),
             eq(booking.tenantId, tenantId),
-            inArray(booking.status, OCCUPYING),
+            inArray(booking.status, OCCUPYING_STATUSES),
             sql`daterange(${booking.checkIn}, ${booking.checkOut}, '[)') && daterange(${from}::date, ${to}::date, '[)')`,
           ),
         )
