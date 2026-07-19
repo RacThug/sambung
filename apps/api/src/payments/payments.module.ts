@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { BookingsModule } from '../bookings/bookings.module';
 import { MidtransGateway } from './midtrans.gateway';
 import { PAYMENT_GATEWAY } from './payment-gateway';
+import { PaymentWebhookController } from './payment-webhook.controller';
+import { PaymentWebhookService } from './payment-webhook.service';
 import { PaymentsRepository } from './payments.repository';
 import { PaymentsService } from './payments.service';
 import { PublicPaymentsController } from './public-payments.controller';
@@ -23,10 +25,11 @@ import { PublicPaymentsController } from './public-payments.controller';
  */
 @Module({
   imports: [BookingsModule],
-  controllers: [PublicPaymentsController],
+  controllers: [PublicPaymentsController, PaymentWebhookController],
   providers: [
     PaymentsService,
     PaymentsRepository,
+    PaymentWebhookService,
     { provide: PAYMENT_GATEWAY, useClass: MidtransGateway },
   ],
 })

@@ -151,3 +151,10 @@ The external gateway that hosts the Guest's card entry and later reports the out
 sandbox for v1. The Guest is redirected out to it and back; Sambung stores only the session it hands us
 and, later, the event it sends. Nothing in the domain knows a Provider's shape beyond that boundary.
 _Avoid_: gateway, processor, PSP, Midtrans (as the general term)
+
+**Settlement**:
+The Provider's report that a Payment's money has arrived - delivered as an at-least-once webhook, and the
+only thing that turns a Hold into a confirmed booking. The Guest returning from the Provider's page is not
+a settlement; only the webhook is. A settlement that arrives after the Hold has lapsed records the money
+but never resurrects the booking - it is a refund to sort out, not a confirmation.
+_Avoid_: capture, callback, payment confirmation, notification
