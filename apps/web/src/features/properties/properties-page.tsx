@@ -8,6 +8,7 @@ import {
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { FormField } from "@/components/form-field";
 import { VerifiedBadge } from "./verified-badge";
 
 // Inventory home: list + create (FR-PROP-1, page-spec §4.4). Editing happens
@@ -159,18 +160,15 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
         <h2 id="create-property-title" className="text-lg font-semibold">
           New property
         </h2>
-        <label className="mt-4 block">
-          <span className="text-sm font-medium text-foreground">Name</span>
-          <input
+        <div className="mt-4">
+          <FormField
+            label="Name"
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-input px-3 py-2"
+            error={fieldErrors.name}
           />
-          {fieldErrors.name && (
-            <p className="mt-1 text-sm text-destructive">{fieldErrors.name}</p>
-          )}
-        </label>
+        </div>
         <div className="mt-6 flex justify-end gap-3">
           <button
             type="button"

@@ -9,6 +9,7 @@ import {
 import { api, ApiError } from "../../lib/api-client";
 import { setSession } from "../../lib/auth";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { FormField } from "@/components/form-field";
 import { Wordmark } from "@/components/wordmark";
 
 const route = getRouteApi("/register");
@@ -71,53 +72,32 @@ export function RegisterPage() {
       <p className="mt-1 text-muted-foreground">Create your owner account</p>
 
       <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
-        <label className="block">
-          <span className="text-sm font-medium text-foreground">
-            Business name
-          </span>
-          <input
-            type="text"
-            autoComplete="organization"
-            value={tenantName}
-            onChange={(e) => setTenantName(e.target.value)}
-            className="mt-1 w-full rounded-md border border-input px-3 py-2"
-          />
-          {fieldErrors.tenantName && (
-            <p className="mt-1 text-sm text-destructive">
-              {fieldErrors.tenantName}
-            </p>
-          )}
-        </label>
+        <FormField
+          label="Business name"
+          type="text"
+          autoComplete="organization"
+          value={tenantName}
+          onChange={(e) => setTenantName(e.target.value)}
+          error={fieldErrors.tenantName}
+        />
 
-        <label className="block">
-          <span className="text-sm font-medium text-foreground">Email</span>
-          <input
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded-md border border-input px-3 py-2"
-          />
-          {emailError && (
-            <p className="mt-1 text-sm text-destructive">{emailError}</p>
-          )}
-        </label>
+        <FormField
+          label="Email"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          error={emailError}
+        />
 
-        <label className="block">
-          <span className="text-sm font-medium text-foreground">Password</span>
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-md border border-input px-3 py-2"
-          />
-          {fieldErrors.password && (
-            <p className="mt-1 text-sm text-destructive">
-              {fieldErrors.password}
-            </p>
-          )}
-        </label>
+        <FormField
+          label="Password"
+          type="password"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          error={fieldErrors.password}
+        />
 
         {submitError && (
           <p className="text-sm text-destructive">{submitError}</p>
