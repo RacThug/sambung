@@ -1,4 +1,4 @@
-# ADR-0013: Rate limits are tiered, and a 429 follows the envelope
+# ADR-0014: Rate limits are tiered, and a 429 follows the envelope
 
 - **Date**: 2026-07-19
 - **Status**: Accepted
