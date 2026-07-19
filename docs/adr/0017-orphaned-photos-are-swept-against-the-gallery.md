@@ -1,4 +1,4 @@
-# ADR-0016: Orphaned photos are swept against the gallery, per tenant
+# ADR-0017: Orphaned photos are swept against the gallery, per tenant
 
 - **Status:** Accepted
 - **Date:** 2026-07-19

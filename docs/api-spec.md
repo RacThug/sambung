@@ -259,25 +259,25 @@ Always 200 for well-formed, verified duplicates - providers retry non-2xx foreve
 
 ## 7. Channel sync - M4 (boss fight #3, #38)
 
-### 7.1 `POST /units/:id/channels` → 201 (auth)
-Body: `{ channel: "airbnb" | "booking_com" | "vrbo", importIcalUrl }` (https URL, validated + fetched once immediately as a smoke test → `lastStatus`). One connection per (unit, channel) → 409 duplicate.
+### 7.1 `POST /units/:id/channels` → 201 (auth) - **Built** (#55, ADR-0016)
+Body: `{ channel: "airbnb" | "booking_com" | "vrbo", importIcalUrl }` (https URL, validated at the boundary by `createChannelConnectionRequestSchema` + fetched once immediately as a smoke test → `lastStatus`; a feed that's down still connects, with `error` status, so the failure surfaces instead of hiding). One connection per (unit, channel) → `409 channel_already_connected` (ADR-0012 code; the app pre-check and the `channel_connection_unit_channel_uniq` constraint are indistinguishable, §5.3). Unknown/foreign unit → 404. The outbound fetch is a `IcalFetcher` port (fake bound in tests, §8.5), and refuses private/loopback hosts (SSRF hygiene).
 
-### 7.2 `GET /units/:id/channels` → 200 (auth)
-Connections with `lastSyncedAt, lastStatus: never|ok|error, lastError?, openConflicts: number` (FR-SYNC-3 - failures surface, never silent).
+### 7.2 `GET /units/:id/channels` → 200 (auth) - **Built** (#55)
+Connections with `lastSyncedAt, lastStatus: never|ok|error, lastError?` (FR-SYNC-3 - failures surface, never silent). **`openConflicts` is deferred**: the sync-conflict inbox belongs to the iCal IMPORT pipeline (#38, boss fight #3, §7.5), which is a separate M4 issue - there is no `sync_conflict` table to count yet, and a hard-coded 0 would be a field with no source. It joins this shape when the import side lands.
 
 ### 7.3 `POST /channels/:id/sync` → 202 (auth)
 Queues an immediate sync ("Sync now"); response `{ queued: true }`. Same pipeline as the 30-min cron (architecture flow B): healthy parse → per-VEVENT savepointed upserts by `externalUid` → absent-UID cancellation **only on a healthy feed** → conflicts recorded, never crash the cycle.
 
-### 7.4 `DELETE /channels/:id` → 204 (auth)
-Disconnects. Already-imported bookings are **kept** (they may reflect real stays) but stop being reconciled; the response body lists how many remain so the owner can clean up deliberately. Safer than auto-cancelling reality.
+### 7.4 `DELETE /channels/:id` → 200 (auth) - **Built** (#55)
+Disconnects. Already-imported bookings are **kept** (they may reflect real stays) but stop being reconciled - the `booking.channel_connection_id` FK is `set null`, so they survive with their source/status intact; the response body `{ importedBookingsKept }` counts them (measured before the delete) so the owner can clean up deliberately. Safer than auto-cancelling reality. Returns 200 (not 204) because it carries that body. Unknown/foreign id → 404.
 
 ### 7.5 Conflict inbox (#38, db-design §4.8)
 - `GET /sync-conflicts?status=open&propertyId?` → 200: `{ id, unitId, channel, externalUid, stay: {from,to}, firstDetectedAt, lastSeenAt, status }` - an imported VEVENT the exclusion constraint refused (a real-world double-sell).
 - `POST /sync-conflicts/:id/dismiss` → 200 (`open → dismissed`; e.g. the OTA side was cancelled out-of-band).
 - There is **no "resolve" endpoint**: resolution = cancel the blocking booking via §5.6, and the next sync cycle imports cleanly and auto-closes the conflict. The API never auto-cancels a confirmed booking (ADR 2026-07-16).
 
-### 7.6 `GET /public/units/:id/calendar.ics` → 200 - export feed (FR-SYNC-2)
-`Content-Type: text/calendar`. One all-day `VEVENT` per **confirmed occupying booking** (direct + imported + manual): `UID` = booking id, `DTSTART`/`DTEND` = half-open dates (DTEND exclusive - matches iCal semantics natively), `SUMMARY` = `"Unavailable (Sambung)"` - **no guest names, no prices** (this URL is pasted into OTAs). Unguessable unit UUID is the v1 access control; a per-unit feed token is the noted hardening step if the repo goes public-demo.
+### 7.6 `GET /public/units/:id/calendar.ics` → 200 - export feed (FR-SYNC-2) - **Built** (#55, ADR-0016)
+`Content-Type: text/calendar`. One all-day `VEVENT` per **confirmed occupying booking** (direct + imported + manual; `status = 'confirmed'`, so a transient hold is excluded): `UID` = booking id, `DTSTART`/`DTEND` = half-open dates (DTEND exclusive - matches iCal semantics natively), `SUMMARY` = `"Unavailable (Sambung)"` - **no guest names, no prices** (this URL is pasted into OTAs; the serializer's input type has no PII field, so this is a type guarantee, not a convention). No auth: the tenant is resolved from the unit id via `PublicScope.enterFromUnitId` and the read runs under RLS (invariant #2 held structurally). Deliberately **archive-blind** - an archived Unit with bookings keeps serving its calendar, or the subscribed OTA would see free nights and double-book (ADR-0016). Unknown unit → 404. Unguessable unit UUID is the v1 access control; a per-unit feed token is the noted hardening step if the repo goes public-demo.
 
 ---
 

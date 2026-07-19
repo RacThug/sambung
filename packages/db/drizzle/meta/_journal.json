@@ -64,6 +64,13 @@
       "when": 1784466847173,
       "tag": "0008_property_deposit_pct",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784472708969,
+      "tag": "0009_channel_connection_unique",
+      "breakpoints": true
     }
   ]
 }

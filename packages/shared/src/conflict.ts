@@ -53,6 +53,12 @@ export const conflictCodeSchema = z.enum([
   // no longer a live hold - already confirmed/cancelled/expired, or its hold
   // lapsed (swept to `expired` before the check). Carries the blocking `status`.
   "booking_not_payable",
+  // connecting a channel (#55, api-spec §7.1): a connection for this
+  // (unit, channel) already exists. Reached by TWO layers - an app pre-check and
+  // the `channel_connection_unit_channel_uniq` constraint that backstops a race -
+  // so both throw the same factory (§5.3). No detail: the unit and channel are
+  // already in the request, so the web has everything it needs to render copy.
+  "channel_already_connected",
 ]);
 export type ConflictCode = z.infer<typeof conflictCodeSchema>;
 
@@ -96,6 +102,10 @@ const bookingNotPayableBodySchema = z.object({
   status: bookingStatusSchema,
 });
 
+const channelAlreadyConnectedBodySchema = z.object({
+  code: z.literal("channel_already_connected"),
+});
+
 export const conflictBodySchema = z.discriminatedUnion("code", [
   emailTakenBodySchema,
   unitNameTakenBodySchema,
@@ -104,6 +114,7 @@ export const conflictBodySchema = z.discriminatedUnion("code", [
   datesUnavailableBodySchema,
   bookingNotCancellableBodySchema,
   bookingNotPayableBodySchema,
+  channelAlreadyConnectedBodySchema,
 ]);
 export type ConflictBody = z.infer<typeof conflictBodySchema>;
 

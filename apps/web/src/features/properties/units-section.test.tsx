@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { clearSession, setSession } from "../../lib/auth";
 import {
   authResponse,
@@ -49,7 +55,10 @@ describe("units section (§4.5)", () => {
     ]);
     renderAt(editUrl);
 
-    expect(await screen.findByText("Garden Room 1")).toBeInTheDocument();
+    // The channels section below also lists each unit by name, so scope the
+    // unit-list assertions to the units table.
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Garden Room 1")).toBeInTheDocument();
     expect(screen.getByText("Rp 1.200.000")).toBeInTheDocument();
     expect(screen.getByText("Rp 3.500.000")).toBeInTheDocument();
     expect(screen.getByText("2 nights")).toBeInTheDocument();
@@ -310,8 +319,11 @@ describe("units section (§4.5)", () => {
     ]);
     renderAt(editUrl);
 
-    expect(await screen.findByText("Garden Room 1")).toBeInTheDocument();
-    expect(screen.getByText("Archived")).toBeInTheDocument();
+    // Scope to the units table: the channels panel also renders the unit name
+    // and its own "Archived" badge.
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Garden Room 1")).toBeInTheDocument();
+    expect(within(table).getByText("Archived")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Unarchive" }),
     ).toBeInTheDocument();
@@ -349,7 +361,9 @@ describe("units section (§4.5)", () => {
     );
     renderAt(editUrl);
 
-    expect(await screen.findByText("Garden Room 1")).toBeInTheDocument();
+    // Scope to the units table (the channels panel also lists the unit name).
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Garden Room 1")).toBeInTheDocument();
     // Effectively archived despite its own flag being null.
     expect(screen.getByText("Property archived")).toBeInTheDocument();
     // No per-unit actions and no add row while the property is retired.

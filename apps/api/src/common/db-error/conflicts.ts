@@ -134,3 +134,19 @@ export const bookingNotCancellable = (status: BookingStatus): HttpException =>
  */
 export const bookingNotPayable = (status: BookingStatus): HttpException =>
   conflict('booking_not_payable', 'Booking cannot be paid', { status });
+
+/**
+ * A channel for this (unit, channel) is already connected (api-spec §7.1, #55).
+ * THE factory pattern's job: two layers reach it - ChannelsService pre-checks and
+ * throws this for a friendly answer with no wasted smoke fetch; and if a second
+ * connect races between that check and the INSERT, the
+ * `channel_connection_unit_channel_uniq` constraint fires and the interceptor maps
+ * it here (see db-error.map.ts). §5.3 requires the two to be indistinguishable -
+ * one factory, thrown from both places. No detail: the unit and channel are
+ * already in the request, so the web has all it needs to compose copy.
+ */
+export const channelAlreadyConnected = (): HttpException =>
+  conflict(
+    'channel_already_connected',
+    'This channel is already connected to this unit',
+  );

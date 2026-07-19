@@ -1,6 +1,11 @@
 import { HttpException } from '@nestjs/common';
 import { pgError } from '@sambung/db';
-import { datesUnavailable, emailTaken, unitNameTaken } from './conflicts';
+import {
+  channelAlreadyConnected,
+  datesUnavailable,
+  emailTaken,
+  unitNameTaken,
+} from './conflicts';
 
 /**
  * Constraint name → the response it means. The database already names the
@@ -45,6 +50,9 @@ const MAP = new Map<string, () => HttpException>([
   // max_guests: the service re-check catches those BEFORE the INSERT, so nothing
   // with those problems ever reaches the constraint (§5.3).
   ['booking_no_overlap', () => datesUnavailable(['overlap'])],
+  // A lost connect race (#55): the (unit, channel) pair is already taken. Maps to
+  // the SAME 409 the app pre-check throws, so the two are indistinguishable (§5.3).
+  ['channel_connection_unit_channel_uniq', channelAlreadyConnected],
 ]);
 
 /**

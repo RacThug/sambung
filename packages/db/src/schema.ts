@@ -251,6 +251,13 @@ export const channelConnection = pgTable(
       columns: [t.unitId, t.tenantId],
       foreignColumns: [unit.id, unit.tenantId],
     }).onDelete("cascade"),
+    // One connection per (unit, channel) - api-spec §7.1 (#55). A Unit is ONE
+    // sellable thing (ADR-0001), so its Airbnb calendar has exactly one feed;
+    // a second would be the owner wiring the same OTA in twice. THE guard: an
+    // app-level pre-check races (two connects in flight both pass it), so this
+    // constraint is what actually enforces it, mapped to `channel_already_connected`
+    // so a lost race and the pre-check answer identically (api-spec §5.3).
+    unique("channel_connection_unit_channel_uniq").on(t.unitId, t.channel),
   ],
 );
 
