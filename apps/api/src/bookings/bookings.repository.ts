@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
-import { booking, unit } from '@sambung/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { booking, payment, unit } from '@sambung/db';
+import {
+  OCCUPYING_STATUSES,
+  type BookingSource,
+  type BookingStatus,
+} from '@sambung/shared';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
 import { HOLD_TTL_MINUTES } from './booking.constants';
@@ -28,6 +33,40 @@ export interface InsertedHold {
   holdExpiresAt: Date | null;
   totalPriceIdr: bigint | null;
 }
+
+/** Everything the owner-side confirmed INSERT needs (#50, ADR-0011). Unlike the
+ * hold, guest fields and price are all NULLABLE here: a Block carries no guest and
+ * no price; a walk-in may omit contact. The service resolves each per source. */
+export interface ConfirmedBookingInput {
+  tenantId: string;
+  unitId: string;
+  source: BookingSource;
+  checkIn: string;
+  checkOut: string;
+  guestName: string | null;
+  guestPhone: string | null;
+  guestEmail: string | null;
+  guestCount: number | null;
+  totalPriceIdr: bigint | null;
+}
+
+/** What the confirmed INSERT hands back (echoed into the 201). */
+export interface InsertedConfirmed {
+  id: string;
+  status: string;
+  source: BookingSource;
+  checkIn: string;
+  checkOut: string;
+  totalPriceIdr: bigint | null;
+}
+
+/** The outcome of an FSM-guarded cancel. `cancelled` = the guarded UPDATE matched;
+ * `not_found` = no such booking for this tenant (→ 404); `terminal` = it exists but
+ * is already cancelled/expired, so the FSM refuses (→ 409, carrying which state). */
+export type CancelOutcome =
+  | { kind: 'cancelled' }
+  | { kind: 'not_found' }
+  | { kind: 'terminal'; status: BookingStatus };
 
 /**
  * The write half of the booking domain (boss fight #1). Dumb by design: Drizzle
@@ -135,5 +174,101 @@ export class BookingsRepository {
         }),
     );
     return rows[0];
+  }
+
+  /**
+   * Insert a `confirmed` owner-side booking - a Block or a walk-in (#50). Born
+   * confirmed with no hold (`hold_expires_at` NULL). Like the hold, this is the
+   * statement `booking_no_overlap` arbitrates: a racing overlap throws 23P01 →
+   * the same 409 the re-check gives. Asserts a transaction for that reason (and so
+   * the opportunistic sweep before it is visible to the constraint check).
+   */
+  async insertConfirmed(
+    input: ConfirmedBookingInput,
+  ): Promise<InsertedConfirmed> {
+    this.db.assertInTransaction('BookingsRepository.insertConfirmed');
+    const rows = await this.db.run((tx) =>
+      tx
+        .insert(booking)
+        .values({
+          tenantId: input.tenantId,
+          unitId: input.unitId,
+          source: input.source,
+          status: 'confirmed',
+          checkIn: input.checkIn,
+          checkOut: input.checkOut,
+          guestName: input.guestName,
+          guestPhone: input.guestPhone,
+          guestEmail: input.guestEmail,
+          guestCount: input.guestCount,
+          totalPriceIdr: input.totalPriceIdr,
+          holdExpiresAt: null,
+        })
+        .returning({
+          id: booking.id,
+          status: booking.status,
+          source: booking.source,
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          totalPriceIdr: booking.totalPriceIdr,
+        }),
+    );
+    return rows[0];
+  }
+
+  /**
+   * FSM-guarded cancel (#50, api-spec §5.6). The transition lives in the WHERE:
+   * only an OCCUPYING booking flips to `cancelled`, so a second cancel or an
+   * expired booking matches zero rows - the FSM is enforced atomically, no
+   * read-modify-write race. Freeing the dates needs nothing more: `cancelled`
+   * drops out of the exclusion constraint's partial WHERE the instant it commits.
+   *
+   * On zero rows a follow-up existence check (same transaction, same tenant scope)
+   * decides 404 vs 409 - unknown/cross-tenant id is invisible under RLS AND fails
+   * the tenant_id WHERE, so it reads as `not_found` (404-over-403).
+   */
+  async cancelById(id: string): Promise<CancelOutcome> {
+    const tenantId = this.tenant.tenantId;
+    return this.db.run(async (tx) => {
+      const updated = await tx
+        .update(booking)
+        .set({ status: 'cancelled' })
+        .where(
+          and(
+            eq(booking.id, id),
+            eq(booking.tenantId, tenantId),
+            inArray(booking.status, [...OCCUPYING_STATUSES]),
+          ),
+        )
+        .returning({ id: booking.id });
+      if (updated.length > 0) return { kind: 'cancelled' };
+
+      const existing = await tx
+        .select({ status: booking.status })
+        .from(booking)
+        .where(and(eq(booking.id, id), eq(booking.tenantId, tenantId)))
+        .limit(1);
+      if (existing.length === 0) return { kind: 'not_found' };
+      return { kind: 'terminal', status: existing[0].status };
+    });
+  }
+
+  /**
+   * Whether this booking has a settled payment, deciding cancel's `refund` field.
+   * `payment` is tenant-scoped by RLS through its booking (no `tenant_id` of its
+   * own), so this is safe on the owner connection. At M2 there are no payment rows,
+   * so it is always false; it is wired now so M3's paid-cancel path is a no-op here.
+   */
+  async hasPaidPayment(bookingId: string): Promise<boolean> {
+    const rows = await this.db.run((tx) =>
+      tx
+        .select({ id: payment.id })
+        .from(payment)
+        .where(
+          and(eq(payment.bookingId, bookingId), eq(payment.status, 'paid')),
+        )
+        .limit(1),
+    );
+    return rows.length > 0;
   }
 }

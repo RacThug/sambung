@@ -89,8 +89,8 @@ Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · *
 
 ### 4.3 Booking detail - `/app/bookings/:id` - **M2** (payment panel: M3)
 - **Purpose:** everything about one reservation: guest, dates, source, price, payment status.
-- **Data:** api #18 detail (or row cache) + payment fields (M3).
-- **Actions:** **Cancel** (api #21) with confirm dialog - explains dates free instantly; refunds are manual in v1 · for conflicts pointing here: "this booking blocks an OTA import" banner (M4, from api #32 lookup).
+- **Data:** api #35 (`GET /bookings/:id`, full disclosure - guest phone/email + display names) - deep-linkable, so it fetches its own row rather than depending on a warm calendar cache; payment fields join M3.
+- **Actions:** **Cancel** (api #21) with confirm dialog - explains dates free instantly; refunds are manual in v1 (response `refund` field) · for conflicts pointing here: "this booking blocks an OTA import" banner (M4, from api #32 lookup).
 - **States:** per-status body (confirmed / pending + hold countdown / cancelled / expired) · cancel 409 (already terminal - refresh) · 404.
 
 ### 4.4 Properties - `/app/properties` - **Built** API (list), page **M1**
@@ -130,7 +130,7 @@ Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · *
 | 6 | §4.7 settings (M5) + `/invite/:token` |
 | 7-16 | §4.4 properties list · §4.5 property edit |
 | 17 | (folded into §4.1 via #18; per-unit calendar view optional later) |
-| 18-21 | §4.1 calendar · §4.2 reservations · §4.3 detail |
+| 18-21, 35 | §4.1 calendar · §4.2 reservations · §4.3 detail (#35 = the deep-linkable single-booking read) |
 | 22-24 | §3.1 property page · §3.2 checkout |
 | 25-26 | §3.3 confirmation · §3.2 checkout |
 | 27 | no page - machine consumer (payment provider) |

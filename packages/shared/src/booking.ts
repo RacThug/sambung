@@ -66,11 +66,17 @@ export type BookingSource = z.infer<typeof bookingSourceSchema>;
  *
  * Derived from the read's set (spread), so a future read reason flows in
  * automatically and the two vocabularies cannot silently diverge.
+ *
+ * `archived` is the OWNER-side twin of `unavailable` (#50, ADR-0011): the guest
+ * wire hides the word "archived" behind `unavailable`, but the owner's own write
+ * (`POST /bookings`) may name it plainly - the owner sees archived inventory as
+ * history, so refusing their block/walk-in on it says exactly why.
  */
 export const bookingRefusalReasonSchema = z.enum([
   ...availabilityReasonSchema.options,
   "max_guests",
   "unavailable",
+  "archived",
 ]);
 export type BookingRefusalReason = z.infer<typeof bookingRefusalReasonSchema>;
 
@@ -148,3 +154,94 @@ export const createBookingResponseSchema = z.object({
   nights: z.number().int().positive(),
 });
 export type CreateBookingResponse = z.infer<typeof createBookingResponseSchema>;
+
+/**
+ * The OWNER-side create body: `POST /bookings` (auth, api-spec §5.4, #50). Two
+ * shapes discriminated on `source` - the owner is an authority, not a customer
+ * (ADR-0011), so the write shares the guest funnel's overlap chokepoint but not
+ * its guest-protection policy:
+ *
+ * - `manual_block` (a **Block**): just the Unit + dates. No guest, no price - it
+ *   Occupies the calendar but sells nothing.
+ * - `direct` (a **walk-in**): `guestName` is REQUIRED (AC #2); contact is optional
+ *   (the booking is already confirmed, so there's no WhatsApp step to feed);
+ *   `totalPriceIdr` is optional - omitted, the server computes `base x nights`;
+ *   provided, it is the owner's offline / negotiated rate.
+ *
+ * `guestCount` carries no `max_guests` ceiling here (the server skips that check
+ * for the owner) - the `.max(64)` is int-overflow sanity only, same as the public
+ * body. Dates reuse the availability window semantics via a shared superRefine
+ * (discriminatedUnion members must be plain objects, so the cross-field checks
+ * live on the union, not each branch).
+ */
+const stayDatesShape = {
+  unitId: z.string().uuid(),
+  checkIn: z.string().date(),
+  checkOut: z.string().date(),
+};
+
+const manualBlockBodySchema = z.object({
+  source: z.literal("manual_block"),
+  ...stayDatesShape,
+});
+
+const walkInBodySchema = z.object({
+  source: z.literal("direct"),
+  ...stayDatesShape,
+  guestName: z.string().trim().min(1).max(120),
+  guestPhone: guestPhoneSchema.optional(),
+  guestEmail: z.string().trim().toLowerCase().email().max(254).optional(),
+  guestCount: z.number().int().min(1).max(64).optional(),
+  totalPriceIdr: rupiahSchema.optional(),
+});
+
+export const createOwnerBookingRequestSchema = z
+  .discriminatedUnion("source", [manualBlockBodySchema, walkInBodySchema])
+  .superRefine((b, ctx) => {
+    if (!(b.checkIn < b.checkOut)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "checkIn must be before checkOut",
+        path: ["checkOut"],
+      });
+    } else if (countNights(b.checkIn, b.checkOut) > MAX_AVAILABILITY_NIGHTS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `stay must be at most ${MAX_AVAILABILITY_NIGHTS} nights`,
+        path: ["checkOut"],
+      });
+    }
+  });
+export type CreateOwnerBookingRequest = z.infer<
+  typeof createOwnerBookingRequestSchema
+>;
+
+/**
+ * The 201 for an owner create. Always born `confirmed` with no hold. `totalPriceIdr`
+ * is nullable: a Block carries none. `bookingId` lets the UI jump straight to the
+ * new booking's detail (§5.7).
+ */
+export const createOwnerBookingResponseSchema = z.object({
+  bookingId: z.string().uuid(),
+  status: z.literal("confirmed"),
+  source: bookingSourceSchema,
+  checkIn: z.string().date(),
+  checkOut: z.string().date(),
+  totalPriceIdr: rupiahSchema.nullable(),
+  nights: z.number().int().positive(),
+});
+export type CreateOwnerBookingResponse = z.infer<
+  typeof createOwnerBookingResponseSchema
+>;
+
+/**
+ * The 200 for `POST /bookings/:id/cancel` (api-spec §5.6, #50). `refund` is
+ * `"manual"` when a paid payment exists (v1 has no refund API, so the owner
+ * settles out-of-band), else `"none"`. At M2 there are no payments, so it is
+ * always `"none"`; the field is wired now so M3 doesn't retrofit the shape.
+ */
+export const cancelBookingResponseSchema = z.object({
+  status: z.literal("cancelled"),
+  refund: z.enum(["none", "manual"]),
+});
+export type CancelBookingResponse = z.infer<typeof cancelBookingResponseSchema>;

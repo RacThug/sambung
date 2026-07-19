@@ -1,11 +1,14 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import {
+  bookingDetailSchema,
   toRupiah,
+  type BookingDetail,
   type BookingRow,
   type ListBookingsQuery,
 } from '@sambung/shared';
 import {
   BookingsQueryRepository,
+  type BookingDetailRow,
   type BookingListRow,
 } from './bookings-query.repository';
 
@@ -32,6 +35,17 @@ export class BookingsQueryService {
     return rows.map((row) => this.toRow(row));
   }
 
+  /** One booking in full for the detail view (api-spec §5.7, #50). 404 when the
+   * id is unknown to this tenant - the repository's WHERE + RLS make a
+   * cross-tenant id indistinguishable from a nonexistent one (404-over-403). */
+  async getById(id: string): Promise<BookingDetail> {
+    const row = await this.repo.getById(id);
+    if (!row) {
+      throw new NotFoundException('Booking not found');
+    }
+    return this.toDetail(row);
+  }
+
   private toRow(row: BookingListRow): BookingRow {
     return {
       id: row.id,
@@ -49,5 +63,17 @@ export class BookingsQueryService {
       totalPriceIdr:
         row.totalPriceIdr === null ? null : toRupiah(row.totalPriceIdr),
     };
+  }
+
+  private toDetail(row: BookingDetailRow): BookingDetail {
+    // Parse on the way out so the detail payload cannot silently widen.
+    return bookingDetailSchema.parse({
+      ...this.toRow(row),
+      guestPhone: row.guestPhone,
+      guestEmail: row.guestEmail,
+      propertyId: row.propertyId,
+      propertyName: row.propertyName,
+      unitName: row.unitName,
+    });
   }
 }

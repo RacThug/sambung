@@ -91,3 +91,20 @@ export const bookingRowSchema = z.object({
   totalPriceIdr: rupiahSchema.nullable(),
 });
 export type BookingRow = z.infer<typeof bookingRowSchema>;
+
+/**
+ * One booking in FULL, for the detail view `GET /bookings/:id` (api-spec §5.7,
+ * #50). A superset of the list row: it adds the guest's contact and the display
+ * names the page needs, because the detail read is the one place the owner
+ * inspects a single reservation whole. Owner disclosure - the opposite of the
+ * public read's clip (ADR-0010). `guestPhone`/`guestEmail` are nullable (a Block
+ * has no guest; a walk-in may omit contact). Payment fields join at M3.
+ */
+export const bookingDetailSchema = bookingRowSchema.extend({
+  guestPhone: z.string().nullable(),
+  guestEmail: z.string().nullable(),
+  propertyId: z.string().uuid(),
+  propertyName: z.string(),
+  unitName: z.string(),
+});
+export type BookingDetail = z.infer<typeof bookingDetailSchema>;
