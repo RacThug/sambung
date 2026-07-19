@@ -210,6 +210,25 @@ describe("buildCalendar", () => {
     expect(groups.map((g) => g.property.name)).toEqual(["Alpha", "Beta"]);
   });
 
+  it("narrows the grid to a single property when propertyId is set", () => {
+    // Regression: the filter must drop OTHER properties' rows, not just their
+    // bookings - otherwise a filtered view draws them as misleading empty rows.
+    const groups = buildCalendar({
+      properties: [
+        prop({ id: "pA", name: "Alpha" }),
+        prop({ id: "pB", name: "Beta" }),
+      ],
+      units: [
+        unit({ id: "uA", propertyId: "pA", name: "a" }),
+        unit({ id: "uB", propertyId: "pB", name: "b" }),
+      ],
+      bookings: [],
+      propertyId: "pA",
+    });
+    expect(groups.map((g) => g.property.id)).toEqual(["pA"]);
+    expect(groups.flatMap((g) => g.rows.map((r) => r.unit.id))).toEqual(["uA"]);
+  });
+
   it("groups every booking under its unit's row", () => {
     const groups = buildCalendar({
       properties: [prop()],
