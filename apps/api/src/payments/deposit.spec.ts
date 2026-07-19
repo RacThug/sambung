@@ -1,3 +1,4 @@
+import { depositAmountIdr as sharedDepositAmountIdr } from '@sambung/shared';
 import { depositAmountIdr } from './deposit';
 
 /**
@@ -30,5 +31,20 @@ describe('depositAmountIdr', () => {
 
   it('is zero only when the total is zero', () => {
     expect(depositAmountIdr(0n, 100)).toBe(0n);
+  });
+
+  // The web previews the deposit with a NUMBER-domain twin (@sambung/shared); it
+  // must equal this BigInt authority so the guest sees exactly what gets charged.
+  // Pinned here because apps/api is the one place that can import both.
+  it('agrees with the shared number-domain twin across the domain', () => {
+    const totals = [0n, 1n, 999n, 4_000_001n, 1_000_000_000n * 366n];
+    const pcts = [1, 25, 30, 50, 99, 100];
+    for (const total of totals) {
+      for (const pct of pcts) {
+        expect(BigInt(sharedDepositAmountIdr(Number(total), pct))).toBe(
+          depositAmountIdr(total, pct),
+        );
+      }
+    }
   });
 });

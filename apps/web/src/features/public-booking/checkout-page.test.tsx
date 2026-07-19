@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { json, renderAt, stubFetch } from "../../test-utils";
+import {
+  json,
+  publicPropertyResponse,
+  renderAt,
+  stubFetch,
+} from "../../test-utils";
 
 /**
  * Checkout `/p/:slug/book` (page-spec §3.2, #52) - the guest details form, then
@@ -38,6 +43,12 @@ const availableQuote = {
   blockedRanges: [],
 };
 
+/** The checkout also fetches the property for the Deposit % (ADR-0015). */
+const propertyStub = (depositPct = 100) => ({
+  "GET /api/public/properties/villa": () =>
+    json(publicPropertyResponse({ slug: "villa", depositPct })),
+});
+
 /** Fill the required guest fields with values the shared schema accepts. */
 function fillForm() {
   fireEvent.change(screen.getByLabelText(/full name/i), {
@@ -51,6 +62,7 @@ function fillForm() {
 describe("checkout page", () => {
   it("creates the booking, opens the pay session, and redirects to the Provider", async () => {
     const calls = stubFetch({
+      ...propertyStub(),
       [`GET /api/public/units/${UNIT_ID}/availability`]: () =>
         json(availableQuote),
       "POST /api/public/bookings": () =>
@@ -92,8 +104,25 @@ describe("checkout page", () => {
     expect(calls).toContain(`POST /api/public/bookings/${BOOKING_ID}/pay`);
   });
 
+  it("previews the deposit split for a partial-deposit property", async () => {
+    stubFetch({
+      ...propertyStub(30), // Canggu-style: 30% online, balance at the property
+      [`GET /api/public/units/${UNIT_ID}/availability`]: () =>
+        json(availableQuote),
+    });
+
+    renderAt(`/p/villa/book?unit=${UNIT_ID}&from=2026-09-10&to=2026-09-13`);
+
+    // 30% of Rp 3.600.000 = Rp 1.080.000 now; the rest at the property.
+    expect(await screen.findByText(/deposit due now/i)).toBeInTheDocument();
+    expect(screen.getByText(/Rp 1\.080\.000/)).toBeInTheDocument();
+    expect(screen.getByText(/\(30%\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Rp 2\.520\.000 due at the property/i)).toBeInTheDocument();
+  });
+
   it("shows the just-taken copy when the dates were booked before submit (409)", async () => {
     stubFetch({
+      ...propertyStub(),
       [`GET /api/public/units/${UNIT_ID}/availability`]: () =>
         json(availableQuote),
       "POST /api/public/bookings": () =>
@@ -117,6 +146,7 @@ describe("checkout page", () => {
 
   it("sends the guest back to pick dates when the hold lapsed before pay (409)", async () => {
     stubFetch({
+      ...propertyStub(),
       [`GET /api/public/units/${UNIT_ID}/availability`]: () =>
         json(availableQuote),
       "POST /api/public/bookings": () =>

@@ -28,6 +28,18 @@ const clearableText = (max: number) =>
 export const DEFAULT_DEPOSIT_PCT = 100;
 export const depositPctSchema = z.number().int().min(1).max(100);
 
+/**
+ * The Deposit amount for a stay: `floor(total × pct / 100)` (ADR-0015). The
+ * NUMBER-domain twin of the API's BigInt `depositAmountIdr` (apps/api payments),
+ * so the web can preview what will be charged now. Exact - and equal to the
+ * server's BigInt result - because a total (≤ the nightly-rate cap × 366 nights)
+ * times 100 stays far under Number.MAX_SAFE_INTEGER, so the floor never loses a
+ * rupiah. A test in apps/api pins the two implementations together.
+ */
+export function depositAmountIdr(totalIdr: number, pct: number): number {
+  return Math.floor((totalIdr * pct) / 100);
+}
+
 export const createPropertyRequestSchema = z.object({
   name: z.string().trim().min(2).max(160),
   address: clearableText(400).optional(),

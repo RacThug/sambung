@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { getRouteApi, Link } from "@tanstack/react-router";
 import {
   createBookingRequestSchema,
   countNights,
+  depositAmountIdr,
   type CreateBookingRequest,
   type CreateBookingResponse,
   type PaymentSessionResponse,
+  type PublicPropertyResponse,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { conflictOf, describeConflict } from "../../lib/conflict";
@@ -63,6 +65,15 @@ function Checkout({
   const stay = useMemo(() => ({ from, to }), [from, to]);
   const { query } = useQuote(unitId, stay, 0);
   const quote = query.data;
+
+  // The property carries the Deposit % (ADR-0015). Same cache key as the property
+  // page, so arriving from it is a hit. Advisory: a miss just hides the deposit
+  // line - it never blocks checkout.
+  const property = useQuery({
+    queryKey: ["public-property", slug],
+    queryFn: () => api.get<PublicPropertyResponse>(`/public/properties/${slug}`),
+    staleTime: 60_000,
+  }).data;
 
   const [form, setForm] = useState({
     guestName: "",
@@ -162,7 +173,13 @@ function Checkout({
 
   return (
     <Shell slug={slug} unit={unitId} from={from} to={to}>
-      <StaySummary from={from} to={to} nights={nights} quote={quote} />
+      <StaySummary
+        from={from}
+        to={to}
+        nights={nights}
+        quote={quote}
+        depositPct={property?.depositPct}
+      />
 
       {/* The dates were taken between the picker and here - the re-quote caught it
           (api-spec §5.3). Offer the way back rather than a dead submit. */}
@@ -314,18 +331,30 @@ function PaymentRetry({
   );
 }
 
-/** The stay + fresh price (page-spec §3.2 quote summary). */
+/** The stay + fresh price (page-spec §3.2 quote summary). When the property takes
+ * a partial Deposit, show what's due now vs at the property, so the guest isn't
+ * surprised by a smaller charge on the Provider page (ADR-0015). */
 function StaySummary({
   from,
   to,
   nights,
   quote,
+  depositPct,
 }: {
   from: string;
   to: string;
   nights: number;
   quote: { available: boolean; totalPriceIdr: number } | undefined;
+  depositPct: number | undefined;
 }) {
+  const total = quote?.totalPriceIdr;
+  // Only a real partial deposit (1-99%) gets a split; 100% or unknown just shows
+  // the total. The amount mirrors the server's exactly (shared depositAmountIdr).
+  const deposit =
+    total != null && depositPct != null && depositPct < 100
+      ? depositAmountIdr(total, depositPct)
+      : null;
+
   return (
     <div className="mt-6 rounded-lg border border-border bg-card p-5">
       <p className="text-sm text-muted-foreground">Your stay</p>
@@ -335,10 +364,21 @@ function StaySummary({
       <p className="text-sm text-muted-foreground">
         {nights} {nights === 1 ? "night" : "nights"}
       </p>
-      {quote?.available && (
+      {quote?.available && total != null && (
         <p className="mt-3 text-lg font-semibold text-foreground">
-          {formatIdr(quote.totalPriceIdr)}
+          {formatIdr(total)}
         </p>
+      )}
+      {quote?.available && deposit != null && total != null && (
+        <div className="mt-2 rounded-md bg-muted px-3 py-2 text-sm">
+          <p className="font-medium text-foreground">
+            Deposit due now: {formatIdr(deposit)}{" "}
+            <span className="text-muted-foreground">({depositPct}%)</span>
+          </p>
+          <p className="text-muted-foreground">
+            Balance {formatIdr(total - deposit)} due at the property
+          </p>
+        </div>
       )}
     </div>
   );

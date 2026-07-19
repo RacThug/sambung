@@ -20,6 +20,7 @@
  */
 import { z } from "zod";
 import { rupiahSchema } from "./money";
+import { depositPctSchema } from "./property";
 
 export const publicUnitSchema = z.object({
   /**
@@ -54,6 +55,13 @@ export const publicPropertyResponseSchema = z.object({
    * Visitor supplies. See api-spec §4.7.
    */
   photos: z.array(z.object({ url: z.string() })),
+  /**
+   * The Deposit % (ADR-0015): NOT PII and the guest sees it at payment anyway, so
+   * the checkout can preview "deposit due now" before the redirect instead of the
+   * guest meeting a smaller charge cold on the Provider page. A payment term, like
+   * the unit price beside it.
+   */
+  depositPct: depositPctSchema,
   /**
    * May be empty, and an unpriced unit still appears. `publishable` does not
    * gate this endpoint (ADR-0004): a page renders whatever the Owner has, so
