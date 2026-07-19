@@ -153,17 +153,21 @@ describe("property edit (§4.5 details tab)", () => {
     expect(screen.getByText(/Verified/)).toBeInTheDocument();
   });
 
-  it("renders the 409 reason when delete is blocked by future bookings", async () => {
+  it("renders the 409 reason when delete is blocked by bookings", async () => {
     const row = property({});
     vi.spyOn(window, "confirm").mockReturnValue(true);
     stubFetch({
       [`GET /api/properties/${row.id}`]: () => json(row),
       [`DELETE /api/properties/${row.id}`]: () =>
+        // #82: the 409 carries the count as data (code + count); the web composes
+        // the sentence, so no stale server prose ("cancel them first") can leak.
         json(
           {
             statusCode: 409,
-            message: "Cannot delete: 2 future bookings - cancel them first",
             error: "Conflict",
+            code: "property_has_bookings",
+            count: 2,
+            message: "Property has 2 booking(s); archive it instead of deleting",
           },
           409,
         ),
@@ -174,9 +178,7 @@ describe("property edit (§4.5 details tab)", () => {
       await screen.findByRole("button", { name: "Delete property" }),
     );
     expect(
-      await screen.findByText(
-        "Cannot delete: 2 future bookings - cancel them first",
-      ),
+      await screen.findByText(/this property has 2 bookings/i),
     ).toBeInTheDocument();
   });
 

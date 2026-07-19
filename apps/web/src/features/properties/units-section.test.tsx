@@ -166,6 +166,8 @@ describe("units section (§4.5)", () => {
         json(
           {
             statusCode: 409,
+            error: "Conflict",
+            code: "unit_name_taken",
             message: "A unit with this name already exists in this property",
           },
           409,
@@ -265,8 +267,8 @@ describe("units section (§4.5)", () => {
     });
   });
 
-  // ADR-0002: the message names a count and offers no false escape. The row
-  // renders the server's own words rather than a second copy of them.
+  // ADR-0002 + #82: the 409 carries the count as machine-readable data
+  // (code + count), and the web composes the sentence from it - no server prose.
   it("renders the delete 409 reason on the row", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     stubEditPage({
@@ -274,8 +276,10 @@ describe("units section (§4.5)", () => {
         json(
           {
             statusCode: 409,
-            message:
-              "Cannot delete: this unit has 14 bookings - deleting it would destroy that history",
+            error: "Conflict",
+            code: "unit_has_bookings",
+            count: 14,
+            message: "Unit has 14 booking(s); archive it instead of deleting",
           },
           409,
         ),

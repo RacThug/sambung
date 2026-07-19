@@ -14,10 +14,17 @@ interface ErrorEnvelope {
  * A non-2xx API response. `fieldErrors` maps zod 400s (`message[].path`) to
  * inputs so forms can render errors next to the field that caused them.
  * (page-spec §2 error surfaces)
+ *
+ * `body` is the raw parsed envelope, kept so a caller can read a 409's structured
+ * payload - the machine-readable `code` slug + its typed detail (a delete guard's
+ * `count`, a refusal's `reasons`) - via `conflictOf()` (lib/conflict). The web
+ * switches on that slug and renders its own copy; server prose is never shown
+ * (#82, api-spec §8.2).
  */
 export class ApiError extends Error {
   readonly status: number;
   readonly fieldErrors: Record<string, string>;
+  readonly body: unknown;
 
   constructor(status: number, envelope: ErrorEnvelope) {
     const fieldErrors: Record<string, string> = {};
@@ -33,6 +40,7 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
     this.fieldErrors = fieldErrors;
+    this.body = envelope;
   }
 }
 

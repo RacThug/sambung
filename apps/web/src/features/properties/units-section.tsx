@@ -9,6 +9,7 @@ import {
   type UnitResponse,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
+import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { formatIdr } from "../../lib/money";
 
@@ -145,14 +146,14 @@ function UnitRow({
       queryClient.invalidateQueries({ queryKey: ["properties"] }),
   });
 
-  // The 409 says why ("this unit has 14 bookings…"); render the server's own
-  // message rather than inventing a second copy of it.
-  const deleteError =
-    remove.error instanceof ApiError && remove.error.status === 409
-      ? remove.error.message
-      : remove.error
-        ? "Delete failed - please try again"
-        : null;
+  // The 409 carries the slug + count ("unit_has_bookings", 14); the web composes
+  // "this unit has 14 bookings…" from that data, never the server's prose (#82).
+  const conflict = conflictOf(remove.error);
+  const deleteError = conflict
+    ? describeConflict(conflict)
+    : remove.error
+      ? "Delete failed - please try again"
+      : null;
   const archiveError = setArchived.error
     ? `${selfArchived ? "Unarchive" : "Archive"} failed - please try again`
     : null;
@@ -305,9 +306,11 @@ function UnitFormRow({
       // A duplicate name is the only 409 this form can raise, and zod can't
       // catch it (it needs the other rows) - so it arrives from the server and
       // still belongs against the field that caused it, not in a stray banner.
+      // Switch on the slug and render our own copy, never the server's (#82).
+      const conflict = conflictOf(error);
       setFieldErrors(
-        error instanceof ApiError && error.status === 409
-          ? { name: error.message }
+        conflict?.code === "unit_name_taken"
+          ? { name: describeConflict(conflict) }
           : error instanceof ApiError
             ? error.fieldErrors
             : {},
