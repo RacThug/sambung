@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, sql, type SQL } from 'drizzle-orm';
-import { booking, unit } from '@sambung/db';
+import { booking, property, unit } from '@sambung/db';
 import type { BookingSource, BookingStatus } from '@sambung/shared';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
@@ -29,6 +29,16 @@ export interface BookingListRow {
   guestCount: number | null;
   holdExpiresAt: Date | null;
   totalPriceIdr: bigint | null;
+}
+
+/** The DB-shaped detail row for `GET /bookings/:id` (#50): a list row plus the
+ * guest contact and display names the detail view needs (owner full disclosure). */
+export interface BookingDetailRow extends BookingListRow {
+  guestPhone: string | null;
+  guestEmail: string | null;
+  propertyId: string;
+  propertyName: string;
+  unitName: string;
 }
 
 // Dumb repository: Drizzle queries only, via the tenant-scoped (RLS) client. The
@@ -99,5 +109,50 @@ export class BookingsQueryRepository {
         // same-day bookings has a stable order.
         .orderBy(asc(booking.checkIn), asc(booking.id)),
     );
+  }
+
+  /**
+   * One booking in full, or null when the id is unknown / belongs to another
+   * tenant (→ 404-over-403). Joins `unit` and `property` for the display names and
+   * to re-assert tenant consistency on both join keys; the tenant_id WHERE is the
+   * second layer beside RLS (architecture §3.3). Whole row - owner disclosure.
+   */
+  async getById(id: string): Promise<BookingDetailRow | null> {
+    const tenantId = this.tenant.tenantId;
+    const rows = await this.db.run((tx) =>
+      tx
+        .select({
+          id: booking.id,
+          unitId: booking.unitId,
+          source: booking.source,
+          status: booking.status,
+          checkIn: booking.checkIn,
+          checkOut: booking.checkOut,
+          guestName: booking.guestName,
+          guestCount: booking.guestCount,
+          holdExpiresAt: booking.holdExpiresAt,
+          totalPriceIdr: booking.totalPriceIdr,
+          guestPhone: booking.guestPhone,
+          guestEmail: booking.guestEmail,
+          propertyId: unit.propertyId,
+          propertyName: property.name,
+          unitName: unit.name,
+        })
+        .from(booking)
+        .innerJoin(
+          unit,
+          and(eq(unit.id, booking.unitId), eq(unit.tenantId, booking.tenantId)),
+        )
+        .innerJoin(
+          property,
+          and(
+            eq(property.id, unit.propertyId),
+            eq(property.tenantId, unit.tenantId),
+          ),
+        )
+        .where(and(eq(booking.id, id), eq(booking.tenantId, tenantId)))
+        .limit(1),
+    );
+    return rows[0] ?? null;
   }
 }

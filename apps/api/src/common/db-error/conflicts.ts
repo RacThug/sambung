@@ -59,3 +59,19 @@ export const datesUnavailable = (
     message: 'These dates are no longer available',
     reasons,
   });
+
+/**
+ * A booking cannot be cancelled because it is already terminal (#50, api-spec
+ * §5.6). The FSM lives in the cancel UPDATE's WHERE, so this is the ONE-layer
+ * kind (like unitNameTaken): no constraint produces it, the guarded UPDATE
+ * matching zero rows does. The body names the terminal `status` (`cancelled` /
+ * `expired`) as a machine-readable field so the UI says "already cancelled" vs
+ * "expired" without parsing prose (§8.2).
+ */
+export const bookingNotCancellable = (status: string): HttpException =>
+  new ConflictException({
+    statusCode: HttpStatus.CONFLICT,
+    error: 'Conflict',
+    message: 'Booking cannot be cancelled',
+    status,
+  });

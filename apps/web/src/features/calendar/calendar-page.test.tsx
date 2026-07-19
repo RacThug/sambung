@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { setSession, clearSession } from "../../lib/auth";
 import {
   authResponse,
@@ -103,5 +103,42 @@ describe("unified calendar page", () => {
     expect(
       screen.queryByText("Add your first property"),
     ).not.toBeInTheDocument();
+  });
+
+  it("opens the block / walk-in dialog when an empty day is clicked (#50)", async () => {
+    stubFetch({
+      "GET /api/properties": () => json([propertyResponse()]),
+      "GET /api/units": () => json([unitResponse()]),
+      [BOOKINGS_KEY]: () => json([]),
+    });
+    renderAt(CAL_URL);
+
+    // Each active day cell is a labelled button (page-spec §4.1 "click empty range").
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Add a booking on 2027-03-10 in Garden Room 1",
+      }),
+    );
+
+    expect(await screen.findByText("Add to Garden Room 1")).toBeInTheDocument();
+    // Both modes are offered; a walk-in needs a guest name (ADR-0011).
+    expect(
+      screen.getByRole("button", { name: /Walk-in/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("links a booking bar to its detail page (#50)", async () => {
+    stubFetch({
+      "GET /api/properties": () => json([propertyResponse()]),
+      "GET /api/units": () => json([unitResponse()]),
+      [BOOKINGS_KEY]: () => json([bookingRow()]),
+    });
+    renderAt(CAL_URL);
+
+    const bar = await screen.findByText("Wayan Test");
+    expect(bar.closest("a")).toHaveAttribute(
+      "href",
+      "/app/bookings/cccccccc-0000-0000-0000-000000000001",
+    );
   });
 });

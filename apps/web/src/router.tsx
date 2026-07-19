@@ -16,6 +16,7 @@ import { CalendarPage } from "./features/calendar/calendar-page";
 import { calendarSearchSchema } from "./features/calendar/calendar-search";
 import { PropertiesPage } from "./features/properties/properties-page";
 import { PropertyEditPage } from "./features/properties/property-edit-page";
+import { BookingDetailPage } from "./features/bookings/booking-detail-page";
 import { ensureSession } from "./lib/auth";
 
 // Two faces, one SPA: public funnel + auth-guarded dashboard.
@@ -112,6 +113,14 @@ const propertyEditRoute = createRoute({
   component: PropertyEditPage,
 });
 
+// Booking detail (page-spec §4.3, #50). Deep-linkable: fetches its own row, so a
+// bookmarked/forwarded link opens with a cold cache. $bookingId is the path param.
+const bookingDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "bookings/$bookingId",
+  component: BookingDetailPage,
+});
+
 // Exported for tests: they build routers with a memory history over the same tree.
 export const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -123,6 +132,7 @@ export const routeTree = rootRoute.addChildren([
     calendarRoute,
     propertiesRoute,
     propertyEditRoute,
+    bookingDetailRoute,
   ]),
 ]);
 

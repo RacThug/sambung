@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import { CalendarGrid } from "./calendar-grid";
 import {
@@ -7,6 +8,10 @@ import {
   isEmptyCalendar,
   shiftMonth,
 } from "./calendar-model";
+import {
+  ManualBookingDialog,
+  type CreateSeed,
+} from "./manual-booking-dialog";
 import { SourceLegend } from "./source-legend";
 import { useCalendarData } from "./use-calendar";
 
@@ -43,13 +48,14 @@ function windowLabel(from: string, to: string): string {
 /**
  * The unified calendar - the dashboard home (page-spec §4.1, #49). One row per
  * Unit across every Property, occupying bookings drawn as bars coloured by source,
- * holds hatched. Read-only here; clicking through to a booking (a detail drawer)
- * and creating a manual block land in #50. Composed on the client from three
- * neutral reads (ADR-0010).
+ * holds hatched. Composed on the client from three neutral reads (ADR-0010).
+ * Interactive (#50): click a booking bar → its detail page; click an empty day on
+ * an active Unit → the block / walk-in dialog.
  */
 export function CalendarPage() {
   const search = route.useSearch();
   const navigate = useNavigate();
+  const [createSeed, setCreateSeed] = useState<CreateSeed | null>(null);
 
   const window =
     search.from && search.to
@@ -137,6 +143,12 @@ export function CalendarPage() {
         properties={properties}
         units={units}
         bookings={bookings}
+        onCreateAt={setCreateSeed}
+      />
+
+      <ManualBookingDialog
+        seed={createSeed}
+        onClose={() => setCreateSeed(null)}
       />
     </section>
   );
@@ -148,12 +160,14 @@ function CalendarBody({
   properties,
   units,
   bookings,
+  onCreateAt,
 }: {
   window: { from: string; to: string };
   propertyId?: string;
   properties: ReturnType<typeof useCalendarData>["properties"];
   units: ReturnType<typeof useCalendarData>["units"];
   bookings: ReturnType<typeof useCalendarData>["bookings"];
+  onCreateAt: (seed: CreateSeed) => void;
 }) {
   if (properties.isError || units.isError || bookings.isError) {
     return (
@@ -185,7 +199,9 @@ function CalendarBody({
     );
   }
 
-  return <CalendarGrid groups={groups} window={window} />;
+  return (
+    <CalendarGrid groups={groups} window={window} onCreateAt={onCreateAt} />
+  );
 }
 
 function EmptyState({

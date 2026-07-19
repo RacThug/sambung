@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { countNights, type BookingRow } from "@sambung/shared";
 import {
   SOURCE_META,
@@ -8,6 +9,7 @@ import {
   type CalendarRow,
   type Day,
 } from "./calendar-model";
+import type { CreateSeed } from "./manual-booking-dialog";
 
 // Fixed geometry (px). The timeline scrolls horizontally when the window is wide
 // (a quarter ~= 90 columns); the label column stays put. Desktop-first, owner-
@@ -25,9 +27,13 @@ type Window = { from: string; to: string };
 export function CalendarGrid({
   groups,
   window,
+  onCreateAt,
 }: {
   groups: CalendarGroup[];
   window: Window;
+  /** Owner clicked an empty day on an (active) Unit row - open the create dialog
+   * seeded with that Unit + date (page-spec §4.1). */
+  onCreateAt: (seed: CreateSeed) => void;
 }) {
   const days = windowDays(window.from, window.to);
   const trackWidth = days.length * DAY_W;
@@ -87,6 +93,8 @@ export function CalendarGrid({
                   row={row}
                   days={days}
                   window={window}
+                  propertyName={group.property.name}
+                  onCreateAt={onCreateAt}
                 />
               ))}
             </div>
@@ -117,21 +125,48 @@ function UnitTrack({
   row,
   days,
   window,
+  propertyName,
+  onCreateAt,
 }: {
   row: CalendarRow;
   days: Day[];
   window: Window;
+  propertyName: string;
+  onCreateAt: (seed: CreateSeed) => void;
 }) {
+  // An archived Unit is retired from every new-booking path (ADR-0006), so its
+  // cells don't invite a create - the server would 409 anyway.
+  const canCreate = !row.archived;
   return (
     <div className="relative border-b border-border" style={{ height: ROW_H }}>
-      {/* Background day cells: gridlines + a weekend tint. */}
-      {days.map((day, i) => (
-        <div
-          key={day.date}
-          className={`absolute bottom-0 top-0 border-r border-border/50 ${day.isWeekend ? "bg-muted/40" : ""}`}
-          style={{ left: i * DAY_W, width: DAY_W }}
-        />
-      ))}
+      {/* Background day cells: gridlines + a weekend tint. On an active Unit each
+          cell is a real <button> that opens the block / walk-in dialog for that
+          day (accessible + a hit target); an archived row's cells are inert divs.
+          Bars paint on top, so a click on a booking hits the bar, not the cell. */}
+      {days.map((day, i) => {
+        const cls = `absolute bottom-0 top-0 border-r border-border/50 ${day.isWeekend ? "bg-muted/40" : ""}`;
+        const geo = { left: i * DAY_W, width: DAY_W };
+        return canCreate ? (
+          <button
+            key={day.date}
+            type="button"
+            aria-label={`Add a booking on ${day.date} in ${row.unit.name}`}
+            onClick={() =>
+              onCreateAt({
+                unitId: row.unit.id,
+                unitName: row.unit.name,
+                propertyName,
+                basePriceIdr: row.unit.basePriceIdr,
+                checkIn: day.date,
+              })
+            }
+            className={`${cls} hover:bg-primary/5`}
+            style={geo}
+          />
+        ) : (
+          <div key={day.date} className={cls} style={geo} />
+        );
+      })}
       {/* Bars. Occupying bookings never overlap on one unit (the exclusion
           constraint, boss fight #1), so this row is a clean non-overlapping
           sequence - no stacking to solve. */}
@@ -151,9 +186,11 @@ function Bar({ booking, span }: { booking: BookingRow; span: BarSpan }) {
   const showLabel = span.end - span.start >= 2;
 
   return (
-    <div
+    <Link
+      to="/app/bookings/$bookingId"
+      params={{ bookingId: booking.id }}
       title={barTitle(booking)}
-      className="absolute flex items-center overflow-hidden rounded-md px-1.5 text-[11px] font-medium"
+      className="absolute flex items-center overflow-hidden rounded-md px-1.5 text-[11px] font-medium no-underline ring-ring hover:ring-2"
       style={{
         left: span.start * DAY_W + 2,
         width,
@@ -188,7 +225,7 @@ function Bar({ booking, span }: { booking: BookingRow; span: BarSpan }) {
           ›
         </span>
       )}
-    </div>
+    </Link>
   );
 }
 
