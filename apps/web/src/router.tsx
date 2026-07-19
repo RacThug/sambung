@@ -16,6 +16,8 @@ import { CalendarPage } from "./features/calendar/calendar-page";
 import { calendarSearchSchema } from "./features/calendar/calendar-search";
 import { PropertiesPage } from "./features/properties/properties-page";
 import { PropertyEditPage } from "./features/properties/property-edit-page";
+import { ReservationsPage } from "./features/reservations/reservations-page";
+import { reservationsSearchSchema } from "./features/reservations/reservations-search";
 import { BookingDetailPage } from "./features/bookings/booking-detail-page";
 import { ensureSession } from "./lib/auth";
 
@@ -101,6 +103,16 @@ const calendarRoute = createRoute({
   component: CalendarPage,
 });
 
+// Reservations list (page-spec §4.2, #51). Every filter is a typed search param,
+// AND-ed, so any combination is a shareable URL; like the calendar, bad params
+// degrade to no-filter rather than crashing (validateSearch at the boundary).
+const reservationsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "reservations",
+  validateSearch: reservationsSearchSchema,
+  component: ReservationsPage,
+});
+
 const propertiesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "properties",
@@ -130,6 +142,7 @@ export const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     appIndexRoute,
     calendarRoute,
+    reservationsRoute,
     propertiesRoute,
     propertyEditRoute,
     bookingDetailRoute,

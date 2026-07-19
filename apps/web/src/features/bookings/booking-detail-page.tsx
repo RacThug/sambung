@@ -10,7 +10,9 @@ import {
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { formatIdr } from "../../lib/money";
-import { SOURCE_META } from "../calendar/calendar-model";
+import { formatDate } from "../../lib/date";
+import { SourceBadge, StatusBadge } from "./booking-badges";
+import { bookingTitle } from "./booking-display";
 import { Button } from "../../components/ui/button";
 import {
   Dialog,
@@ -22,22 +24,6 @@ import {
 } from "../../components/ui/dialog";
 
 const route = getRouteApi("/app/bookings/$bookingId");
-
-/** Per-status pill copy + tone. Kept in semantic tokens so it themes with the
- * rest of the dashboard (ADR-0007). */
-const STATUS_META: Record<BookingStatus, { label: string; className: string }> =
-  {
-    confirmed: { label: "Confirmed", className: "bg-primary/10 text-primary" },
-    pending_payment: {
-      label: "Hold",
-      className: "bg-muted text-foreground",
-    },
-    cancelled: {
-      label: "Cancelled",
-      className: "bg-muted text-muted-foreground",
-    },
-    expired: { label: "Expired", className: "bg-muted text-muted-foreground" },
-  };
 
 const isOccupying = (s: BookingStatus): boolean =>
   (OCCUPYING_STATUSES as readonly string[]).includes(s);
@@ -96,11 +82,8 @@ function BackLink() {
 }
 
 function BookingDetail({ booking }: { booking: BookingDetail }) {
-  const source = SOURCE_META[booking.source];
-  const status = STATUS_META[booking.status];
   const nights = countNights(booking.checkIn, booking.checkOut);
-  const isBlock = booking.source === "manual_block";
-  const title = isBlock ? "Manual block" : (booking.guestName ?? "Walk-in");
+  const title = bookingTitle(booking);
 
   return (
     <section className="mx-auto max-w-2xl">
@@ -111,19 +94,8 @@ function BookingDetail({ booking }: { booking: BookingDetail }) {
           <div>
             <h1 className="text-xl font-semibold text-foreground">{title}</h1>
             <div className="mt-2 flex items-center gap-2">
-              <span
-                className={`rounded px-2 py-0.5 text-xs font-medium ${status.className}`}
-              >
-                {status.label}
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span
-                  aria-hidden
-                  className="size-2.5 rounded-full"
-                  style={{ backgroundColor: source.cssVar }}
-                />
-                {source.label}
-              </span>
+              <StatusBadge status={booking.status} />
+              <SourceBadge source={booking.source} />
             </div>
           </div>
           {booking.status === "pending_payment" && (
@@ -134,9 +106,9 @@ function BookingDetail({ booking }: { booking: BookingDetail }) {
         <dl className="mt-6 grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
           <Field label="Property">{booking.propertyName}</Field>
           <Field label="Unit">{booking.unitName}</Field>
-          <Field label="Check-in">{booking.checkIn}</Field>
+          <Field label="Check-in">{formatDate(booking.checkIn)}</Field>
           <Field label="Check-out">
-            {booking.checkOut}{" "}
+            {formatDate(booking.checkOut)}{" "}
             <span className="text-muted-foreground">
               ({nights} night{nights === 1 ? "" : "s"})
             </span>

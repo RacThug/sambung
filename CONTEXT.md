@@ -62,6 +62,13 @@ _Avoid_: deleted, hidden, disabled, deactivated, unpublished
 
 ### Bookings
 
+**Booking**:
+The base entity: one claim on a Unit's Stay, held in exactly one status (`pending_payment`,
+`confirmed`, `cancelled`, `expired`) and attributed to one source. The umbrella under which Stay,
+Hold, Walk-in, Block and Occupying are facets - and the word the code and API use everywhere
+(`booking`, never `reservation`).
+_Avoid_: reservation (for the entity), order, ticket
+
 **Stay**:
 The nights a booking covers, as a half-open range `[check-in, check-out)`. The check-out date is not a
 night. Two Stays that merely touch (one ends the day the next begins) do not overlap.
@@ -103,6 +110,13 @@ manual) with Holds hatched. It shows the positive space - who is in, and through
 is the opposite of Availability, which is the negative space its gaps imply. One Unit per row; a
 Cancelled or expired booking is not Occupying, so it never draws a bar.
 _Avoid_: availability, schedule, agenda, timeline
+
+**Reservation**:
+The Owner's management *view* of Bookings - the filterable, shareable list at `/app/reservations`.
+A lens over the same Booking rows the Calendar draws (one read path, ADR-0010), not a separate thing:
+there is no Reservation entity or table. Where the Calendar shows only Occupying bookings as bars, the
+Reservation list shows *every* status as rows - an owner searches for cancelled and expired ones too.
+_Avoid_: booking (as the name for the list), order, itinerary
 
 **Quote**:
 The answer to "can this Unit host this Stay, and at what price": whether the nights are free, the
