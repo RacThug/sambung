@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { HomePage } from "./features/public-booking/home-page";
 import { PropertyPage } from "./features/public-booking/property-page";
+import { CheckoutPage } from "./features/public-booking/checkout-page";
 import { propertySearchSchema } from "./features/public-booking/property-search";
 import { LoginPage } from "./features/auth/login-page";
 import { RegisterPage } from "./features/auth/register-page";
@@ -41,6 +42,15 @@ const propertyRoute = createRoute({
   path: "/p/$slug",
   validateSearch: propertySearchSchema,
   component: PropertyPage,
+});
+
+// Checkout (page-spec §3.2). The picker's "Book" CTA lands here carrying the
+// quoted range in the same typed `?unit&from&to` params as the property page.
+const checkoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/p/$slug/book",
+  validateSearch: propertySearchSchema,
+  component: CheckoutPage,
 });
 
 const loginRoute = createRoute({
@@ -137,6 +147,7 @@ const bookingDetailRoute = createRoute({
 export const routeTree = rootRoute.addChildren([
   homeRoute,
   propertyRoute,
+  checkoutRoute,
   loginRoute,
   registerRoute,
   appRoute.addChildren([
