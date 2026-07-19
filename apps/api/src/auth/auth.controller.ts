@@ -20,6 +20,7 @@ import {
 import { CurrentPrincipal } from '../common/decorators/current-principal.decorator';
 import type { UserPrincipal } from '../common/tenant-context.service';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
+import { ThrottleSensitive } from '../common/throttle/throttle.decorator';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './auth.guard';
 
@@ -30,6 +31,9 @@ const REFRESH_PATH = '/api/auth';
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  // Signup is abuse-prone (tenant flooding) - the tighter `sensitive` throttler
+  // applies on top of the global default (api-spec §8.3, #59).
+  @ThrottleSensitive()
   @Post('register')
   async register(
     @Body(new ZodValidationPipe(registerRequestSchema)) dto: RegisterRequest,
@@ -40,6 +44,10 @@ export class AuthController {
     return auth;
   }
 
+  // Login is the credential-guessing surface - same tighter throttler as register
+  // (api-spec §8.3, #59). Refresh/logout stay on the default limit: they carry a
+  // cookie, not a guessable secret, and throttling refresh would log a user out.
+  @ThrottleSensitive()
   @Post('login')
   @HttpCode(200)
   async login(
