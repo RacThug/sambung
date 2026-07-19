@@ -164,6 +164,10 @@ export function buildCalendar(input: {
   properties: PropertyResponse[];
   units: UnitResponse[];
   bookings: BookingRow[];
+  /** The toolbar's property filter. When set, only this Property's rows render -
+   * it narrows the GRID, not just which bookings were fetched. Without this a
+   * filtered view still draws every other Property as misleading empty rows. */
+  propertyId?: string;
 }): CalendarGroup[] {
   const byUnit = new Map<string, BookingRow[]>();
   for (const b of input.bookings) {
@@ -182,8 +186,14 @@ export function buildCalendar(input: {
   const byName = (a: { name: string }, b: { name: string }) =>
     a.name.localeCompare(b.name);
 
+  // The filter narrows the grid: iterate only the chosen Property (its Units are
+  // pulled per-property below, so filtering the Property list is enough).
+  const visible = input.propertyId
+    ? input.properties.filter((p) => p.id === input.propertyId)
+    : input.properties;
+
   const groups: CalendarGroup[] = [];
-  for (const property of [...input.properties].sort(byName)) {
+  for (const property of [...visible].sort(byName)) {
     const propertyArchived = isArchived(property);
     const units = (unitsByProperty.get(property.id) ?? []).sort(byName);
     const rows: CalendarRow[] = [];

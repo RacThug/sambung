@@ -133,6 +133,7 @@ export function CalendarPage() {
 
       <CalendarBody
         window={window}
+        propertyId={propertyId}
         properties={properties}
         units={units}
         bookings={bookings}
@@ -143,11 +144,13 @@ export function CalendarPage() {
 
 function CalendarBody({
   window,
+  propertyId,
   properties,
   units,
   bookings,
 }: {
   window: { from: string; to: string };
+  propertyId?: string;
   properties: ReturnType<typeof useCalendarData>["properties"];
   units: ReturnType<typeof useCalendarData>["units"];
   bookings: ReturnType<typeof useCalendarData>["bookings"];
@@ -170,6 +173,7 @@ function CalendarBody({
     properties: properties.data,
     units: units.data,
     bookings: bookings.data,
+    propertyId,
   });
 
   if (isEmptyCalendar(groups)) {
