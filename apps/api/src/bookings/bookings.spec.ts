@@ -14,6 +14,7 @@ import {
   unit,
 } from '@sambung/db';
 import {
+  OCCUPYING_STATUSES,
   bookingSourceSchema,
   bookingStatusSchema,
   type AuthResponse,
@@ -351,5 +352,19 @@ describe('Guest booking + hold sweeper', () => {
     expect([...bookingSourceSchema.options].sort()).toEqual(
       [...bookingSource.enumValues].sort(),
     );
+  });
+
+  // OCCUPYING_STATUSES is the glossary's "Occupying" as one shared constant
+  // (ADR-0010). It must stay a subset of the status enum - a value that isn't a
+  // real status would make the calendar's ?status= filter and the availability
+  // read scope to nothing - and must remain exactly the two the exclusion
+  // constraint's WHERE covers, or the read and the write would disagree.
+  it('keeps OCCUPYING_STATUSES a valid, stable subset of the status enum', () => {
+    const statuses = new Set<string>(bookingStatusSchema.options);
+    for (const s of OCCUPYING_STATUSES) expect(statuses.has(s)).toBe(true);
+    expect([...OCCUPYING_STATUSES].sort()).toEqual([
+      'confirmed',
+      'pending_payment',
+    ]);
   });
 });

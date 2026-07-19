@@ -26,6 +26,17 @@ export class UnitsService {
     return rows.map((row) => this.toResponse(row));
   }
 
+  /**
+   * Every Unit in the tenant, flat (GET /units, #49). No ownership check to run:
+   * the query names no id the caller must own - RLS + the tenant_id WHERE already
+   * confine it to their own Units. Each carries its own `archivedAt`; the calendar
+   * derives effective-archived by joining with GET /properties (ADR-0010).
+   */
+  async listAll(): Promise<UnitResponse[]> {
+    const rows = await this.repo.findAll();
+    return rows.map((row) => this.toResponse(row));
+  }
+
   async create(
     propertyId: string,
     dto: CreateUnitRequest,

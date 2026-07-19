@@ -58,6 +58,25 @@ export class UnitsRepository {
     );
   }
 
+  /**
+   * Every Unit in the caller's tenant, ordered stably. The flat list the unified
+   * calendar composes its rows from (ADR-0010), and that #50's manual-block dialog
+   * and #51's filters reuse. Effective-archived (the Unit's own flag OR its
+   * Property's, ADR-0005) is DERIVED client-side by joining this with
+   * GET /properties - both responses carry their own `archivedAt`, so the server
+   * pre-computing it would duplicate what the composing view already holds.
+   */
+  findAll(): Promise<Unit[]> {
+    const tenantId = this.tenant.tenantId;
+    return this.db.run((tx) =>
+      tx
+        .select()
+        .from(unit)
+        .where(eq(unit.tenantId, tenantId))
+        .orderBy(asc(unit.createdAt), asc(unit.id)),
+    );
+  }
+
   async findById(id: string): Promise<Unit | null> {
     const tenantId = this.tenant.tenantId;
     const rows = await this.db.run((tx) =>

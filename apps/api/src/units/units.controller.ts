@@ -56,6 +56,13 @@ export class PropertyUnitsController {
 export class UnitsController {
   constructor(private readonly units: UnitsService) {}
 
+  // Flat tenant-wide list (api-spec §5.5-adjacent, #49). The unified calendar
+  // composes its Unit rows from this + GET /properties + GET /bookings (ADR-0010).
+  @Get()
+  list(): Promise<UnitResponse[]> {
+    return this.units.listAll();
+  }
+
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,
