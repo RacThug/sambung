@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { setSession, clearSession } from "../../lib/auth";
+import { todayIso } from "../../lib/date";
+import { defaultWindow } from "./reservations-model";
 import {
   authResponse,
   json,
@@ -27,6 +29,12 @@ const bookingRow = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+// The default "upcoming" window the page opens on, computed the same way the page
+// does (today -> today + 366). Every bookings request carries it unless the owner
+// sets a custom range, so the request key is deterministic without faking the clock.
+const WIN = defaultWindow(todayIso());
+const DEFAULT_BOOKINGS = `GET /api/bookings?from=${WIN.from}&to=${WIN.to}`;
+
 const inventory = {
   "GET /api/properties": () => json([propertyResponse()]),
   "GET /api/units": () => json([unitResponse()]),
@@ -46,7 +54,7 @@ describe("reservations list page", () => {
   it("renders a booking as a row joined to its unit and property", async () => {
     stubFetch({
       ...inventory,
-      "GET /api/bookings": () => json([bookingRow()]),
+      [DEFAULT_BOOKINGS]: () => json([bookingRow()]),
     });
     renderAt("/app/reservations");
 
@@ -64,34 +72,41 @@ describe("reservations list page", () => {
     expect(within(table).getByText("Confirmed")).toBeInTheDocument();
   });
 
-  it("has no default window - it lists the whole ledger", async () => {
+  it("opens on the upcoming window - from today, no owner input", async () => {
     const calls = stubFetch({
       ...inventory,
-      "GET /api/bookings": () => json([bookingRow()]),
+      [DEFAULT_BOOKINGS]: () => json([bookingRow()]),
     });
     renderAt("/app/reservations");
 
     await screen.findByText("Wayan Test");
-    // The bookings request carries no from/to: absence means all time, not a month.
-    expect(calls).toContain("GET /api/bookings");
-    expect(calls.some((c) => c.includes("from="))).toBe(false);
+    // The default window is queried (from today), and no lone/empty edge is sent.
+    expect(calls).toContain(DEFAULT_BOOKINGS);
+    expect(WIN.from).toBe(todayIso());
+    // The caption explains the default rather than silently hiding past bookings.
+    expect(
+      screen.getByText(/Showing upcoming reservations/i),
+    ).toBeInTheDocument();
   });
 
-  it("distinguishes empty-tenant from empty-with-filters", async () => {
+  it("shows the upcoming empty state when nothing is coming up", async () => {
     stubFetch({
       ...inventory,
-      "GET /api/bookings": () => json([]),
+      [DEFAULT_BOOKINGS]: () => json([]),
     });
     renderAt("/app/reservations");
 
-    // No filters + no rows = the tenant simply has none yet.
-    expect(await screen.findByText("No reservations yet")).toBeInTheDocument();
+    // No explicit filters + nothing upcoming = the default-window empty state, which
+    // points at the date range (a past-only tenant isn't "empty").
+    expect(
+      await screen.findByText("No upcoming reservations"),
+    ).toBeInTheDocument();
   });
 
   it("shows the no-matches state when a filter excludes everything", async () => {
     stubFetch({
       ...inventory,
-      "GET /api/bookings?status=cancelled": () => json([]),
+      [`${DEFAULT_BOOKINGS}&status=cancelled`]: () => json([]),
     });
     renderAt("/app/reservations?status=cancelled");
 
@@ -105,7 +120,7 @@ describe("reservations list page", () => {
   it("never sends a lone window edge; it hints for the pair instead", async () => {
     const calls = stubFetch({
       ...inventory,
-      "GET /api/bookings": () => json([]),
+      [DEFAULT_BOOKINGS]: () => json([]),
     });
     renderAt("/app/reservations?from=2027-03-01");
 
@@ -113,24 +128,24 @@ describe("reservations list page", () => {
     expect(
       await screen.findByText("Pick both a start and end date."),
     ).toBeInTheDocument();
-    // ...and the request went out with NO from param (a lone edge would 400).
-    expect(calls).toContain("GET /api/bookings");
-    expect(calls.some((c) => c.includes("from="))).toBe(false);
+    // ...and the request went out with the DEFAULT window, never the lone edge.
+    expect(calls).toContain(DEFAULT_BOOKINGS);
+    expect(calls.some((c) => c.includes("from=2027-03-01"))).toBe(false);
   });
 
   it("toggling a status chip narrows the request via the URL", async () => {
     const calls = stubFetch({
       ...inventory,
-      "GET /api/bookings": () => json([bookingRow()]),
-      "GET /api/bookings?status=confirmed": () => json([bookingRow()]),
+      [DEFAULT_BOOKINGS]: () => json([bookingRow()]),
+      [`${DEFAULT_BOOKINGS}&status=confirmed`]: () => json([bookingRow()]),
     });
     renderAt("/app/reservations");
 
     fireEvent.click(await screen.findByRole("button", { name: "Confirmed" }));
 
-    // The repeatable status filter reaches the API as a query param.
+    // The repeatable status filter reaches the API as a query param (atop the window).
     await vi.waitFor(() =>
-      expect(calls).toContain("GET /api/bookings?status=confirmed"),
+      expect(calls).toContain(`${DEFAULT_BOOKINGS}&status=confirmed`),
     );
   });
 });

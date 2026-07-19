@@ -14,6 +14,7 @@ import {
   type PropertyResponse,
   type UnitResponse,
 } from "@sambung/shared";
+import { addDays } from "../../lib/date";
 import type { ReservationsSearch } from "./reservations-search";
 
 /** A booking joined to its Unit and Property names - what the table row draws. The
@@ -25,34 +26,47 @@ export interface ReservationRow {
   unitName: string;
 }
 
+/** The default "upcoming" window: `[today, today + 366)` - from today through the
+ * furthest ahead the API's 366-night cap lets us look in one query. Overlap
+ * semantics (§5.5) mean a guest currently in-house still appears (their stay
+ * overlaps today), while one who checked out today drops off (half-open, no
+ * overlap). This is the reservations list's default, unlike the whole-ledger
+ * approach - an owner mostly cares about what is coming up. */
+export function defaultWindow(today: string): { from: string; to: string } {
+  return { from: today, to: addDays(today, MAX_AVAILABILITY_NIGHTS) };
+}
+
 /**
- * The result of validating the `from`/`to` pair. The window is half-open `[from,to)`
- * with the same 366-night cap as the API (§5.5), and must be a PAIR: the API 400s a
- * lone edge, so the client never sends one - `window` is `undefined` (fetch all time)
- * whenever the pair is absent or invalid, and `error` carries a hint to show inline.
- * This is the exclusion-constraint discipline applied to the UI: don't fire input the
- * boundary will reject; validate the cross-field rule here, once.
+ * The window the list should query. The result is ALWAYS a valid pair (the API 400s
+ * a lone edge, so the client must never send one): the owner's `from`/`to` when they
+ * form a legal window, otherwise the default upcoming window - with `error` carrying
+ * a hint and `isDefault` telling the page it fell back. This is the exclusion-
+ * constraint discipline applied to the UI: validate the cross-field rule here, once,
+ * and never fire input the boundary will reject.
  */
 export interface WindowResult {
-  window: { from: string; to: string } | undefined;
+  window: { from: string; to: string };
   error: string | null;
+  isDefault: boolean;
 }
 
 export function resolveWindow(
   from: string | undefined,
   to: string | undefined,
+  today: string,
 ): WindowResult {
-  if (!from && !to) return { window: undefined, error: null };
+  const fallback = { window: defaultWindow(today), isDefault: true };
+  if (!from && !to) return { ...fallback, error: null };
   if (!from || !to)
-    return { window: undefined, error: "Pick both a start and end date." };
+    return { ...fallback, error: "Pick both a start and end date." };
   if (from >= to)
-    return { window: undefined, error: "The end date must be after the start." };
+    return { ...fallback, error: "The end date must be after the start." };
   if (countNights(from, to) > MAX_AVAILABILITY_NIGHTS)
     return {
-      window: undefined,
+      ...fallback,
       error: `Choose a window of at most ${MAX_AVAILABILITY_NIGHTS} nights.`,
     };
-  return { window: { from, to }, error: null };
+  return { window: { from, to }, error: null, isDefault: false };
 }
 
 /**

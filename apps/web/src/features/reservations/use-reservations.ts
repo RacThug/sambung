@@ -9,9 +9,10 @@ import {
 import { api } from "../../lib/api-client";
 
 export interface ReservationFilters {
-  /** Validated pair (resolveWindow) - passed only when both edges are set and the
-   * span is legal, so a lone edge (a 400 at the boundary) never reaches the API. */
-  window?: { from: string; to: string };
+  /** The window to query - always a valid pair (resolveWindow gives the owner's
+   * range or the default upcoming one), so a lone edge (a 400 at the boundary)
+   * never reaches the API. */
+  window: { from: string; to: string };
   propertyId?: string;
   status?: BookingStatus[];
   source?: BookingSource[];
@@ -26,15 +27,12 @@ export interface ReservationFilters {
  */
 function bookingsPath(filters: ReservationFilters): string {
   const q = new URLSearchParams();
-  if (filters.window) {
-    q.set("from", filters.window.from);
-    q.set("to", filters.window.to);
-  }
+  q.set("from", filters.window.from);
+  q.set("to", filters.window.to);
   if (filters.propertyId) q.set("propertyId", filters.propertyId);
   for (const s of filters.status ?? []) q.append("status", s);
   for (const s of filters.source ?? []) q.append("source", s);
-  const qs = q.toString();
-  return qs ? `/bookings?${qs}` : "/bookings";
+  return `/bookings?${q.toString()}`;
 }
 
 /**
@@ -61,8 +59,8 @@ export function useReservations(filters: ReservationFilters) {
   const bookings = useQuery({
     queryKey: [
       "bookings",
-      filters.window?.from ?? null,
-      filters.window?.to ?? null,
+      filters.window.from,
+      filters.window.to,
       filters.propertyId ?? null,
       filters.status ?? [],
       filters.source ?? [],

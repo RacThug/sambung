@@ -17,3 +17,19 @@ const fmt = new Intl.DateTimeFormat(undefined, {
 
 export const formatDate = (iso: string): string =>
   fmt.format(new Date(`${iso}T00:00:00Z`));
+
+const MS_PER_DAY = 86_400_000;
+
+/** `YYYY-MM-DD` `n` days after `iso` (n may be negative). Parsed at UTC, so the
+ * arithmetic never drifts a day across a DST boundary. */
+export const addDays = (iso: string, n: number): string =>
+  new Date(Date.parse(`${iso}T00:00:00Z`) + n * MS_PER_DAY)
+    .toISOString()
+    .slice(0, 10);
+
+/** Today as a local `YYYY-MM-DD` - the owner's calendar day, not UTC. The anchor
+ * for the reservations list's default "upcoming" window. */
+export function todayIso(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}

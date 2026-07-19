@@ -58,6 +58,7 @@ export function ReservationFilters({
   search,
   properties,
   windowError,
+  showUpcomingHint,
   isFiltered,
   onPatch,
   onClear,
@@ -65,6 +66,9 @@ export function ReservationFilters({
   search: ReservationsSearch;
   properties: PropertyResponse[];
   windowError: string | null;
+  /** The default upcoming window is in effect (no owner-set dates) - show the
+   * caption that explains why past bookings aren't listed and how to reach them. */
+  showUpcomingHint: boolean;
   isFiltered: boolean;
   onPatch: (partial: Partial<ReservationsSearch>) => void;
   onClear: () => void;
@@ -120,9 +124,14 @@ export function ReservationFilters({
         )}
       </div>
 
-      {windowError && (
+      {windowError ? (
         <p className="text-xs text-destructive">{windowError}</p>
-      )}
+      ) : showUpcomingHint ? (
+        <p className="text-xs text-muted-foreground">
+          Showing upcoming reservations. Pick a start and end date to search another
+          range.
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         <FilterRow label="Status">

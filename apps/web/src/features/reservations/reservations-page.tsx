@@ -1,5 +1,6 @@
 import { getRouteApi, Link, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { todayIso } from "../../lib/date";
 import { ReservationFilters } from "./reservation-filters";
 import { ReservationsTable } from "./reservations-table";
 import {
@@ -18,15 +19,19 @@ const route = getRouteApi("/app/reservations");
  * the flat unit/property lists (ADR-0010), the same primitives the calendar uses -
  * here shown as rows of EVERY status, not bars of the occupying ones.
  *
- * There is deliberately no default window: this is a management view over the whole
- * ledger (CONTEXT.md "Reservation"), so an owner sees every booking until they narrow
- * it - the opposite of the calendar, which opens on the current month.
+ * Opens on the default "upcoming" window (`[today, today+366)`, resolveWindow): an
+ * owner mostly cares about what is coming up. Setting a date range searches any span
+ * (past included, up to the 366-night cap); clearing returns to upcoming.
  */
 export function ReservationsPage() {
   const search = route.useSearch();
   const navigate = useNavigate();
 
-  const { window, error: windowError } = resolveWindow(search.from, search.to);
+  const { window, error: windowError, isDefault } = resolveWindow(
+    search.from,
+    search.to,
+    todayIso(),
+  );
   const isFiltered = hasActiveFilters(search);
 
   const { properties, units, bookings } = useReservations({
@@ -54,6 +59,7 @@ export function ReservationsPage() {
         search={search}
         properties={properties.data ?? []}
         windowError={windowError}
+        showUpcomingHint={isDefault && !windowError}
         isFiltered={isFiltered}
         onPatch={onPatch}
         onClear={onClear}
@@ -98,10 +104,10 @@ function ReservationsBody({
   const rows = composeRows(bookings.data, units.data, properties.data);
 
   if (rows.length === 0) {
-    // The two empty states (AC): filters excluded everything vs a tenant with no
-    // bookings at all. `isFiltered` reads the URL, not the result count, so a
-    // lone-`from` (invalid, un-sent) window still reads as "filtered".
-    return isFiltered ? <EmptyFiltered onClear={onClear} /> : <EmptyTenant />;
+    // The two empty states (AC): an explicit filter excluded everything, vs the
+    // untouched default upcoming window being empty. `isFiltered` reads the URL, not
+    // the result count, so a lone-`from` still reads as "filtered" (its hint shows).
+    return isFiltered ? <EmptyFiltered onClear={onClear} /> : <EmptyUpcoming />;
   }
 
   return (
@@ -133,15 +139,18 @@ function EmptyFiltered({ onClear }: { onClear: () => void }) {
   );
 }
 
-function EmptyTenant() {
+function EmptyUpcoming() {
+  // The default upcoming window is empty. This covers both a brand-new tenant and one
+  // whose only bookings are in the past - so the copy points at the date range rather
+  // than claiming the tenant has none at all.
   return (
     <div className="rounded-lg border border-dashed border-border p-12 text-center">
       <h2 className="text-lg font-semibold text-foreground">
-        No reservations yet
+        No upcoming reservations
       </h2>
       <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-        Bookings from your guests - and any walk-ins or blocks you add - will show
-        up here.
+        New bookings - and any walk-ins or blocks you add - show up here. To see past
+        reservations, pick a start and end date above.
       </p>
       <Link
         to="/app/calendar"

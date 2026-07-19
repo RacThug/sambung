@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  countNights,
+  MAX_AVAILABILITY_NIGHTS,
   toRupiah,
   type BookingRow,
   type PropertyResponse,
@@ -7,6 +9,7 @@ import {
 } from "@sambung/shared";
 import {
   composeRows,
+  defaultWindow,
   hasActiveFilters,
   resolveWindow,
 } from "./reservations-model";
@@ -71,37 +74,48 @@ const search = (over: Partial<ReservationsSearch> = {}): ReservationsSearch => (
 // --- resolveWindow ----------------------------------------------------------
 
 describe("resolveWindow", () => {
-  it("no dates = no window, no error (all time)", () => {
-    expect(resolveWindow(undefined, undefined)).toEqual({
-      window: undefined,
+  const TODAY = "2027-03-15";
+  const upcoming = defaultWindow(TODAY);
+
+  it("the upcoming window starts today and spans exactly the 366-night cap", () => {
+    expect(upcoming.from).toBe(TODAY);
+    expect(countNights(upcoming.from, upcoming.to)).toBe(
+      MAX_AVAILABILITY_NIGHTS,
+    );
+  });
+
+  it("no dates = the default upcoming window", () => {
+    expect(resolveWindow(undefined, undefined, TODAY)).toEqual({
+      window: upcoming,
       error: null,
+      isDefault: true,
     });
   });
 
-  it("a lone edge never becomes a window - it is a hint, not a 400", () => {
-    // The API 400s a lone from/to; the client must not send one.
-    expect(resolveWindow("2027-03-01", undefined).window).toBeUndefined();
-    expect(resolveWindow("2027-03-01", undefined).error).toMatch(/both/i);
-    expect(resolveWindow(undefined, "2027-03-01").window).toBeUndefined();
-    expect(resolveWindow(undefined, "2027-03-01").error).toMatch(/both/i);
+  it("a lone edge falls back to upcoming (never sent as a 400) with a pair hint", () => {
+    // The API 400s a lone from/to; the client sends the default pair instead.
+    const r = resolveWindow("2027-03-01", undefined, TODAY);
+    expect(r.window).toEqual(upcoming);
+    expect(r.isDefault).toBe(true);
+    expect(r.error).toMatch(/both/i);
+    expect(resolveWindow(undefined, "2027-03-01", TODAY).error).toMatch(/both/i);
   });
 
-  it("rejects an inverted or empty range", () => {
-    expect(resolveWindow("2027-03-10", "2027-03-10").window).toBeUndefined();
-    expect(resolveWindow("2027-03-10", "2027-03-01").error).toMatch(/after/i);
-  });
-
-  it("rejects a window past the 366-night cap", () => {
+  it("an inverted or over-cap range falls back to upcoming with a hint", () => {
+    const inverted = resolveWindow("2027-03-10", "2027-03-01", TODAY);
+    expect(inverted.window).toEqual(upcoming);
+    expect(inverted.error).toMatch(/after/i);
     // 2027-01-01 -> 2028-02-01 is 396 nights, over the shared availability cap.
-    const r = resolveWindow("2027-01-01", "2028-02-01");
-    expect(r.window).toBeUndefined();
-    expect(r.error).toMatch(/366/);
+    const overCap = resolveWindow("2027-01-01", "2028-02-01", TODAY);
+    expect(overCap.window).toEqual(upcoming);
+    expect(overCap.error).toMatch(/366/);
   });
 
-  it("passes a legal pair through", () => {
-    expect(resolveWindow("2027-03-01", "2027-04-01")).toEqual({
+  it("passes a legal custom pair through, marked not-default", () => {
+    expect(resolveWindow("2027-03-01", "2027-04-01", TODAY)).toEqual({
       window: { from: "2027-03-01", to: "2027-04-01" },
       error: null,
+      isDefault: false,
     });
   });
 });

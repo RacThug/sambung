@@ -27,10 +27,9 @@ const setParam = <T extends z.ZodTypeAny>(inner: T) =>
  * Each scalar field degrades to `undefined` on a bad value (`.catch(undefined)`),
  * so a pasted `?propertyId=oops` opens the unfiltered list rather than crashing.
  *
- * Unlike the calendar (§4.1), there is NO default window: the reservations list is a
- * management view over the whole ledger - an owner searches past and cancelled
- * bookings too (CONTEXT.md "Reservation") - so `from`/`to` are absent until the owner
- * sets them, and absence means "all time", not "this month".
+ * `from`/`to` are absent until the owner picks a range; absence resolves to the
+ * default "upcoming" window (resolveWindow), not the calendar's current month. The
+ * owner sets a range to search any span, past included (CONTEXT.md "Reservation").
  */
 export const reservationsSearchSchema = z.object({
   from: z.string().date().optional().catch(undefined),
