@@ -21,9 +21,19 @@ window.scrollTo = () => {};
 
 /**
  * Stub responses keyed by "METHOD /api/path". Unmatched requests 404.
- * Handlers receive the RequestInit so tests can assert on request bodies.
+ * Handlers receive the RequestInit (so tests can assert on request bodies) and
+ * the full request URL.
+ *
+ * Matching is exact first, then falls back to "METHOD /api/pathname" - the URL
+ * with its query string stripped. That lets a caller stub an endpoint whose
+ * query varies per call (the availability quote fires once per visible month and
+ * once per selection) without pinning every from/to combination; the handler
+ * reads the URL to branch. Exact keys still win, so existing stubs are unchanged.
  */
-export type FetchStubs = Record<string, (init?: RequestInit) => Response>;
+export type FetchStubs = Record<
+  string,
+  (init?: RequestInit, url?: string) => Response
+>;
 
 export function stubFetch(stubs: FetchStubs) {
   const calls: string[] = [];
@@ -31,11 +41,12 @@ export function stubFetch(stubs: FetchStubs) {
     "fetch",
     (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
-      const key = `${init?.method ?? "GET"} ${url}`;
-      calls.push(key);
-      const handler = stubs[key];
+      const method = init?.method ?? "GET";
+      calls.push(`${method} ${url}`);
+      const pathname = url.split("?")[0];
+      const handler = stubs[`${method} ${url}`] ?? stubs[`${method} ${pathname}`];
       return Promise.resolve(
-        handler ? handler(init) : new Response(null, { status: 404 }),
+        handler ? handler(init, url) : new Response(null, { status: 404 }),
       );
     },
   );
