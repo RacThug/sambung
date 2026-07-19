@@ -228,9 +228,9 @@ function Unavailable({
  * the grid cell, `day_button` the focusable control, `range_*` the selection.
  */
 const CALENDAR_CLASS_NAMES = {
-  root: "w-fit text-foreground",
+  root: "w-fit text-foreground select-none",
   months: "relative flex flex-col",
-  month: "flex w-full flex-col gap-3",
+  month: "flex flex-col gap-3",
   month_caption: "flex h-9 items-center justify-center",
   caption_label: "font-display text-base font-medium text-foreground",
   nav: "pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between",
@@ -239,13 +239,15 @@ const CALENDAR_CLASS_NAMES = {
   button_next:
     "pointer-events-auto inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-30 aria-disabled:opacity-30",
   chevron: "size-4 fill-current",
-  month_grid: "w-full border-collapse",
+  month_grid: "border-collapse",
   weekdays: "flex",
-  weekday: "flex-1 pb-1 text-[0.75rem] font-normal text-muted-foreground",
-  week: "mt-1 flex w-full",
-  day: "relative aspect-square flex-1 p-0 text-center text-sm",
+  weekday: "size-9 pb-1 text-[0.75rem] font-normal text-muted-foreground",
+  week: "mt-1 flex",
+  // Fixed square cells (not flex-1) so the 7-column grid has one predictable
+  // width under the w-fit root, and every day lines up with its weekday header.
+  day: "relative size-9 p-0 text-center text-sm",
   day_button:
-    "mx-auto flex size-9 items-center justify-center rounded-md font-normal transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-40",
+    "flex size-9 items-center justify-center rounded-md font-normal transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:text-muted-foreground disabled:opacity-40",
   today: "[&>button]:font-semibold [&>button]:text-primary",
   range_start:
     "rounded-l-md bg-accent [&>button]:bg-primary [&>button]:text-primary-foreground [&>button:hover]:bg-primary [&>button:hover]:text-primary-foreground",
