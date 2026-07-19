@@ -129,3 +129,25 @@ The day a departing Guest's check-out is the next Guest's check-in. Because a St
 two do not overlap, so the day is immediately bookable - the calendar bug this whole model exists to
 kill.
 _Avoid_: turnover, gap day
+
+### Payments
+
+**Deposit**:
+The share of a booking's total the Guest pays online at checkout, set per Property as a percentage
+(1-100, default 100). 100% is pay-in-full; anything less is a partial deposit, the balance settled at
+the Property. It scales the amount charged, never the Stay's total - a booking always records its full
+price.
+_Avoid_: down payment, prepayment, part-payment
+
+**Payment**:
+The record of one attempt to collect a booking's Deposit through the Provider - the amount charged and
+the Provider's session, not the money itself. A booking has at most one open (unpaid) Payment at a
+time: retrying checkout reuses that row and its session rather than minting a second, so "pay again"
+never means "charge twice". A Payment is settled by the Provider's webhook, never by the Guest's return.
+_Avoid_: charge, transaction, invoice, order
+
+**Provider**:
+The external gateway that hosts the Guest's card entry and later reports the outcome - Midtrans in the
+sandbox for v1. The Guest is redirected out to it and back; Sambung stores only the session it hands us
+and, later, the event it sends. Nothing in the domain knows a Provider's shape beyond that boundary.
+_Avoid_: gateway, processor, PSP, Midtrans (as the general term)

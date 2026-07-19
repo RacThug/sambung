@@ -2,6 +2,7 @@ import { HttpException } from '@nestjs/common';
 import { conflictBodySchema, parseConflictBody } from '@sambung/shared';
 import {
   bookingNotCancellable,
+  bookingNotPayable,
   datesUnavailable,
   emailTaken,
   propertyHasBookings,
@@ -28,6 +29,7 @@ describe('conflict factories conform to the shared wire contract', () => {
       unitHasBookings(14),
       datesUnavailable(['overlap', 'min_stay']),
       bookingNotCancellable('cancelled'),
+      bookingNotPayable('expired'),
     ].map(bodyOf);
 
     for (const body of bodies) {
@@ -58,6 +60,10 @@ describe('conflict factories conform to the shared wire contract', () => {
         status: 'expired',
       },
     );
+    expect(parseConflictBody(bodyOf(bookingNotPayable('confirmed')))).toEqual({
+      code: 'booking_not_payable',
+      status: 'confirmed',
+    });
   });
 
   it('keeps a human message for logs without leaking it into the domain body', () => {

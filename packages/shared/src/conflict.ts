@@ -49,6 +49,10 @@ export const conflictCodeSchema = z.enum([
   // the cancel FSM (#50): the booking is already terminal. Carries the terminal
   // `status` (cancelled / expired).
   "booking_not_cancellable",
+  // the pay chokepoint (#52, ADR-0015): the booking can't be paid because it is
+  // no longer a live hold - already confirmed/cancelled/expired, or its hold
+  // lapsed (swept to `expired` before the check). Carries the blocking `status`.
+  "booking_not_payable",
 ]);
 export type ConflictCode = z.infer<typeof conflictCodeSchema>;
 
@@ -87,6 +91,11 @@ const bookingNotCancellableBodySchema = z.object({
   status: bookingStatusSchema,
 });
 
+const bookingNotPayableBodySchema = z.object({
+  code: z.literal("booking_not_payable"),
+  status: bookingStatusSchema,
+});
+
 export const conflictBodySchema = z.discriminatedUnion("code", [
   emailTakenBodySchema,
   unitNameTakenBodySchema,
@@ -94,6 +103,7 @@ export const conflictBodySchema = z.discriminatedUnion("code", [
   unitHasBookingsBodySchema,
   datesUnavailableBodySchema,
   bookingNotCancellableBodySchema,
+  bookingNotPayableBodySchema,
 ]);
 export type ConflictBody = z.infer<typeof conflictBodySchema>;
 

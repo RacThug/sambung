@@ -117,6 +117,9 @@ async function main() {
         longitude: 115.1385,
         description: "Surf-style loft a short walk from Batu Bolong.",
         // no licenseNo → no Verified badge (demonstrates the conditional badge)
+        // A partial Deposit (30%) so checkout demonstrates deposit vs pay-in-full
+        // (#52); the other properties keep the default 100%.
+        depositPct: 30,
       },
       {
         id: P_UBUD,

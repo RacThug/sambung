@@ -192,8 +192,12 @@ describe('Public property page', () => {
     const body = bodyOf<PublicPropertyResponse>(res);
     // Pinned, not spot-checked: a new column on `property` must not be able to
     // arrive here silently. If this fails, decide - don't just update it.
+    // `depositPct` was ADDED deliberately (#52, ADR-0015): a payment term the
+    // guest sees at checkout anyway, so the funnel can preview the deposit before
+    // the redirect. Non-PII, unlike licenseNo.
     expect(Object.keys(body).sort()).toEqual([
       'address',
+      'depositPct',
       'description',
       'name',
       'photos',

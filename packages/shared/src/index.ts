@@ -23,6 +23,7 @@ export * from "./booking";
 export * from "./booking-list";
 export * from "./conflict";
 export * from "./money";
+export * from "./payment";
 export * from "./photo";
 export * from "./property";
 export * from "./public-property";

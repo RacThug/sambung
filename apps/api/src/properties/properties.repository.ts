@@ -28,6 +28,7 @@ export type PublicPropertyRow = {
   address: string | null;
   description: string | null;
   verified: boolean;
+  depositPct: number;
   photos: string[];
   units: PublicUnitRow[];
 };
@@ -320,6 +321,7 @@ export class PropertiesRepository {
           address: property.address,
           description: property.description,
           licenseNo: property.licenseNo,
+          depositPct: property.depositPct,
           photos: property.photos,
         })
         .from(property)
@@ -367,6 +369,7 @@ export class PropertiesRepository {
         address: row.address,
         description: row.description,
         verified: isVerified(row.licenseNo),
+        depositPct: row.depositPct,
         photos: row.photos,
         units,
       };

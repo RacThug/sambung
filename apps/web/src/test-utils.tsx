@@ -77,6 +77,7 @@ export function propertyResponse(
     longitude: null,
     description: null,
     licenseNo: null,
+    depositPct: 100,
     photos: [],
     verified: false,
     publishable: false,
@@ -108,6 +109,7 @@ export function publicPropertyResponse(
     address: "Jl. Kayu Aya, Seminyak",
     description: null,
     verified: false,
+    depositPct: 100,
     photos: [],
     units: (units ?? []).map((u, i) => ({
       id: `bbbbbbbb-0000-0000-0000-00000000000${i + 1}`,

@@ -52,6 +52,7 @@ export class PublicPropertiesService {
       address: row.address,
       description: row.description,
       verified: row.verified,
+      depositPct: row.depositPct,
       photos: row.photos.map((key) => ({ url: this.storage.publicUrl(key) })),
       units: row.units.map((u) => ({
         id: u.id,

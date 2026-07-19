@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { property, unit } from '@sambung/db';
+import { booking, property, unit } from '@sambung/db';
 import { DbService } from '../db/db.service';
 import { TenantContext } from './tenant-context.service';
 
@@ -89,6 +89,36 @@ export class PublicScope {
       .limit(1);
     if (!found) {
       throw new NotFoundException('Unit not found');
+    }
+    this.tenant.set({ kind: 'visitor', tenantId: found.tenantId });
+  }
+
+  /**
+   * Enter the scope of the tenant that owns the booking `bookingId`, so the
+   * caller's subsequent queries run under RLS as that tenant.
+   *
+   * The THIRD public entry (api-spec §6.1, the pay step). Same shape as its
+   * siblings and PURE for the same reason (ADR-0008): it resolves the tenant for
+   * ANY existing booking and 404s only an id that addresses no booking. Whether
+   * the booking can actually be PAID - a live hold, not already confirmed /
+   * cancelled / expired / lapsed - is decided downstream at the chokepoint
+   * (BookingsService, a post-sweep status read → 409 booking_not_payable). A
+   * resolver that judged status here would fold that decision into the door and
+   * split one cross-tenant lookup into two that drift.
+   *
+   * One column, keyed by an unguessable UUID the guest already holds (it was in
+   * the create response). The `payment` RLS policy scopes through this same
+   * `booking.tenant_id`, so once the Visitor is minted the pay endpoint can insert
+   * and read its payment row with no special connection.
+   */
+  async enterFromBookingId(bookingId: string): Promise<void> {
+    const [found] = await this.dbs.db
+      .select({ tenantId: booking.tenantId })
+      .from(booking)
+      .where(eq(booking.id, bookingId))
+      .limit(1);
+    if (!found) {
+      throw new NotFoundException('Booking not found');
     }
     this.tenant.set({ kind: 'visitor', tenantId: found.tenantId });
   }

@@ -153,6 +153,7 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
     longitude: property.longitude?.toString() ?? "",
     description: property.description ?? "",
     licenseNo: property.licenseNo ?? "",
+    depositPct: property.depositPct.toString(),
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -184,6 +185,9 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
       longitude: form.longitude === "" ? null : Number(form.longitude),
       description: form.description || null,
       licenseNo: form.licenseNo || null,
+      // Blank = leave the setting alone (it is not nullable); otherwise a number
+      // the shared schema bounds to 1-100.
+      depositPct: form.depositPct === "" ? undefined : Number(form.depositPct),
     });
     if (!parsed.success) {
       setFieldErrors(issuesToFieldErrors(parsed.error.issues));
@@ -255,6 +259,29 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
             />
             {/* Live preview: the badge the public page will show (FR-PROP-3). */}
             {isVerified(form.licenseNo) && <VerifiedBadge />}
+          </div>
+        )}
+      </FormField>
+
+      {/* Deposit % (api #10, ADR-0015): the share of a booking's total a guest
+          pays online at checkout. 100 = pay in full; less takes a partial deposit
+          now and settles the balance at the property. */}
+      <FormField label="Deposit taken online (%)" error={fieldErrors.depositPct}>
+        {(field) => (
+          <div>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={100}
+              value={form.depositPct}
+              onChange={set("depositPct")}
+              className={inputClass}
+              {...field}
+            />
+            <p className="mt-1 text-sm text-muted-foreground">
+              Share of the total charged at checkout. 100 = pay in full.
+            </p>
           </div>
         )}
       </FormField>

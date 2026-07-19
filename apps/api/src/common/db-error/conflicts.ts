@@ -122,3 +122,15 @@ export const bookingNotCancellable = (status: BookingStatus): HttpException =>
   conflict('booking_not_cancellable', 'Booking cannot be cancelled', {
     status,
   });
+
+/**
+ * A booking cannot be paid because it is no longer a live hold (#52, api-spec
+ * §6.1, ADR-0015). Reached after the opportunistic hold-sweep, so a lapsed hold
+ * arrives here as `status: 'expired'`; a booking that was confirmed, cancelled or
+ * expired arrives with its own terminal status. One-layer, like the cancel FSM:
+ * no constraint produces it, the post-sweep status read does. The blocking
+ * `status` rides as data so the checkout UI can say "already confirmed" vs "this
+ * hold lapsed - pick dates again" without parsing prose.
+ */
+export const bookingNotPayable = (status: BookingStatus): HttpException =>
+  conflict('booking_not_payable', 'Booking cannot be paid', { status });

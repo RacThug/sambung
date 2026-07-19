@@ -57,6 +57,13 @@
       "when": 1784400000000,
       "tag": "0007_structured_guest_contact",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784466847173,
+      "tag": "0008_property_deposit_pct",
+      "breakpoints": true
     }
   ]
 }

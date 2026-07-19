@@ -8,6 +8,7 @@ import {
 import { HomePage } from "./features/public-booking/home-page";
 import { PropertyPage } from "./features/public-booking/property-page";
 import { CheckoutPage } from "./features/public-booking/checkout-page";
+import { BookingLandingPage } from "./features/public-booking/booking-landing-page";
 import { propertySearchSchema } from "./features/public-booking/property-search";
 import { LoginPage } from "./features/auth/login-page";
 import { RegisterPage } from "./features/auth/register-page";
@@ -51,6 +52,15 @@ const checkoutRoute = createRoute({
   path: "/p/$slug/book",
   validateSearch: propertySearchSchema,
   component: CheckoutPage,
+});
+
+// Booking landing (page-spec §3.3, #52) - where the Provider returns the guest
+// after Snap. Public: a Guest has no token. Thin for now; the reconcile-on-read
+// confirmation page is #54.
+const bookingLandingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/booking/$bookingId",
+  component: BookingLandingPage,
 });
 
 const loginRoute = createRoute({
@@ -148,6 +158,7 @@ export const routeTree = rootRoute.addChildren([
   homeRoute,
   propertyRoute,
   checkoutRoute,
+  bookingLandingRoute,
   loginRoute,
   registerRoute,
   appRoute.addChildren([
