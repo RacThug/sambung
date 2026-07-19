@@ -16,6 +16,13 @@ import { UnitsModule } from './units/units.module';
 
 @Module({
   imports: [
+    // Loads apps/api/.env (via dotenv) into ConfigService for every context,
+    // tests included - DbService / TenantDbService read DATABASE_URL /
+    // APP_DATABASE_URL through ConfigService.getOrThrow, which names the cause
+    // if a var is missing. This is the ONLY thing tests rely on for env; there
+    // is no separate jest setup shim (a former `test-setup.ts` called
+    // process.loadEnvFile(), which silently no-ops under jest's sandboxed
+    // process.env - deleted in #81).
     ConfigModule.forRoot({ isGlobal: true }),
     // Opens an AsyncLocalStorage store per request (mounted as middleware) so
     // the guard can seed TenantContext and services can read it ambiently.
