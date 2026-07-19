@@ -114,6 +114,7 @@ function UnitChannels({
               key={conn.id}
               conn={conn}
               unitId={unit.id}
+              unitName={unit.name}
               readOnly={effectiveArchived}
             />
           ))}
@@ -180,10 +181,12 @@ const STATUS_STYLES: Record<SyncStatus, { label: string; className: string }> = 
 function ConnectionRow({
   conn,
   unitId,
+  unitName,
   readOnly,
 }: {
   conn: ChannelConnectionResponse;
   unitId: string;
+  unitName: string;
   readOnly: boolean;
 }) {
   const queryClient = useQueryClient();
@@ -225,7 +228,7 @@ function ConnectionRow({
             onClick={() => {
               if (
                 window.confirm(
-                  `Disconnect ${CHANNEL_LABELS[conn.channel]} from “${conn.channel}”? Imported bookings are kept.`,
+                  `Disconnect ${CHANNEL_LABELS[conn.channel]} from “${unitName}”? Imported bookings are kept.`,
                 )
               ) {
                 disconnect.mutate();

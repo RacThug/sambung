@@ -85,8 +85,14 @@ as Sambung does.
 - The smoke fetch on **connect** (§7.1) is an outbound request the server makes on
   the owner's behalf → an SSRF surface. Mitigated: it only ever leaks a boolean
   (reachable + looks-like-a-calendar, never the body), it is owner-authenticated,
-  and the real fetcher refuses private/loopback host literals. Full egress
-  allowlisting / DNS-rebinding defence is out of scope for v1, noted here.
+  and the real fetcher refuses private/loopback host literals **on every redirect
+  hop, not just the initial URL** - it follows redirects manually (`redirect:
+  'manual'` + a hop cap) and re-validates each `Location`, because
+  `redirect: 'follow'` would let a public host `302` into an internal address (the
+  metadata endpoint, the Postgres/Garage host) that the pool would silently follow.
+  What is still *not* covered: a hostname that resolves to a private IP (DNS
+  rebinding). Connect-time IP checks + a full egress allowlist + a per-connection
+  feed token are the documented hardening path, out of scope for v1.
 - A future column on `booking` (say a payout reference) cannot leak through the
   feed: the export selects three columns by name, and the serializer has nowhere
   to put a fourth.

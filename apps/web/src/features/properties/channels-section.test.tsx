@@ -158,7 +158,7 @@ describe("channels section (§4.5, #55)", () => {
   // Disconnect KEEPS imported bookings and reports how many remain (api-spec §7.4);
   // the web composes the sentence from the count.
   it("disconnects and reports how many imported bookings were kept", async () => {
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     const conn = channelConnectionResponse();
     stubEditPage(
       {
@@ -171,6 +171,13 @@ describe("channels section (§4.5, #55)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
     expect(await screen.findByText(/3 imported bookings kept/i)).toBeInTheDocument();
+    // The confirm names the UNIT (unitResponse().name), not the raw channel slug.
+    expect(confirmSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Garden Room 1"),
+    );
+    expect(confirmSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('from “airbnb”'),
+    );
   });
 
   it("does not disconnect when the confirm is dismissed", async () => {
