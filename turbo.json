@@ -1,6 +1,10 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "ui": "stream",
+  // `tui` gives each persistent task (web:dev, api:dev) its own switchable pane,
+  // so the Vite URL isn't buried under the API's route-mapping logs. Arrow keys /
+  // click to switch panes; turbo auto-falls back to interleaved stream when
+  // there's no interactive terminal (CI). Was "stream".
+  "ui": "tui",
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
