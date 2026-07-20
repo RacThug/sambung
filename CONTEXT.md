@@ -158,3 +158,40 @@ only thing that turns a Hold into a confirmed booking. The Guest returning from 
 a settlement; only the webhook is. A settlement that arrives after the Hold has lapsed records the money
 but never resurrects the booking - it is a refund to sort out, not a confirmation.
 _Avoid_: capture, callback, payment confirmation, notification
+
+### Channel sync
+
+**Channel**:
+An OTA an Owner also lists a Unit on - Airbnb, Booking.com, Vrbo. Sambung's word for an external booking
+system it keeps a Unit's calendar in step with; it never books *through* a Channel, only mirrors it.
+_Avoid_: OTA (as the domain term), platform, site, integration
+
+**Connection**:
+The link between one Unit and one Channel: the Channel's iCal feed URL plus its sync health. Exactly one
+per (Unit, Channel) - a Unit is one sellable thing, so its Airbnb calendar is one feed.
+_Avoid_: integration, feed (for the link itself), channel (they are different: a Connection points at a Channel)
+
+**Sync**:
+One pull-and-reconcile pass over a Connection's feed. It runs on a schedule and on demand ("Sync now"),
+and either way does the same work through the same path. Poll-based and lagging by design - an imported
+block appears within a cycle, never instantly.
+_Avoid_: refresh, poll, update, fetch
+
+**Reconciliation**:
+Bringing a Connection's imported Bookings into line with what its feed now says - adjust the blocks still
+present, cancel the ones that vanished. It only ever touches Bookings Sambung imported through *that*
+Connection; a direct or manual Booking is never reconciled away.
+_Avoid_: merge, resolve, refresh
+
+**Healthy feed**:
+A pull that arrived whole - reachable, and a terminated calendar rather than a truncated stream. Only a
+Healthy feed may cancel a vanished Booking; an unreachable or truncated one is marked in error and changes
+nothing, so a broken download can never mass-cancel real stays. A Healthy feed with no blocks at all still
+cancels nothing - "empty" and "cut off" are indistinguishable, so Sambung refuses to guess.
+_Avoid_: valid, good, successful
+
+**Import / Export**:
+The two directions of one calendar. Import pulls a Channel's blocks *into* Sambung (the channel-manager
+half); Export publishes Sambung's confirmed stays *out* as an .ics a Channel reads. Neither carries a
+Guest's name or a price - a Channel needs only which nights are busy.
+_Avoid_: sync (for one direction - Sync is the whole pass), feed (for the act)

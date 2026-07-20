@@ -8,13 +8,17 @@ import { ChannelsRepository } from './channels.repository';
 import { ChannelsService } from './channels.service';
 import { HttpIcalFetcher, ICAL_FETCHER } from './ical-fetcher';
 import { IcalExportService } from './ical-export.service';
+import { IcalImportService } from './ical-import.service';
+import { IcalImportSweeperService } from './ical-import-sweeper.service';
 import { PublicChannelsController } from './public-channels.controller';
 
 /**
- * channel-sync (architecture §3). This issue (#55) lands the connection lifecycle
- * (connect / list / disconnect) + the public `.ics` EXPORT feed; the iCal IMPORT
- * pipeline (the cron, per-VEVENT reconciliation, the sync-conflict inbox) is boss
- * fight #3, a separate M4 issue that joins this module.
+ * channel-sync (architecture §3). #55 landed the connection lifecycle (connect /
+ * list / disconnect) + the public `.ics` EXPORT feed; #56 (boss fight #3) adds the
+ * iCal IMPORT pipeline - the 30-min cron (IcalImportSweeperService) + the
+ * per-VEVENT reconciliation core (IcalImportService) that "Sync now" also drives.
+ * The sync-conflict INBOX (recording a 23P01 overlap) is the remaining piece,
+ * #38, which slots into the importer's per-VEVENT catch.
  *
  * The outbound iCal boundary (api-spec §8.5): ICAL_FETCHER is bound to
  * HttpIcalFetcher in prod/dev; tests `.overrideProvider(ICAL_FETCHER)` with a
@@ -35,6 +39,8 @@ import { PublicChannelsController } from './public-channels.controller';
     ChannelsService,
     ChannelsRepository,
     IcalExportService,
+    IcalImportService,
+    IcalImportSweeperService,
     { provide: ICAL_FETCHER, useClass: HttpIcalFetcher },
   ],
 })

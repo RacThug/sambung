@@ -181,18 +181,19 @@ Most "state" here is *server* state (bookings, availability). React Query handle
    (unpaid holds expire via the 5-min sweeper)
 ```
 
-**B. iCal sync (the integration path)**
+**B. iCal sync (the integration path)** — import **Built** (#56, ADR-0025); the sync_conflict record is #38
 ```
-@Cron 30m → for each channel_connection:
-  fetch import_ical_url → parse VEVENTs (node-ical)
-  parse unhealthy? → last_status=error, STOP (never reconcile a broken feed)
-  per VEVENT, inside a savepoint:
+@Cron 30m (owner connection) → for each channel_connection:
+  fetch import_ical_url OUTSIDE the txn → parse VEVENTs (hand-rolled, ical-parse.ts)
+  unhealthy? (unreachable / not a terminated VCALENDAR) → last_status=error, STOP  (never reconcile a broken feed)
+  healthy → one txn, per VEVENT inside a SAVEPOINT:
     upsert booking by (channel_connection_id, external_uid), source=channel, status=confirmed
-    ├─ exclusion violation (23P01) → record sync_conflict, continue  (db-design §4.8)
-    └─ ok → close any open conflict for that uid
-  uids in DB but ABSENT from the healthy feed → status=cancelled   (an OTA cancellation)
+    ├─ exclusion violation (23P01) → skip+log, continue; #38 records a sync_conflict here  (db-design §4.8)
+    └─ ok → imported
+  uids ABSENT from a healthy feed WITH ≥1 event → status=cancelled  (an OTA cancellation; empty feed cancels nothing)
   update last_synced_at + last_status
-Export: GET .../calendar.ics → build feed from confirmed bookings (ics lib)
+"Sync now" (§7.3) forces one connection through the SAME core, synchronously.
+Export: GET .../calendar.ics → build feed from confirmed bookings (hand-rolled, ical.ts; ADR-0016)
 ```
 
 **C. Payment webhook (the idempotency path)**
