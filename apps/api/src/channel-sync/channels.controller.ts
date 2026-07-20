@@ -14,6 +14,7 @@ import {
   type ChannelConnectionResponse,
   type CreateChannelConnectionRequest,
   type DisconnectChannelResponse,
+  type SyncConnectionResponse,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
@@ -62,5 +63,17 @@ export class ChannelsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<DisconnectChannelResponse> {
     return this.channels.disconnect(id);
+  }
+
+  // "Sync now" (api-spec §7.3, #31/#56): force this connection's import off the
+  // 30-min cron. 200 with the post-sync health + a summary (not 202 queued - the
+  // pull runs synchronously; there is no queue on a single VPS, ADR-0025).
+  // Unknown / foreign id → 404.
+  @Post(':id/sync')
+  @HttpCode(200)
+  syncNow(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<SyncConnectionResponse> {
+    return this.channels.syncNow(id);
   }
 }

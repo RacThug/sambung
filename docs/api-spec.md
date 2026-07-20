@@ -72,7 +72,7 @@ Sources: `direct | airbnb | booking_com | vrbo | manual_block`. Transitions outs
 | 28 | `POST /units/:id/channels` | Connect an OTA iCal | M4 | SYNC-1 |
 | 29 | `GET /units/:id/channels` | Connections + sync status | M4 | SYNC-3 |
 | 30 | `DELETE /channels/:id` | Disconnect | M4 | SYNC-1 |
-| 31 | `POST /channels/:id/sync` | Force "Sync now" | M4 | SYNC-1 |
+| 31 | `POST /channels/:id/sync` | Force "Sync now" | **Built** (#56) | SYNC-1 |
 | 32 | `GET /sync-conflicts?status=open` | Conflict inbox (#38) | M4 | SYNC-3 |
 | 33 | `POST /sync-conflicts/:id/dismiss` | Dismiss a conflict | M4 | SYNC-3 |
 | 34 | `GET /public/units/:id/calendar.ics` | iCal export feed | M4 | SYNC-2 |
@@ -272,8 +272,10 @@ Body: `{ channel: "airbnb" | "booking_com" | "vrbo", importIcalUrl }` (https URL
 ### 7.2 `GET /units/:id/channels` → 200 (auth) - **Built** (#55)
 Connections with `lastSyncedAt, lastStatus: never|ok|error, lastError?` (FR-SYNC-3 - failures surface, never silent). **`openConflicts` is deferred**: the sync-conflict inbox belongs to the iCal IMPORT pipeline (#38, boss fight #3, §7.5), which is a separate M4 issue - there is no `sync_conflict` table to count yet, and a hard-coded 0 would be a field with no source. It joins this shape when the import side lands.
 
-### 7.3 `POST /channels/:id/sync` → 202 (auth)
-Queues an immediate sync ("Sync now"); response `{ queued: true }`. Same pipeline as the 30-min cron (architecture flow B): healthy parse → per-VEVENT savepointed upserts by `externalUid` → absent-UID cancellation **only on a healthy feed** → conflicts recorded, never crash the cycle.
+### 7.3 `POST /channels/:id/sync` → 200 (auth) - **Built** (#56, ADR-0025)
+"Sync now": force this connection's import off the 30-min cron, **immediately**. Runs **synchronously** and returns the connection's post-sync health + a summary - `SyncConnectionResponse = { lastStatus: never|ok|error, lastSyncedAt, lastError, imported, cancelled }` - not `202 { queued: true }`: there is no job queue on a single VPS (Redis/BullMQ = a heavy dep), so the honest contract is the result, not a promise ([ADR-0025](adr/0025-a-healthy-feed-reconciles-a-doubtful-one-does-nothing.md)). Unknown/foreign id → 404 (resolved under the owner's RLS scope first, existence hidden). Same reconcile core as the cron (architecture flow B): fetch **outside** the txn → parse → one txn with a **savepoint per VEVENT** (an overlap `23P01` skips that event, never crashes the cycle - the #38 seam) → upsert by `externalUid` → absent-UID cancellation **only on a healthy feed with ≥ 1 event** (`imported`/`cancelled` count what this pull did; both 0 on an unhealthy feed).
+
+**"Healthy" is a whole, terminated calendar.** A non-2xx / unreachable / timeout pull, or a body that is not a terminated `BEGIN:VCALENDAR … END:VCALENDAR` (truncation loses the `END`), is **unhealthy** → `lastStatus: 'error'`, zero writes. A healthy-but-empty calendar stamps `ok` but cancels nothing (empty is indistinguishable from truncated-to-zero - never mass-cancel real bookings).
 
 ### 7.4 `DELETE /channels/:id` → 200 (auth) - **Built** (#55)
 Disconnects. Already-imported bookings are **kept** (they may reflect real stays) but stop being reconciled - the `booking.channel_connection_id` FK is `set null`, so they survive with their source/status intact; the response body `{ importedBookingsKept }` counts them (measured before the delete) so the owner can clean up deliberately. Safer than auto-cancelling reality. Returns 200 (not 204) because it carries that body. Unknown/foreign id → 404.

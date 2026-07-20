@@ -108,3 +108,24 @@ export const disconnectChannelResponseSchema = z.object({
 export type DisconnectChannelResponse = z.infer<
   typeof disconnectChannelResponseSchema
 >;
+
+/**
+ * The 200 for `POST /channels/:id/sync` - "Sync now" (api-spec §7.3, #56). The
+ * pull runs SYNCHRONOUSLY (there is no job queue on a single VPS - ADR-0025), so
+ * the response reports the connection's post-sync health, not a `{ queued: true }`
+ * promise. `lastStatus`/`lastSyncedAt`/`lastError` are the same health fields the
+ * list carries (FR-SYNC-3); `imported`/`cancelled` summarise what THIS pull did -
+ * events reconciled, and OTA-side cancellations reflected. Both are 0 on an
+ * unhealthy feed (nothing changed), so a `lastStatus: 'error'` response is
+ * unambiguous.
+ */
+export const syncConnectionResponseSchema = z.object({
+  lastStatus: syncStatusSchema,
+  lastSyncedAt: z.string().nullable(), // ISO-8601 UTC or null
+  lastError: z.string().nullable(),
+  imported: z.number().int().nonnegative(),
+  cancelled: z.number().int().nonnegative(),
+});
+export type SyncConnectionResponse = z.infer<
+  typeof syncConnectionResponseSchema
+>;

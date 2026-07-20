@@ -27,12 +27,34 @@ export interface IcalProbeResult {
   error: string | null;
 }
 
+/**
+ * The outcome of pulling a feed's BODY for import (#56). Like IcalProbeResult it
+ * never throws - an unreachable feed is an `{ ok: false }` value the import cycle
+ * turns into `last_status = 'error'` with zero writes, not an exception. On `ok`,
+ * `body` is the full (size-bounded) feed text for the parser; on failure it is
+ * null and `error` carries a human reason for `last_error`.
+ */
+export interface IcalFetchResult {
+  ok: boolean;
+  body: string | null;
+  error: string | null;
+}
+
 export interface IcalFetcher {
   /**
    * Fetch `url` once and report whether it is a reachable iCalendar feed. Never
    * throws for a network/HTTP/format failure - those are `{ ok: false }` results.
+   * Used by connect (§7.1) as a smoke test - reads only the header, not the body.
    */
   probe(url: string): Promise<IcalProbeResult>;
+
+  /**
+   * Pull a feed's full body for the import pipeline (#56). Same reachability +
+   * SSRF guarantees as probe (both go through the guarded redirect walk), but
+   * returns the whole (bounded) body rather than a boolean, because the importer
+   * must parse it. Never throws.
+   */
+  fetchFeed(url: string): Promise<IcalFetchResult>;
 }
 
 // A hung OTA must not pin a pooled connection: connect awaits this probe, so
@@ -41,6 +63,11 @@ const PROBE_TIMEOUT_MS = 8_000;
 // Read enough to recognise an iCalendar without slurping a huge feed: the header
 // is at the very top, and this is a smoke test, not the importer.
 const MAX_SNIFF_BYTES = 64 * 1024;
+// The importer DOES need the whole body, but bounded so a hostile/broken feed
+// can't exhaust memory. 5 MB is far above any real OTA availability feed (a year
+// of daily blocks is a few tens of KB); a feed larger than this is truncated at
+// the cap and will simply fail the terminated-VCALENDAR parse gate (safe).
+const MAX_FEED_BYTES = 5 * 1024 * 1024;
 // A real OTA feed rarely redirects more than once or twice (http→https, a CDN
 // hop). Cap it so a redirect loop can't spin, and follow each hop MANUALLY.
 const MAX_REDIRECTS = 5;
@@ -72,6 +99,41 @@ export class HttpIcalFetcher implements IcalFetcher {
   private readonly logger = new Logger(HttpIcalFetcher.name);
 
   async probe(url: string): Promise<IcalProbeResult> {
+    const walked = await this.walk(url);
+    if (!walked.ok) return { ok: false, error: walked.error };
+    // Smoke test: read only the header - enough to catch the common mistake (an
+    // owner pasting the OTA webpage URL, not the .ics export).
+    const head = await readBounded(walked.res, MAX_SNIFF_BYTES).catch(() => '');
+    if (!head.includes('BEGIN:VCALENDAR')) {
+      return { ok: false, error: 'Response is not an iCalendar feed' };
+    }
+    return { ok: true, error: null };
+  }
+
+  async fetchFeed(url: string): Promise<IcalFetchResult> {
+    const walked = await this.walk(url);
+    if (!walked.ok) return { ok: false, body: null, error: walked.error };
+    // The importer needs the WHOLE body to parse; readBounded caps it so a broken
+    // feed can't exhaust memory (a body hitting the cap fails the parse gate).
+    const body = await readBounded(walked.res, MAX_FEED_BYTES).catch(
+      () => null,
+    );
+    if (body === null) {
+      return { ok: false, body: null, error: 'Feed could not be read' };
+    }
+    return { ok: true, body, error: null };
+  }
+
+  /**
+   * The guarded redirect walk both probe and fetchFeed share (DRY, so the SSRF
+   * block cannot hold for one and not the other). Follows redirects BY HAND,
+   * re-validating https + the private-host block on EVERY hop, and returns the
+   * final 2xx Response for the caller to read - or an `{ ok: false }` at any hop.
+   * Never throws.
+   */
+  private async walk(
+    url: string,
+  ): Promise<{ ok: true; res: Response } | { ok: false; error: string }> {
     let current: URL;
     try {
       current = new URL(url);
@@ -79,8 +141,6 @@ export class HttpIcalFetcher implements IcalFetcher {
       return { ok: false, error: 'Not a valid URL' };
     }
 
-    // Follow redirects by hand so the https + private-host checks below run on
-    // EVERY hop, not just the initial URL (the SSRF fix - see the class doc).
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       if (current.protocol !== 'https:') {
         return { ok: false, error: 'Feed URL must be https' };
@@ -102,7 +162,7 @@ export class HttpIcalFetcher implements IcalFetcher {
         // DNS / connection failure OR the timeout abort. Not our bug and not the
         // owner's request failing - just a feed we could not reach right now.
         this.logger.warn(
-          `iCal probe unreachable for ${current.host}: ${String(cause)}`,
+          `iCal fetch unreachable for ${current.host}: ${String(cause)}`,
         );
         return { ok: false, error: 'Feed is unreachable' };
       }
@@ -127,21 +187,16 @@ export class HttpIcalFetcher implements IcalFetcher {
       if (!res.ok) {
         return { ok: false, error: `Feed responded ${res.status}` };
       }
-
-      const head = await readHead(res).catch(() => '');
-      if (!head.includes('BEGIN:VCALENDAR')) {
-        return { ok: false, error: 'Response is not an iCalendar feed' };
-      }
-      return { ok: true, error: null };
+      return { ok: true, res };
     }
 
     return { ok: false, error: 'Too many redirects' };
   }
 }
 
-/** Read up to MAX_SNIFF_BYTES of the body as text, then stop - we only need the
- * header. Falls back to `res.text()` when the body isn't a readable stream. */
-async function readHead(res: Response): Promise<string> {
+/** Read up to `maxBytes` of the body as text, then stop. Falls back to
+ * `res.text()` when the body isn't a readable stream (e.g. a mocked Response). */
+async function readBounded(res: Response, maxBytes: number): Promise<string> {
   if (!res.body) return res.text();
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -151,7 +206,7 @@ async function readHead(res: Response): Promise<string> {
       const { done, value } = await reader.read();
       if (done) break;
       out += decoder.decode(value, { stream: true });
-      if (out.length >= MAX_SNIFF_BYTES) break;
+      if (out.length >= maxBytes) break;
     }
   } finally {
     await reader.cancel().catch(() => undefined);

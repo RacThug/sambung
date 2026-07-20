@@ -1,15 +1,18 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   channelConnectionResponseSchema,
+  syncConnectionResponseSchema,
   type ChannelConnectionResponse,
   type CreateChannelConnectionRequest,
   type DisconnectChannelResponse,
+  type SyncConnectionResponse,
 } from '@sambung/shared';
 import type { ChannelConnection } from '@sambung/db';
 import { channelAlreadyConnected } from '../common/db-error/conflicts';
 import { TenantDbService } from '../db/tenant-db.service';
 import { ChannelsRepository } from './channels.repository';
 import { ICAL_FETCHER, type IcalFetcher } from './ical-fetcher';
+import { IcalImportService } from './ical-import.service';
 
 /**
  * The channel-connection lifecycle (api-spec §7.1/7.2/7.4, #55) - the OWNER side
@@ -26,6 +29,7 @@ export class ChannelsService {
     private readonly repo: ChannelsRepository,
     private readonly db: TenantDbService,
     @Inject(ICAL_FETCHER) private readonly fetcher: IcalFetcher,
+    private readonly importer: IcalImportService,
   ) {}
 
   /**
@@ -91,6 +95,33 @@ export class ChannelsService {
       const importedBookingsKept = await this.repo.countImportedBookings(id);
       await this.repo.delete(id);
       return { importedBookingsKept };
+    });
+  }
+
+  /**
+   * "Sync now" (api-spec §7.3): force one connection's import off the 30-min cron,
+   * immediately. Two-step by design: resolve the connection under the owner's RLS
+   * scope FIRST (an unknown / foreign id is a 404, never a 403 - existence is
+   * hidden, §1), THEN hand the resolved row to the importer, which reconciles on
+   * the owner connection (the same cross-tenant path the cron uses). Runs
+   * synchronously and returns the connection's post-sync health + a summary of
+   * what this pull did - there is no job queue on a single VPS (ADR-0025), so the
+   * honest contract is the result, not a `{ queued: true }` promise.
+   */
+  async syncNow(id: string): Promise<SyncConnectionResponse> {
+    const conn = await this.repo.findById(id);
+    if (!conn) {
+      throw new NotFoundException('Channel connection not found');
+    }
+    const outcome = await this.importer.syncConnection(conn);
+    return syncConnectionResponseSchema.parse({
+      lastStatus: outcome.status,
+      lastSyncedAt: outcome.lastSyncedAt
+        ? outcome.lastSyncedAt.toISOString()
+        : null,
+      lastError: outcome.lastError,
+      imported: outcome.imported,
+      cancelled: outcome.cancelled,
     });
   }
 
