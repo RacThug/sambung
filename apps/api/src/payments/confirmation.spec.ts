@@ -28,12 +28,17 @@ import { PAYMENT_GATEWAY } from './payment-gateway';
 import { PaymentsRepository } from './payments.repository';
 
 /** Records what would have been emailed, so a test can prove "exactly once".
- * `fail` makes `send` reject, to prove a down mailer never breaks the flow. */
+ * `fail` makes every `send` reject, to prove a down mailer never breaks the flow.
+ * `failRecipient` rejects only ONE address (a bounced recipient), to prove
+ * per-recipient isolation (#126): the other recipient is still emailed. */
 class RecordingMailer implements Mailer {
   readonly sent: EmailMessage[] = [];
   fail = false;
+  failRecipient: string | null = null;
   send(message: EmailMessage): Promise<void> {
-    if (this.fail) return Promise.reject(new Error('mailer is down'));
+    if (this.fail || message.to === this.failRecipient) {
+      return Promise.reject(new Error('mailer is down'));
+    }
     this.sent.push(message);
     return Promise.resolve();
   }
@@ -211,6 +216,7 @@ describe('Confirmation page (reconcile-on-read)', () => {
   afterEach(() => {
     mailer.sent.length = 0;
     mailer.fail = false;
+    mailer.failRecipient = null;
     fake.statuses.clear();
   });
 
@@ -371,6 +377,25 @@ describe('Confirmation page (reconcile-on-read)', () => {
     expect(await statusOfBooking(bookingId)).toBe('confirmed');
     // The send threw, so nothing was recorded - proving the throw was swallowed.
     expect(mailer.sent).toHaveLength(0);
+  });
+
+  // --- (#126) One recipient bouncing must not drop the other -------------------
+
+  it('still emails the owner when the GUEST send bounces (per-recipient isolation)', async () => {
+    const { bookingId, orderId } = await seedPayable();
+    fake.setStatus(orderId, settlement(orderId));
+    mailer.failRecipient = 'made@test.dev'; // only the guest's address bounces
+
+    // The confirmation still succeeds and persists...
+    const res = await getConfirmation(bookingId).expect(200);
+    expect(bodyOf<BookingConfirmationResponse>(res).status).toBe('confirmed');
+    expect(await statusOfBooking(bookingId)).toBe('confirmed');
+
+    // ...and the owner's new-booking email STILL went out despite the guest bounce
+    // (before #126 the guest failure aborted the loop and dropped this).
+    const recipients = mailer.sent.map((m) => m.to);
+    expect(recipients).not.toContain('made@test.dev'); // guest bounced
+    expect(recipients.some((r) => r.startsWith('cf+'))).toBe(true); // owner got it
   });
 
   // --- (D) The confirmation read is confined to the booking's tenant (RLS) ----
