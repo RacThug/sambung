@@ -125,7 +125,14 @@ export class IcalImportService {
       await tx
         .update(channelConnection)
         .set({ lastStatus: 'ok', lastSyncedAt: now, lastError: null })
-        .where(eq(channelConnection.id, conn.id));
+        // PK id alone would suffice (globally unique), but scope by tenant_id too
+        // so EVERY write on this RLS-bypassed connection is literally tenant-scoped.
+        .where(
+          and(
+            eq(channelConnection.id, conn.id),
+            eq(channelConnection.tenantId, conn.tenantId),
+          ),
+        );
     });
 
     if (imported > 0 || cancelled > 0) {
@@ -219,7 +226,12 @@ export class IcalImportService {
     await this.dbs.db
       .update(channelConnection)
       .set({ lastStatus: 'error', lastError: error })
-      .where(eq(channelConnection.id, conn.id));
+      .where(
+        and(
+          eq(channelConnection.id, conn.id),
+          eq(channelConnection.tenantId, conn.tenantId),
+        ),
+      );
     this.logger.warn(`Connection ${conn.id} unhealthy: ${error}`);
     return {
       status: 'error',

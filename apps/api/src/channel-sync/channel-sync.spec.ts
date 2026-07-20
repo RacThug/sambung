@@ -5,9 +5,16 @@ import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import { eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
-import { booking, channelConnection, syncStatus, tenant } from '@sambung/db';
+import {
+  booking,
+  bookingSource,
+  channelConnection,
+  syncStatus,
+  tenant,
+} from '@sambung/db';
 import {
   channelConnectionResponseSchema,
+  channelSchema,
   syncStatusSchema,
   type AuthResponse,
   type ChannelConnectionResponse,
@@ -550,5 +557,16 @@ describe('Channel sync (#55)', () => {
     expect([...syncStatusSchema.options].sort()).toEqual(
       [...syncStatus.enumValues].sort(),
     );
+  });
+
+  // The import writes a booking with `source = connection.channel` (#56,
+  // ical-import.service). That cast is only sound while every Channel is also a
+  // valid booking_source. This pins the subset so adding a channel WITHOUT the
+  // matching pgEnum value fails here, not at a runtime insert on the cron.
+  it('pins channelSchema as a subset of the booking_source pgEnum', () => {
+    const sources = new Set<string>(bookingSource.enumValues);
+    for (const channel of channelSchema.options) {
+      expect(sources.has(channel)).toBe(true);
+    }
   });
 });

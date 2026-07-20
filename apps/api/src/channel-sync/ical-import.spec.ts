@@ -445,6 +445,18 @@ describe('iCal import (#56)', () => {
 
     expect(await importedBookings(one.connId)).toHaveLength(1);
     expect(await importedBookings(two.connId)).toHaveLength(1);
+
+    // AC1 "within one cycle": the cron path (not just Sync now) blocks the direct
+    // calendar - the imported block reaches availability.
+    const avail = bodyOf<AvailabilityResponse>(
+      await availability(
+        one.unitId,
+        daysFromToday(120),
+        daysFromToday(122),
+      ).expect(200),
+    );
+    expect(avail.available).toBe(false);
+    expect(avail.reasons).toContain('overlap');
   });
 
   // --- Sync now authz: tenant isolation + unknown id ---------------------------
