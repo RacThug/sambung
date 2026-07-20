@@ -24,6 +24,10 @@ export default defineConfig({
   // bug, dev-only fix: production was always fine, which is exactly why nothing
   // caught it - vitest resolves through Node, where CJS just works.
   optimizeDeps: { include: ["@sambung/shared"] },
+  // Emit dist/.vite/manifest.json so the bundle-size guard (scripts/check-bundle.mjs,
+  // #125) can read the real module graph - which chunks a route pulls - instead of
+  // guessing from filenames. Costs one small JSON file; no effect on the SPA.
+  build: { manifest: true },
   server: {
     port: 5173,
     // Dev proxy: the SPA calls /api/* and Vite forwards to the NestJS API.
