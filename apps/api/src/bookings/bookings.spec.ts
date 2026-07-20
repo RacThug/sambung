@@ -348,6 +348,30 @@ describe('Guest booking + hold sweeper', () => {
     expect(badDate.status).toBe(400);
   });
 
+  // --- #124: per-country phone validity (server-side, over the shared shape gate) --
+
+  it('400s a shape-valid but per-country-invalid phone (wrong national length)', async () => {
+    // `+62812345` is valid E.164 SHAPE (passes the shared e164PhoneSchema regex)
+    // but far too short a national part for Indonesia's +62 - the shared regex
+    // can't know that, the server-side libphonenumber refine does (#124). A crafted
+    // request bypassing the SPA is the only way this reaches the API; the funnel's
+    // own libphonenumber validator rejects it before it is ever sent.
+    const res = await book({ guestPhone: '+62812345' });
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts a valid E.164 for a non-default country (validity, not just shape)', async () => {
+    // A real GB mobile in E.164 - proves the validity gate passes any correct
+    // number for its own country, not merely the Indonesian default, and that the
+    // guest-funnel behaviour is unchanged for a valid submission (AC #2, #124).
+    const res = await book({
+      checkIn: '2027-11-10',
+      checkOut: '2027-11-14',
+      guestPhone: '+447911123456',
+    });
+    expect(res.status).toBe(201);
+  });
+
   // --- Contract: shared enums pinned to the pgEnum (api-spec §8.6) ----------
 
   it('pins bookingStatusSchema and bookingSourceSchema to their pgEnums', () => {
