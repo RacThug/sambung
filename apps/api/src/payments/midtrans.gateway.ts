@@ -224,6 +224,62 @@ export class MidtransGateway implements PaymentGateway {
       raw: n,
     };
   }
+
+  /**
+   * Reconcile-on-read (#54, api-spec §6.3): GET Midtrans's Get-Status API for
+   * `orderId`. The status response is signed EXACTLY like a webhook notification
+   * (sha512 over order_id + status_code + gross_amount + ServerKey), so it is
+   * fed straight through `verifyAndParse` - one parser, no second copy to drift.
+   *
+   * A 404 (HTTP or the `status_code: "404"` body Midtrans returns for an unknown
+   * order) means the Provider has no record yet → null, nothing to reconcile.
+   */
+  async fetchStatus(orderId: string): Promise<ParsedPaymentEvent | null> {
+    const serverKey = this.config.get<string>('MIDTRANS_SERVER_KEY');
+    if (!serverKey) {
+      throw new InternalServerErrorException(
+        'Payments are not configured (MIDTRANS_SERVER_KEY is unset)',
+      );
+    }
+    const apiBase =
+      this.config.get<string>('MIDTRANS_API_BASE_URL') ??
+      'https://api.sandbox.midtrans.com/v2';
+    const auth = Buffer.from(`${serverKey}:`).toString('base64');
+
+    let res: Response;
+    try {
+      res = await fetch(`${apiBase}/${encodeURIComponent(orderId)}/status`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(SNAP_TIMEOUT_MS),
+        headers: { Authorization: `Basic ${auth}`, Accept: 'application/json' },
+      });
+    } catch (cause) {
+      this.logger.error(`Midtrans status unreachable: ${String(cause)}`);
+      throw new BadGatewayException('Payment provider is unreachable');
+    }
+
+    // Unknown order → nothing to reconcile. Midtrans answers 404 (and echoes
+    // status_code "404" in the body); either signal means "no record".
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      this.logger.error(`Midtrans status ${res.status}: ${detail}`);
+      throw new BadGatewayException('Payment provider status check failed');
+    }
+
+    const body = (await res.json().catch(() => null)) as {
+      status_code?: unknown;
+    } | null;
+    if (!body) {
+      throw new BadGatewayException(
+        'Payment provider returned an invalid status',
+      );
+    }
+    if (body.status_code === '404') return null;
+
+    // Signed like a notification: reuse verify + translate.
+    return this.verifyAndParse(body);
+  }
 }
 
 /**

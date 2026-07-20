@@ -91,4 +91,16 @@ export interface PaymentGateway {
    * (ADR-0015); the webhook service never sees either.
    */
   verifyAndParse(body: unknown): ParsedPaymentEvent;
+  /**
+   * Reconcile-on-read (#54, api-spec §6.3, risk R3): PULL the current status of
+   * order `orderId` from the Provider's status API and translate it to the SAME
+   * `ParsedPaymentEvent` a pushed webhook yields - so the confirmation page drives
+   * the identical idempotent transition and a lost webhook still confirms there.
+   *
+   * Returns null when the Provider has no record of the order (not created yet /
+   * 404) - there is simply nothing to reconcile. Throws on a transport or
+   * signature failure; the caller swallows it, because a reconcile hiccup must
+   * never break the read (the page still renders the DB's current state).
+   */
+  fetchStatus(orderId: string): Promise<ParsedPaymentEvent | null>;
 }

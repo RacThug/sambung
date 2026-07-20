@@ -9,6 +9,7 @@ import {
 } from '@sambung/db';
 import { paymentProviderSchema, type PaymentProvider } from '@sambung/shared';
 import { DbService } from '../db/db.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import {
   PAYMENT_GATEWAY,
   type PaymentGateway,
@@ -64,6 +65,7 @@ export class PaymentWebhookService {
   constructor(
     private readonly dbs: DbService,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -96,7 +98,45 @@ export class PaymentWebhookService {
       throw err;
     }
 
-    this.afterCommit(result, event);
+    await this.afterCommit(result, event);
+  }
+
+  /**
+   * Reconcile-on-read (#54, api-spec §6.3, risk R3). The confirmation page PULLS
+   * the Provider's current status for a still-pending booking; a lost webhook
+   * still confirms here. This drives the EXACT SAME idempotent transition the
+   * pushed webhook does - one `payment_event` insert keyed on
+   * `(provider, provider_event_id)`, one status-guarded confirm - so whichever
+   * path arrives first wins, and the confirmation (and its email) happens exactly
+   * once. A redelivery, or the path that loses the race, hits the unique
+   * constraint and no-ops BEFORE `afterCommit`, so it can never re-notify.
+   *
+   * Runs on the OWNER connection like `handle` (ADR-0018): it is the same system
+   * reconciliation, PK-targeted by `order_id`, carrying no principal. The caller
+   * (the confirmation view service, under the Visitor's RLS scope) swallows any
+   * throw - a provider hiccup must not break the read.
+   */
+  async reconcile(orderId: string): Promise<void> {
+    const event = await this.gateway.fetchStatus(orderId);
+    if (!event) return; // provider has no record (guest hasn't paid) - nothing to do
+
+    let result: ApplyResult;
+    try {
+      result = await this.dbs.db.transaction((tx) =>
+        this.apply(tx, this.gateway.provider, event),
+      );
+    } catch (err) {
+      if (pgError(err)?.constraint === PAYMENT_EVENT_UNIQ) {
+        // Already processed (the webhook won, or a prior reconcile) - no-op.
+        this.logger.log(
+          `Reconcile ${this.gateway.provider}:${event.providerEventId} already processed - no-op`,
+        );
+        return;
+      }
+      throw err;
+    }
+
+    await this.afterCommit(result, event);
   }
 
   /**
@@ -217,7 +257,10 @@ export class PaymentWebhookService {
    * fresh confirmation, fires the notification seam. NONE of this can fail the
    * webhook: the transaction already committed, and the provider must get its 200.
    */
-  private afterCommit(result: ApplyResult, event: ParsedPaymentEvent): void {
+  private async afterCommit(
+    result: ApplyResult,
+    event: ParsedPaymentEvent,
+  ): Promise<void> {
     switch (result.kind) {
       case 'unknown_order':
         this.logger.warn(
@@ -232,7 +275,7 @@ export class PaymentWebhookService {
         return;
       case 'settlement':
         if (result.confirmed) {
-          this.notifyConfirmed(result.bookingId);
+          await this.notifyConfirmed(result.bookingId);
         } else {
           // Late settlement: money in, but the hold was no longer pending
           // (swept to expired, or cancelled). Never resurrected (ADR-0018);
@@ -257,23 +300,23 @@ export class PaymentWebhookService {
   }
 
   /**
-   * The FR-NOTIF-1 seam: confirmation email to guest + owner on `confirmed`. A
-   * real provider (Resend free tier / SMTP) is a follow-up issue (#119); today
-   * this is a logged no-op.
+   * The FR-NOTIF-1 seam (#54): confirmation email to guest + owner on `confirmed`.
+   * Fires on the transition that happens EXACTLY ONCE across every delivery path
+   * (webhook push AND reconcile-on-read pull both reach here only when the
+   * status-guarded confirm actually flipped a row), so the email is once-per-
+   * confirmation by construction.
    *
-   * The invariant this seam must keep (api-spec §6.2 step 3): a side-effect
-   * failure can NEVER fail the webhook - the booking is already confirmed and the
-   * money is in. The try/catch below is inert around a synchronous `log`; when
-   * the real, ASYNC sender lands it MUST be awaited-and-caught (or fire-and-forget
-   * with a `.catch`) INSIDE here, so an unawaited rejection cannot escape to the
-   * caller. `void` return is deliberate: `afterCommit` runs post-commit and does
-   * not await this.
+   * The invariant it must keep (api-spec §6.2 step 3): a side-effect failure can
+   * NEVER fail the webhook - the booking is already confirmed and the money is in.
+   * NotificationsService is itself best-effort (it catches and logs), and the
+   * defensive try/catch here is a second guarantee that no rejection escapes to
+   * the caller. It IS awaited (afterCommit awaits it) so the outcome is
+   * deterministic and testable; awaiting a log-backed sender adds nothing the
+   * provider will notice.
    */
-  private notifyConfirmed(bookingId: string): void {
+  private async notifyConfirmed(bookingId: string): Promise<void> {
     try {
-      this.logger.log(
-        `[notify] booking ${bookingId} confirmed - would email guest + owner (FR-NOTIF-1, deferred to #119)`,
-      );
+      await this.notifications.notifyBookingConfirmed(bookingId);
     } catch (err) {
       this.logger.error(
         `Confirmation notification failed for booking ${bookingId}: ${String(err)}`,

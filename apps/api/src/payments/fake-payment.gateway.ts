@@ -35,12 +35,36 @@ export class FakePaymentGateway implements PaymentGateway {
   readonly provider: PaymentProvider = 'midtrans';
   readonly calls: CreateSessionInput[] = [];
 
+  /**
+   * What the Provider's status API would report per order (reconcile-on-read,
+   * #54). A test sets this for an order to simulate a settlement that no webhook
+   * ever delivered; an unset (or explicitly null) order means "the Provider has
+   * no record" - exactly what a guest who hasn't paid yet looks like.
+   */
+  readonly statuses = new Map<string, FakeWebhookBody | null>();
+
+  setStatus(orderId: string, body: FakeWebhookBody | null): void {
+    this.statuses.set(orderId, body);
+  }
+
   createSession(input: CreateSessionInput): Promise<PaymentSession> {
     this.calls.push(input);
     return Promise.resolve({
       token: `fake-token-${input.orderId}`,
       redirectUrl: `https://sandbox.example/pay/${input.orderId}`,
     });
+  }
+
+  /**
+   * Reconcile-on-read (#54): return the parsed status a test staged for `orderId`,
+   * or null when none is staged (the Provider has no record). Reuses the same
+   * `verifyAndParse` the webhook path does, so a staged `signatureValid: false`
+   * simulates a status-API signature failure just as it does for a webhook.
+   */
+  fetchStatus(orderId: string): Promise<ParsedPaymentEvent | null> {
+    const body = this.statuses.get(orderId);
+    if (!body) return Promise.resolve(null);
+    return Promise.resolve(this.verifyAndParse(body));
   }
 
   /**
