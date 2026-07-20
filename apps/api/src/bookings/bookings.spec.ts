@@ -57,7 +57,7 @@ describe('Guest booking + hold sweeper', () => {
         checkIn: '2027-01-10',
         checkOut: '2027-01-14',
         guestName: 'Made A.',
-        guestPhone: '+62 812 3456 7890',
+        guestPhone: '+6281234567890', // E.164 (#54)
         guestCount: 2,
         ...overrides,
       });

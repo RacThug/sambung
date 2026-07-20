@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Server } from 'node:http';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { ClsService } from 'nestjs-cls';
 import cookieParser from 'cookie-parser';
 import { eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
@@ -11,7 +12,10 @@ import type {
   BookingConfirmationResponse,
 } from '@sambung/shared';
 import { AppModule } from '../app.module';
+import { PublicScope } from '../common/public-scope.service';
+import { TenantContext } from '../common/tenant-context.service';
 import { DbService } from '../db/db.service';
+import { TenantDbService } from '../db/tenant-db.service';
 import {
   MAILER,
   type EmailMessage,
@@ -21,11 +25,15 @@ import { testSlug } from '../test-helpers';
 import type { FakeWebhookBody } from './fake-payment.gateway';
 import { FakePaymentGateway } from './fake-payment.gateway';
 import { PAYMENT_GATEWAY } from './payment-gateway';
+import { PaymentsRepository } from './payments.repository';
 
-/** Records what would have been emailed, so a test can prove "exactly once". */
+/** Records what would have been emailed, so a test can prove "exactly once".
+ * `fail` makes `send` reject, to prove a down mailer never breaks the flow. */
 class RecordingMailer implements Mailer {
   readonly sent: EmailMessage[] = [];
+  fail = false;
   send(message: EmailMessage): Promise<void> {
+    if (this.fail) return Promise.reject(new Error('mailer is down'));
     this.sent.push(message);
     return Promise.resolve();
   }
@@ -51,6 +59,7 @@ describe('Confirmation page (reconcile-on-read)', () => {
   const bodyOf = <T>(res: { body: unknown }): T => res.body as T;
 
   let tenantAId: string;
+  let tenantBId: string;
   let unitId: string;
 
   const getConfirmation = (bookingId: string) =>
@@ -89,7 +98,7 @@ describe('Confirmation page (reconcile-on-read)', () => {
         guestName: 'Made A.',
         guestPhone:
           values.guestPhone === undefined
-            ? '+62 812 3456 7890'
+            ? '+6281234567890' // stored E.164 (#54)
             : values.guestPhone,
         guestEmail:
           values.guestEmail === undefined ? 'made@test.dev' : values.guestEmail,
@@ -186,10 +195,22 @@ describe('Confirmation page (reconcile-on-read)', () => {
       })
       .returning({ id: unit.id });
     unitId = u.id;
+
+    // A second tenant, for the cross-tenant isolation test (D).
+    const resB = await request(server())
+      .post('/api/auth/register')
+      .send({
+        tenantName: 'Confirm Tenant B',
+        email: `cf+${randomUUID()}@test.dev`,
+        password: 'supersecret1',
+      });
+    tenantBId = bodyOf<AuthResponse>(resB).tenant.id;
+    createdTenantIds.push(tenantBId);
   });
 
   afterEach(() => {
     mailer.sent.length = 0;
+    mailer.fail = false;
     fake.statuses.clear();
   });
 
@@ -322,5 +343,49 @@ describe('Confirmation page (reconcile-on-read)', () => {
     expect(bodyOf<BookingConfirmationResponse>(res).status).toBe('expired');
     expect(await statusOfBooking(bookingId)).toBe('expired');
     expect(mailer.sent).toHaveLength(0);
+  });
+
+  // --- (B) A throwing mailer must never break the confirmation flow -----------
+
+  it('confirms (and returns 200) even when the mailer throws - best-effort seam', async () => {
+    const { bookingId, orderId } = await seedPayable();
+    fake.setStatus(orderId, settlement(orderId));
+    mailer.fail = true; // the email provider is down
+
+    // The post-commit email fails, but the confirmation must still succeed.
+    const res = await getConfirmation(bookingId).expect(200);
+    expect(bodyOf<BookingConfirmationResponse>(res).status).toBe('confirmed');
+    // And it persisted: the booking is genuinely confirmed, not just in the body.
+    expect(await statusOfBooking(bookingId)).toBe('confirmed');
+    // The send threw, so nothing was recorded - proving the throw was swallowed.
+    expect(mailer.sent).toHaveLength(0);
+  });
+
+  // --- (D) The confirmation read is confined to the booking's tenant (RLS) ----
+
+  it("scopes the confirmation read to the booking's own tenant - never another", async () => {
+    const bookingId = await seedBooking({ status: 'confirmed' }); // tenant A's
+
+    const cls = app.get(ClsService);
+    const scope = app.get(PublicScope);
+    const tenantCtx = app.get(TenantContext);
+    const tenantDb = app.get(TenantDbService);
+    const repo = app.get(PaymentsRepository);
+
+    // Under tenant B's scope, tenant A's booking is invisible - RLS + the tenant
+    // WHERE block it even when read by its exact id.
+    const underB = await cls.run(async () => {
+      tenantCtx.set({ kind: 'visitor', tenantId: tenantBId });
+      return tenantDb.run(() => repo.readConfirmationView(bookingId));
+    });
+    expect(underB).toBeNull();
+
+    // The resolver always confines to the booking's OWN tenant, so the real route
+    // reads it fine - isolation is inherent, not a check that could be skipped.
+    const underOwn = await cls.run(async () => {
+      await scope.enterFromBookingId(bookingId);
+      return tenantDb.run(() => repo.readConfirmationView(bookingId));
+    });
+    expect(underOwn).not.toBeNull();
   });
 });
