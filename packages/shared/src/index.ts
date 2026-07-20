@@ -27,6 +27,7 @@ export * from "./conflict";
 export * from "./money";
 export * from "./og";
 export * from "./payment";
+export * from "./payment-inbox";
 export * from "./photo";
 export * from "./property";
 export * from "./public-property";
