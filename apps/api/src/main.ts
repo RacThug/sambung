@@ -4,8 +4,14 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
+import { validateEnv } from './validate-env';
 
 async function bootstrap() {
+  // Fail fast on a security-relevant misconfiguration BEFORE building the app: in
+  // production WEB_BASE_URL must be set, or the OG canonical and payment finish
+  // URL fall back to the spoofable request Host (#127). No-op in dev/test.
+  validateEnv(process.env);
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   // Behind the Caddy reverse proxy (prod, single VPS - architecture §7), trust

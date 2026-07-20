@@ -38,9 +38,11 @@ export class PublicPropertiesController {
    * at the edge, and the API just renders the stub for whatever reaches it.
    *
    * `@Header` makes Nest send the returned string as `text/html`. The canonical
-   * URL is the HUMAN page (`/p/:slug`) this stub represents, built here from the
-   * request host because it is not a property fact; the slug is already
-   * SLUG_PATTERN-validated by the pipe, so it is safe in a URL path.
+   * URL the stub advertises is derived in the service from TRUSTED CONFIG
+   * (`WEB_BASE_URL`, the real public origin), NOT from these request headers -
+   * `Host` is client-settable and `req.protocol` is `http` unless TRUST_PROXY is
+   * set (#127). We still pass a request-derived origin, but only as a fallback the
+   * service uses when no public base is configured (a dev/direct hit).
    */
   @Get(':slug/og')
   @Header('Content-Type', 'text/html; charset=utf-8')
@@ -48,11 +50,7 @@ export class PublicPropertiesController {
     @Param('slug', SlugParamPipe) slug: string,
     @Req() req: Request,
   ): Promise<string> {
-    // `req.protocol`/`req.hostname` honour X-Forwarded-* only when TRUST_PROXY is
-    // set (main.ts) - i.e. behind Caddy in prod, which is the only place this
-    // route is reached. `req.get('host')` keeps the port for a dev/direct hit.
-    const host = req.get('host') ?? 'localhost';
-    const canonicalUrl = `${req.protocol}://${host}/p/${slug}`;
-    return this.properties.getOgHtmlBySlug(slug, canonicalUrl);
+    const requestOrigin = `${req.protocol}://${req.get('host') ?? 'localhost'}`;
+    return this.properties.getOgHtmlBySlug(slug, requestOrigin);
   }
 }

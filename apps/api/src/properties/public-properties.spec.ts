@@ -373,6 +373,30 @@ describe('Public property page', () => {
       expect(res.text).toContain(`/p/${slugA}`);
     });
 
+    /**
+     * AC #3 (#127): og:url / canonical come from TRUSTED CONFIG (WEB_BASE_URL),
+     * never the inbound Host. A crawler (or an attacker) that sends a forged Host
+     * must not steer the canonical the preview points at onto their own origin.
+     */
+    it('derives og:url/canonical from WEB_BASE_URL, ignoring a spoofed Host', async () => {
+      const base = process.env.WEB_BASE_URL; // set by the test .env
+      expect(base).toBeTruthy();
+      const res = await request(server())
+        .get(`/api/public/properties/${slugA}/og`)
+        .set('Host', 'evil.example.com')
+        .set('X-Forwarded-Host', 'evil.example.com')
+        .set('X-Forwarded-Proto', 'https');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain(
+        `<meta property="og:url" content="${base}/p/${slugA}">`,
+      );
+      expect(res.text).toContain(
+        `<link rel="canonical" href="${base}/p/${slugA}">`,
+      );
+      // The client-settable Host never reaches the advertised canonical.
+      expect(res.text).not.toContain('evil.example.com');
+    });
+
     it('reveals nothing of a neighbour tenant (same scope as the JSON page)', async () => {
       const res = await request(server()).get(
         `/api/public/properties/${slugA}/og`,

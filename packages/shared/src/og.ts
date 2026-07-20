@@ -16,8 +16,9 @@
  * construction rather than by two copies of a template staying in sync (#87 AC).
  *
  * `og:url` is deliberately NOT here: the canonical URL is caller-context (the SPA
- * reads `window.location`, the API builds it from the request host), not a fact
- * about the property. Each caller supplies its own.
+ * reads `window.location`, the API derives it from trusted config - the public
+ * `WEB_BASE_URL` - not the inbound request host, #127), not a fact about the
+ * property. Each caller supplies its own.
  */
 import type { PublicPropertyResponse } from "./public-property";
 

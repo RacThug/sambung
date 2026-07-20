@@ -93,3 +93,30 @@ that matter in element text and double-quoted attributes; the slug is already
 - **A per-crawler-UA browser could loop** the meta-refresh (stub → /p/:slug →
   stub). Pathological - no real browser sends `facebookexternalhit` - and the same
   trade every OG-stub setup makes.
+
+## Follow-up hardening (#127, 2026-07-20)
+
+The #87 review flagged three non-blocking items; this closes them.
+
+- **`og:url`/canonical now comes from trusted config, not the request.** The stub
+  derives the canonical from `WEB_BASE_URL` (the real public origin), falling back
+  to the request origin only when that is unset (a dev/direct hit). Previously it
+  was built from the inbound `Host` + `req.protocol` - `Host` is client-settable
+  and `req.protocol` is `http` without `TRUST_PROXY`, so a forged `Host` could
+  point a preview's canonical at an attacker origin. The derivation is a pure
+  helper (`ogCanonicalUrl`), unit-tested both branches; a route test proves a
+  spoofed `Host` never reaches the canonical. `WEB_BASE_URL` is an existing var
+  (payments' Snap finish URL), reused - no new config contract.
+- **The LINE allowlist token was wrong and is corrected to `line-poker`.** LINE's
+  real link-preview scraper is `facebookexternalhit/1.1;line-poker/1.0`
+  (reverse-DNS `nio-pagepoker.line-apps.com`, LINE Corp) - already covered by
+  `facebookexternalhit`, now also named explicitly. The old bare `Line/` token
+  matched the LINE in-app BROWSER (a human, `... Line/<version>/IAB`), serving a
+  person the bounce stub - the exact "stubs to humans" failure narrowness guards
+  against. LINE's SEARCH crawler `Linespider` stays absent (a stub to it = cloaking,
+  like Googlebot). `property-og.spec.ts` compiles the committed regex and asserts
+  the preview UA matches while the in-app browser and Linespider do not.
+- **Live crawler verification is folded into the demo checklist (#60).** Facebook
+  Sharing Debugger + a real WhatsApp/LINE share need a public URL and cache
+  aggressively, so that pass belongs at demo time against the deployed origin, not
+  in an isolated worktree.
