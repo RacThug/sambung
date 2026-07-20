@@ -22,6 +22,8 @@ export const id: Messages = {
   "property.rooms": "Kamar",
   "property.noRooms": "Belum ada kamar yang terdaftar. Silakan cek kembali nanti.",
   "property.verified": "Terverifikasi",
+  "property.photoMain": "{name} - foto utama",
+  "property.photoN": "{name} - foto {n}",
 
   "unit.capacity": "Hingga {guests}",
   "unit.minStayNote": "Minimal {nights}",

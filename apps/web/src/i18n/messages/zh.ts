@@ -22,6 +22,8 @@ export const zh: Messages = {
   "property.rooms": "房间",
   "property.noRooms": "暂无上架的房间，请稍后再来查看。",
   "property.verified": "已认证",
+  "property.photoMain": "{name} - 主图",
+  "property.photoN": "{name} - 图 {n}",
 
   "unit.capacity": "最多可住 {guests}",
   "unit.minStayNote": "最少 {nights}",

@@ -27,6 +27,8 @@ export const en = {
   "property.rooms": "Rooms",
   "property.noRooms": "No rooms are listed yet. Please check back soon.",
   "property.verified": "Verified",
+  "property.photoMain": "{name} - main photo",
+  "property.photoN": "{name} - photo {n}",
 
   // Unit card.
   "unit.capacity": "Up to {guests}",

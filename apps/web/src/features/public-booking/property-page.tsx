@@ -252,6 +252,7 @@ function Gallery({
   photos: PublicPropertyResponse["photos"];
   name: string;
 }) {
+  const { t } = useI18n();
   if (photos.length === 0) return null;
 
   const [hero, ...rest] = photos;
@@ -261,8 +262,9 @@ function Gallery({
       <img
         src={hero.url}
         // The gallery illustrates the villa the <h1> already names, so the alt
-        // says which shot this is rather than repeating the name.
-        alt={`${name} - main photo`}
+        // says which shot this is rather than repeating the name. Localized
+        // (ADR-0024) - alt text is a funnel surface the catalog guard can't see.
+        alt={t("property.photoMain", { name })}
         className="aspect-[3/2] w-full rounded-xl object-cover"
         loading="eager"
       />
@@ -272,7 +274,7 @@ function Gallery({
             <img
               key={photo.url}
               src={photo.url}
-              alt={`${name} - photo ${i + 2}`}
+              alt={t("property.photoN", { name, n: i + 2 })}
               className="aspect-[3/2] w-full rounded-lg object-cover"
               loading="lazy"
             />
