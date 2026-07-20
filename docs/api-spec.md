@@ -77,6 +77,8 @@ Sources: `direct | airbnb | booking_com | vrbo | manual_block`. Transitions outs
 | 33 | `POST /sync-conflicts/:id/dismiss` | Dismiss a conflict | M4 | SYNC-3 |
 | 34 | `GET /public/units/:id/calendar.ics` | iCal export feed | M4 | SYNC-2 |
 | 35 | `GET /bookings/:id` | Booking detail (owner, full disclosure) | M2 | - |
+| 36 | `GET /payments/lapsed` | Paid-but-lapsed inbox (owner) | **Built** (#120) | PAY-2 |
+| 37 | `POST /payments/:id/handle` | Mark a lapsed payment handled | **Built** (#120) | PAY-2 |
 
 Notifications (FR-NOTIF-1/2) have **no endpoints**: email fires on the `confirmed` transition (webhook handler); the WhatsApp `wa.me` deeplink is a field on #25's response.
 
@@ -254,6 +256,11 @@ Always 200 for well-formed, verified duplicates - providers retry non-2xx foreve
 
 ### 6.3 `GET /public/bookings/:id` → 200 (no auth) - confirmation page
 `{ status, checkIn, checkOut, propertyName, unitName, totalPriceIdr, amountPaidIdr, waLink }` - `waLink` is the prefilled `wa.me` deeplink (FR-NOTIF-2). **Reconciles on read** (risk R3): if status is `pending_payment`, the handler queries the provider's status API before answering, so a lost webhook still confirms here. Unguessable UUID is the v1 access control; no PII beyond what the guest themselves entered.
+
+### 6.4 Paid-but-lapsed inbox (auth) - **Built** (#120, [ADR-0022](adr/0022-the-paid-but-lapsed-inbox-marks-not-mutates.md))
+The owner-facing surface for the **late-settlement** case §6.2 handles safely but silently (ADR-0018): a guest settles AFTER their hold lapsed (swept to `expired`) or the booking was cancelled, so `payment.status = paid` while `booking.status IN (expired, cancelled)` and the booking is never resurrected. A `WARN` is not a workflow, so:
+- `GET /payments/lapsed` → 200: `LapsedPayment[]` - each `{ paymentId, bookingId, bookingStatus, provider, amountIdr, guestName, guestPhone, guestEmail, checkIn, checkOut, propertyName, unitName, createdAt }`, i.e. enough to act (amount, guest + contact, dates, why). Owner RLS connection; scoped by `booking.tenant_id` beside RLS (`payment` has no `tenant_id` of its own - its policy scopes through the booking join). Only `paid` payments on a lapsed booking that are **not yet handled**.
+- `POST /payments/:id/handle` → 200: `{ paymentId, handledAt }`. Sets a nullable `payment.handled_at` marker (migration 0011) and **nothing else** - `payment.status` stays `paid`, the booking stays expired/cancelled (the ledger is never mutated to clear an inbox item, ADR-0002). The item drops from `GET /payments/lapsed` by the list's predicate, not by any ledger change. Idempotent (already-handled → 200 no-op); unknown / cross-tenant / non-inbox id → 404 (404-over-403). Refund stays **manual** at sandbox (ADR-0011) - handling records "I dealt with it", it does not move money.
 
 ---
 
