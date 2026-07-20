@@ -17,6 +17,12 @@ import { formatIdr } from "../../lib/money";
 import { formatDate } from "../../lib/date";
 import { FormField } from "@/components/form-field";
 import { describeBlockedNights, describeReason } from "./availability-copy";
+import {
+  COUNTRY_OPTIONS,
+  DEFAULT_COUNTRY,
+  toE164,
+  type CountryCode,
+} from "./phone";
 import { useQuote } from "./use-availability";
 
 const route = getRouteApi("/p/$slug/book");
@@ -77,7 +83,11 @@ function Checkout({
 
   const [form, setForm] = useState({
     guestName: "",
-    guestPhone: "",
+    // Phone is captured as (country, national number) and assembled into E.164 at
+    // submit (#54) - a bare national number is ambiguous, so the country resolves
+    // it. Default Indonesia, this being a Bali product.
+    guestPhoneCountry: DEFAULT_COUNTRY as CountryCode,
+    guestPhoneNational: "",
     guestEmail: "",
     guestCount: "2",
   });
@@ -112,12 +122,22 @@ function Checkout({
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Assemble E.164 from the selected country + national number (#54). A clear
+    // inline error, never a silent transform - client validation is UX; the shared
+    // schema below (and the server) enforce E.164 as correctness.
+    const guestPhone = toE164(form.guestPhoneNational, form.guestPhoneCountry);
+    if (!guestPhone) {
+      setFieldErrors({
+        guestPhone: "Enter a valid WhatsApp number for the selected country",
+      });
+      return;
+    }
     const parsed = createBookingRequestSchema.safeParse({
       unitId,
       checkIn: from,
       checkOut: to,
       guestName: form.guestName,
-      guestPhone: form.guestPhone,
+      guestPhone,
       guestEmail: form.guestEmail || undefined,
       guestCount: Number(form.guestCount),
     });
@@ -231,14 +251,38 @@ function Checkout({
             error={fieldErrors.guestName}
             autoComplete="name"
           />
-          <FormField
-            label="WhatsApp number"
-            value={form.guestPhone}
-            onChange={set("guestPhone")}
-            error={fieldErrors.guestPhone}
-            inputMode="tel"
-            autoComplete="tel"
-          />
+          <FormField label="WhatsApp number" error={fieldErrors.guestPhone}>
+            {(control) => (
+              <div className="mt-1 flex gap-2">
+                <select
+                  aria-label="Country"
+                  value={form.guestPhoneCountry}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      guestPhoneCountry: e.target.value as CountryCode,
+                    }))
+                  }
+                  className="max-w-[9rem] shrink-0 rounded-md border border-input bg-background px-2 py-2 text-sm"
+                >
+                  {COUNTRY_OPTIONS.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name} (+{c.callingCode})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  {...control}
+                  value={form.guestPhoneNational}
+                  onChange={set("guestPhoneNational")}
+                  inputMode="tel"
+                  autoComplete="tel-national"
+                  placeholder="812 3456 7890"
+                  className="w-full rounded-md border border-input px-3 py-2"
+                />
+              </div>
+            )}
+          </FormField>
           <FormField
             label="Email (optional)"
             value={form.guestEmail}

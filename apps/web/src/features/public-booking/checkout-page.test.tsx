@@ -49,44 +49,49 @@ const propertyStub = (depositPct = 100) => ({
     json(publicPropertyResponse({ slug: "villa", depositPct })),
 });
 
-/** Fill the required guest fields with values the shared schema accepts. */
+/** Fill the required guest fields. The phone is a bare national number typed with
+ * the country selector on its default (Indonesia) - the case the fix targets. */
 function fillForm() {
   fireEvent.change(screen.getByLabelText(/full name/i), {
     target: { value: "Made A." },
   });
   fireEvent.change(screen.getByLabelText(/whatsapp number/i), {
-    target: { value: "+62 812 3456 7890" },
+    target: { value: "0812 3456 7890" },
   });
 }
 
+/** Read the guestPhone the checkout put on the create request. */
+function postedGuestPhone(init?: RequestInit): string {
+  return JSON.parse(String(init?.body ?? "{}")).guestPhone as string;
+}
+
 describe("checkout page", () => {
+  const bookingCreated = {
+    bookingId: BOOKING_ID,
+    status: "pending_payment",
+    holdExpiresAt: "2026-09-10T12:15:00.000Z",
+    totalPriceIdr: 3_600_000,
+    nights: 3,
+  };
+  const paySession = {
+    provider: "midtrans",
+    token: "snap-token",
+    redirectUrl: REDIRECT,
+    amountIdr: 3_600_000,
+    deposit: false,
+  };
+
   it("creates the booking, opens the pay session, and redirects to the Provider", async () => {
+    let createInit: RequestInit | undefined;
     const calls = stubFetch({
       ...propertyStub(),
       [`GET /api/public/units/${UNIT_ID}/availability`]: () =>
         json(availableQuote),
-      "POST /api/public/bookings": () =>
-        json(
-          {
-            bookingId: BOOKING_ID,
-            status: "pending_payment",
-            holdExpiresAt: "2026-09-10T12:15:00.000Z",
-            totalPriceIdr: 3_600_000,
-            nights: 3,
-          },
-          201,
-        ),
-      [`POST /api/public/bookings/${BOOKING_ID}/pay`]: () =>
-        json(
-          {
-            provider: "midtrans",
-            token: "snap-token",
-            redirectUrl: REDIRECT,
-            amountIdr: 3_600_000,
-            deposit: false,
-          },
-          201,
-        ),
+      "POST /api/public/bookings": (init) => {
+        createInit = init;
+        return json(bookingCreated, 201);
+      },
+      [`POST /api/public/bookings/${BOOKING_ID}/pay`]: () => json(paySession, 201),
     });
 
     renderAt(`/p/villa/book?unit=${UNIT_ID}&from=2026-09-10&to=2026-09-13`);
@@ -99,9 +104,68 @@ describe("checkout page", () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalledWith(REDIRECT));
 
+    // The bare ID national number was assembled into E.164 before submit (#54).
+    expect(postedGuestPhone(createInit)).toBe("+6281234567890");
     // The two-step handoff happened in order: create, then pay.
     expect(calls).toContain("POST /api/public/bookings");
     expect(calls).toContain(`POST /api/public/bookings/${BOOKING_ID}/pay`);
+  });
+
+  it("assembles E.164 for a non-Indonesian country when the selector is switched (#54)", async () => {
+    let createInit: RequestInit | undefined;
+    stubFetch({
+      ...propertyStub(),
+      [`GET /api/public/units/${UNIT_ID}/availability`]: () =>
+        json(availableQuote),
+      "POST /api/public/bookings": (init) => {
+        createInit = init;
+        return json(bookingCreated, 201);
+      },
+      [`POST /api/public/bookings/${BOOKING_ID}/pay`]: () => json(paySession, 201),
+    });
+
+    renderAt(`/p/villa/book?unit=${UNIT_ID}&from=2026-09-10&to=2026-09-13`);
+    await screen.findByText("Rp 3.600.000");
+
+    fireEvent.change(screen.getByLabelText(/full name/i), {
+      target: { value: "Alex UK" },
+    });
+    // Switch the country to the UK, then type a UK national number.
+    fireEvent.change(screen.getByLabelText(/country/i), {
+      target: { value: "GB" },
+    });
+    fireEvent.change(screen.getByLabelText(/whatsapp number/i), {
+      target: { value: "07911 123456" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /continue to payment/i }));
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(REDIRECT));
+    expect(postedGuestPhone(createInit)).toBe("+447911123456");
+  });
+
+  it("blocks submit with an inline error for an invalid number, no request sent (#54)", async () => {
+    const calls = stubFetch({
+      ...propertyStub(),
+      [`GET /api/public/units/${UNIT_ID}/availability`]: () =>
+        json(availableQuote),
+    });
+
+    renderAt(`/p/villa/book?unit=${UNIT_ID}&from=2026-09-10&to=2026-09-13`);
+    await screen.findByText("Rp 3.600.000");
+
+    fireEvent.change(screen.getByLabelText(/full name/i), {
+      target: { value: "Made A." },
+    });
+    fireEvent.change(screen.getByLabelText(/whatsapp number/i), {
+      target: { value: "123" }, // not a valid number for Indonesia
+    });
+    fireEvent.click(screen.getByRole("button", { name: /continue to payment/i }));
+
+    expect(
+      await screen.findByText(/valid whatsapp number for the selected country/i),
+    ).toBeInTheDocument();
+    expect(calls).not.toContain("POST /api/public/bookings");
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it("previews the deposit split for a partial-deposit property", async () => {
