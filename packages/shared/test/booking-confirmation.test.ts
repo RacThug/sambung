@@ -6,21 +6,26 @@ import {
 } from "../src/booking-confirmation";
 
 describe("normalizeWaPhone", () => {
-  it("strips the + from a stored E.164 number, for any country", () => {
+  it("strips the + from a canonical E.164 number, for any country", () => {
     expect(normalizeWaPhone("+6281234567890")).toBe("6281234567890"); // ID
     expect(normalizeWaPhone("+447911123456")).toBe("447911123456"); // GB
     expect(normalizeWaPhone("+14155550100")).toBe("14155550100"); // US
   });
 
-  it("tolerates stray separators defensively", () => {
-    expect(normalizeWaPhone("+62 812 3456 7890")).toBe("6281234567890");
+  it("omits a bare national number - no country code, ambiguous (#123 review)", () => {
+    // The lenient owner-walk-in case: without a leading '+' this must NOT become
+    // wa.me/0812..., it must yield "" so the caller omits the button.
+    expect(normalizeWaPhone("0812 3456 7890")).toBe("");
+    expect(normalizeWaPhone("081234567890")).toBe("");
   });
 
-  it("returns '' for a missing or implausible number", () => {
+  it("rejects anything that isn't canonical E.164", () => {
+    expect(normalizeWaPhone("+62 812 3456 7890")).toBe(""); // separators
+    expect(normalizeWaPhone("+0123456789")).toBe(""); // leading-zero country code
+    expect(normalizeWaPhone("123")).toBe(""); // no +, too short
+    expect(normalizeWaPhone("not a phone")).toBe("");
     expect(normalizeWaPhone(null)).toBe("");
     expect(normalizeWaPhone(undefined)).toBe("");
-    expect(normalizeWaPhone("123")).toBe(""); // too few digits
-    expect(normalizeWaPhone("not a phone")).toBe("");
   });
 });
 
@@ -61,6 +66,13 @@ describe("buildWaMeLink", () => {
   it("returns null when there is no usable phone", () => {
     expect(buildWaMeLink({ ...base, phone: null })).toBeNull();
     expect(buildWaMeLink({ ...base, phone: "12" })).toBeNull();
+  });
+
+  it("returns null for a lenient bare national number - omit, never a broken link (#123 review)", () => {
+    // A walk-in row read through the confirmation endpoint: no country code, so no
+    // link at all rather than the broken wa.me/0812...
+    expect(buildWaMeLink({ ...base, phone: "0812 3456 7890" })).toBeNull();
+    expect(buildWaMeLink({ ...base, phone: "081234567890" })).toBeNull();
   });
 });
 

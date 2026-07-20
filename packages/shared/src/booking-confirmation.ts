@@ -40,21 +40,23 @@ export type BookingConfirmationResponse = z.infer<
 >;
 
 /**
- * Reduce a stored **E.164** number to the digits `wa.me` wants: strip the `+` and
- * any separators, leaving the full international number (`+6281234567890` →
- * `6281234567890`).
+ * Reduce a **canonical E.164** number to the digits `wa.me` wants (`+6281234567890`
+ * → `6281234567890`), or "" when the input is NOT canonical E.164.
  *
- * Correct for EVERY country by construction, because the input is already
- * unambiguous E.164 - the checkout captured the country and stored E.164 (#54), so
- * the builder no longer guesses a country from a bare national number (the bug that
- * made `0812...` normalize to an unresolvable `wa.me/0812...`). Returns "" when the
- * result isn't a plausible international number (8-15 digits), so the caller can
- * omit the link rather than emit a broken one.
+ * The gate is the point. This builder is fed ANY booking read through
+ * `GET /public/bookings/:id`, including owner walk-ins whose phone uses the LENIENT
+ * schema and may be a bare national number like `0812...`. Without a leading `+`
+ * the country code is absent, so the number is ambiguous - stripping it would emit
+ * the broken `wa.me/0812...`. Requiring canonical E.164 (the pattern mirrors
+ * `e164PhoneSchema`: leading `+`, non-zero country code, 8-15 digits) makes the
+ * caller OMIT the button for such a row rather than link to nowhere. The guest
+ * funnel always stores `+…`, so guest links are unaffected (#123 review).
  */
 export function normalizeWaPhone(raw: string | null | undefined): string {
   if (!raw) return "";
-  const digits = raw.replace(/\D/g, "");
-  return digits.length >= 8 && digits.length <= 15 ? digits : "";
+  const trimmed = raw.trim();
+  if (!/^\+[1-9]\d{7,14}$/.test(trimmed)) return "";
+  return trimmed.slice(1); // drop the leading '+'; the rest is already digits-only
 }
 
 /**

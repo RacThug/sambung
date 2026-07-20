@@ -330,6 +330,18 @@ describe('Confirmation page (reconcile-on-read)', () => {
     expect(bodyOf<BookingConfirmationResponse>(res).waLink).toBeNull();
   });
 
+  it('omits the wa.me link for a walk-in phone that is not E.164 (#123 review)', async () => {
+    // Owner walk-ins use the LENIENT phone schema, so a bare national number can be
+    // stored. Read through this endpoint it must yield a null waLink - never the
+    // broken wa.me/0812... - so the confirmation view omits the button.
+    const bookingId = await seedBooking({
+      status: 'confirmed',
+      guestPhone: '0812 3456 7890',
+    });
+    const res = await getConfirmation(bookingId).expect(200);
+    expect(bodyOf<BookingConfirmationResponse>(res).waLink).toBeNull();
+  });
+
   // --- Late settlement: money in but the hold lapsed → never resurrected -------
 
   it('never resurrects an expired booking on a late reconcile, and does not email', async () => {
