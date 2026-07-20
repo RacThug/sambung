@@ -198,6 +198,79 @@ describe("public funnel i18n (#58)", () => {
     expect(headers["Accept-Language"]).toBe("zh");
   });
 
+  it("books end to end in Bahasa Indonesia: display follows locale, wire stays YYYY-MM-DD", async () => {
+    setLocale("id");
+    const assign = vi.fn();
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { assign, href: "http://localhost/", origin: "http://localhost" },
+    });
+
+    let createInit: RequestInit | undefined;
+    stubFetch({
+      "GET /api/public/properties/villa": () =>
+        json(publicPropertyResponse({ slug: "villa", depositPct: 100 })),
+      [`GET /api/public/units/${UNIT_ID}/availability`]: () =>
+        json({
+          available: true,
+          nights: 3,
+          totalPriceIdr: 3_600_000,
+          minStay: 1,
+          reasons: [],
+          blockedRanges: [],
+        }),
+      "POST /api/public/bookings": (init) => {
+        createInit = init;
+        return json(
+          {
+            bookingId: BOOKING_ID,
+            status: "pending_payment",
+            holdExpiresAt: "2026-09-10T12:15:00.000Z",
+            totalPriceIdr: 3_600_000,
+            nights: 3,
+          },
+          201,
+        );
+      },
+      [`POST /api/public/bookings/${BOOKING_ID}/pay`]: () =>
+        json(
+          {
+            provider: "midtrans",
+            token: "snap-token",
+            redirectUrl: REDIRECT,
+            amountIdr: 3_600_000,
+            deposit: false,
+          },
+          201,
+        ),
+    });
+
+    renderAt(`/p/villa/book?unit=${UNIT_ID}&from=2026-09-10&to=2026-09-13`);
+
+    // The checkout heading is Indonesian ("Request to book" -> "Ajukan pemesanan").
+    expect(await screen.findByText("Ajukan pemesanan")).toBeInTheDocument();
+    // The displayed stay follows the id-ID date locale ("10 Sep 2026"), never the
+    // raw ISO string.
+    expect(screen.getByText(/10 Sep 2026/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Nama lengkap"), {
+      target: { value: "Budi" },
+    });
+    fireEvent.change(screen.getByLabelText("Nomor WhatsApp"), {
+      target: { value: "0812 3456 7890" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Lanjutkan ke pembayaran" }));
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(REDIRECT));
+
+    // The wire format is language-neutral YYYY-MM-DD regardless of the locale.
+    const body = JSON.parse(String(createInit?.body ?? "{}"));
+    expect(body.checkIn).toBe("2026-09-10");
+    expect(body.checkOut).toBe("2026-09-13");
+    const headers = createInit?.headers as Record<string, string>;
+    expect(headers["Accept-Language"]).toBe("id");
+  });
+
   it("renders the confirmation party view in Bahasa Indonesia", async () => {
     setLocale("id");
     stubFetch({
