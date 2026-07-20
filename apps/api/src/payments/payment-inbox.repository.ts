@@ -140,7 +140,10 @@ export class PaymentInboxRepository {
               select 1 from ${booking} b
               where b.id = ${payment.bookingId}
                 and b.tenant_id = ${tenantId}
-                and b.status in ('expired', 'cancelled')
+                and b.status in (${sql.join(
+                  LAPSED_STATUSES.map((s) => sql`${s}`),
+                  sql`, `,
+                )})
             )`,
           ),
         )
