@@ -17,13 +17,20 @@ import { formatIdr } from "../../lib/money";
 import { formatDate } from "../../lib/date";
 import { FormField } from "@/components/form-field";
 import { describeBlockedNights, describeReason } from "./availability-copy";
-import {
-  COUNTRY_OPTIONS,
-  DEFAULT_COUNTRY,
-  toE164,
-  type CountryCode,
-} from "./phone";
+// `phone` is imported for its TYPE only (erased at build). Its RUNTIME - the
+// country list and E.164 resolver - pulls in libphonenumber-js (~25 KB gzipped),
+// so it is loaded lazily via dynamic `import()` at the checkout phone step (#125,
+// ADR-0023). That keeps libphonenumber out of the property and confirmation pages
+// entirely, and out of the checkout chunk's initial paint.
+import type { CountryCode } from "./phone";
 import { useQuote } from "./use-availability";
+
+type PhoneKit = typeof import("./phone");
+
+/** Indonesia by default - this is a Bali direct-booking product. Kept in sync
+ * with phone.ts's DEFAULT_COUNTRY (a plain literal, so referencing it does not
+ * force libphonenumber into this chunk's static graph). */
+const DEFAULT_COUNTRY = "ID" satisfies CountryCode;
 
 const route = getRouteApi("/p/$slug/book");
 
@@ -98,6 +105,34 @@ function Checkout({
   const [held, setHeld] = useState<CreateBookingResponse | null>(null);
   const [holdLapsed, setHoldLapsed] = useState(false);
 
+  // The phone kit (country list + E.164 resolver) carries libphonenumber-js, so
+  // it is fetched as its own chunk when the checkout form mounts (#125) rather
+  // than shipped with the property/confirmation pages. Kick it off on mount so the
+  // country <select> populates promptly; until it resolves the select shows a
+  // disabled "Loading…" placeholder (the rest of the form is usable meanwhile).
+  //
+  // A code-split chunk can fail to fetch (a network blip mid-funnel). We surface
+  // that as a Retry affordance instead of a stuck "Loading…" + an unhandled
+  // rejection at submit (#125 review). `loadPhoneKit` is the one loader - the
+  // mount effect, the Retry button, and the submit path all call it; the browser
+  // dedupes the `import()`, and it returns the module so submit can use it.
+  const [phoneKit, setPhoneKit] = useState<PhoneKit | null>(null);
+  const [phoneFailed, setPhoneFailed] = useState(false);
+  const loadPhoneKit = useCallback(async (): Promise<PhoneKit | null> => {
+    setPhoneFailed(false);
+    try {
+      const mod = await import("./phone");
+      setPhoneKit(mod);
+      return mod;
+    } catch {
+      setPhoneFailed(true);
+      return null;
+    }
+  }, []);
+  useEffect(() => {
+    void loadPhoneKit();
+  }, [loadPhoneKit]);
+
   const createMut = useMutation({
     mutationFn: (body: CreateBookingRequest) =>
       api.post<CreateBookingResponse>("/public/bookings", body),
@@ -124,8 +159,13 @@ function Checkout({
     e.preventDefault();
     // Assemble E.164 from the selected country + national number (#54). A clear
     // inline error, never a silent transform - client validation is UX; the shared
-    // schema below (and the server) enforce E.164 as correctness.
-    const guestPhone = toE164(form.guestPhoneNational, form.guestPhoneCountry);
+    // schema below (and the server) enforce E.164 as correctness. The resolver is
+    // in the lazily-loaded phone kit; if it isn't in yet we await it (the deduped
+    // `import()` the mount effect started), and if that fetch failed we stop with
+    // the Retry affordance shown rather than throw an unhandled rejection (#125).
+    const kit = phoneKit ?? (await loadPhoneKit());
+    if (!kit) return;
+    const guestPhone = kit.toE164(form.guestPhoneNational, form.guestPhoneCountry);
     if (!guestPhone) {
       setFieldErrors({
         guestPhone: "Enter a valid WhatsApp number for the selected country",
@@ -257,19 +297,29 @@ function Checkout({
                 <select
                   aria-label="Country"
                   value={form.guestPhoneCountry}
+                  disabled={!phoneKit}
                   onChange={(e) =>
                     setForm((f) => ({
                       ...f,
                       guestPhoneCountry: e.target.value as CountryCode,
                     }))
                   }
-                  className="max-w-[9rem] shrink-0 rounded-md border border-input bg-background px-2 py-2 text-sm"
+                  className="max-w-[9rem] shrink-0 rounded-md border border-input bg-background px-2 py-2 text-sm disabled:opacity-70"
                 >
-                  {COUNTRY_OPTIONS.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.name} (+{c.callingCode})
+                  {phoneKit ? (
+                    phoneKit.COUNTRY_OPTIONS.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.name} (+{c.callingCode})
+                      </option>
+                    ))
+                  ) : (
+                    // Placeholder while the phone kit loads (or if it failed to);
+                    // value matches the selected country so the controlled
+                    // <select> stays valid. The Retry affordance sits below.
+                    <option value={form.guestPhoneCountry}>
+                      {phoneFailed ? "Unavailable" : "Loading…"}
                     </option>
-                  ))}
+                  )}
                 </select>
                 <input
                   {...control}
@@ -283,6 +333,20 @@ function Checkout({
               </div>
             )}
           </FormField>
+          {/* The country-list chunk failed to fetch (#125 review): let the guest
+              retry rather than stranding them on a disabled "Loading…" select. */}
+          {phoneFailed && (
+            <p className="text-sm text-muted-foreground" role="alert">
+              We couldn't load the country list.{" "}
+              <button
+                type="button"
+                onClick={() => void loadPhoneKit()}
+                className="font-medium text-primary underline"
+              >
+                Retry
+              </button>
+            </p>
+          )}
           <FormField
             label="Email (optional)"
             value={form.guestEmail}

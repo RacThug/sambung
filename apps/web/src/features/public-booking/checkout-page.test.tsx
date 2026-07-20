@@ -130,6 +130,10 @@ describe("checkout page", () => {
     fireEvent.change(screen.getByLabelText(/full name/i), {
       target: { value: "Alex UK" },
     });
+    // The country list (with libphonenumber-js) now loads as its own chunk (#125),
+    // so wait for the options before switching - the option's presence is the
+    // signal the phone kit has arrived.
+    await screen.findByRole("option", { name: /United Kingdom/i });
     // Switch the country to the UK, then type a UK national number.
     fireEvent.change(screen.getByLabelText(/country/i), {
       target: { value: "GB" },
