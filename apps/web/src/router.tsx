@@ -11,6 +11,8 @@ import { authSearchSchema } from "./features/auth/auth-search";
 import { calendarSearchSchema } from "./features/calendar/calendar-search";
 import { reservationsSearchSchema } from "./features/reservations/reservations-search";
 import { ensureSession } from "./lib/auth";
+import { I18nProvider } from "@/i18n/provider";
+import { PublicShell } from "@/components/public-shell";
 
 // Two faces, one SPA: public funnel + auth-guarded dashboard (architecture.md
 // §4.2). The two surfaces are also two BUNDLES (#125, ADR-0023): every route's
@@ -24,8 +26,19 @@ import { ensureSession } from "./lib/auth";
 // component the router suspends on while the chunk loads (its own Suspense
 // boundary), so no route file has to be split into a `.lazy.tsx` stub and the
 // whole tree stays readable in one place.
+// The i18n provider wraps the whole tree (ADR-0024), so `useI18n` is available to
+// any route and every test that renders the real tree gets it. The PublicShell adds
+// the language switcher bar on the public funnel + auth pages only (page-spec §2:
+// "public pages + login"); it renders nothing on /app, so the dashboard stays
+// English. Kept at the root - not a pathless layout route - so the route tree and
+// every absolute path stay exactly as they were.
 const rootRoute = createRootRoute({
-  component: Outlet,
+  component: () => (
+    <I18nProvider>
+      <PublicShell />
+      <Outlet />
+    </I18nProvider>
+  ),
 });
 
 const homeRoute = createRoute({

@@ -1,6 +1,7 @@
 // Thin fetch wrapper. All data flows through the NestJS API — the SPA never
 // touches the DB. (CLAUDE.md invariant #1)
 import { clearSession, getAccessToken, refreshSession } from "./auth";
+import { getLocale } from "@/i18n/locale";
 
 const BASE_URL = "/api";
 
@@ -52,6 +53,11 @@ async function send(method: string, path: string, body?: unknown) {
     headers: {
       ...(body !== undefined && { "Content-Type": "application/json" }),
       ...(token && { Authorization: `Bearer ${token}` }),
+      // The visitor's language (ADR-0024, api-spec §1). Public endpoints accept it
+      // for localized copy; the availability endpoint stays language-neutral slugs
+      // and the SPA localizes, so this is a documented convention + a future seam,
+      // not something any endpoint reads today.
+      "Accept-Language": getLocale(),
     },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   });
