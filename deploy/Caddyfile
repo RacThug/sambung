@@ -1,0 +1,52 @@
+# Sambung reverse proxy (architecture §7 - single VPS: Caddy + Docker Compose).
+#
+# Caddy terminates TLS (auto-HTTPS), serves the SPA build, and proxies /api to
+# the NestJS container. One origin, so the refresh cookie stays first-party.
+#
+# NOT executed by any test. This is committed, reviewed config; the crawler user
+# agent match below is verified for narrowness by property-og.spec.ts (#87 AC d).
+#
+#   SAMBUNG_DOMAIN   the public hostname (e.g. sambung.app). Defaults to :80 for
+#                    a local `caddy run` smoke test.
+#   SAMBUNG_API      host:port of the api container. Defaults to localhost:3000.
+
+{$SAMBUNG_DOMAIN::80} {
+	encode gzip
+
+	# --- SEO tier 2: real OG tags for link-preview crawlers (#87, ADR-0019) ---
+	#
+	# The SPA's per-property OG tags are rendered client-side (architecture §6
+	# tier 1). Googlebot runs the JS and sees them; link-preview crawlers fetch
+	# raw HTML and never run a line of JS, so a villa forwarded on WhatsApp would
+	# preview as a blank "sambung" card. These crawlers only READ meta tags - they
+	# never render - so we don't need a headless browser: match their user agents
+	# on the public property path and proxy them to the API's static OG stub,
+	# which carries the same og:title / og:description / og:image the SPA builds.
+	#
+	# KEEP THIS LIST NARROW AND EXPLICIT. A too-broad match (e.g. /bot|crawler/i)
+	# would serve the stub to humans, which is worse than the gap it closes, and
+	# would risk cloaking a search engine. This is an allowlist of the specific
+	# social/chat preview fetchers that matter - and it deliberately does NOT
+	# include Googlebot/Bingbot, which render JS and must get the real SPA.
+	@og_crawler {
+		path_regexp slug ^/p/([a-z0-9]+(?:-[a-z0-9]+)*)/?$
+		header_regexp User-Agent (?i)(facebookexternalhit|Facebot|WhatsApp|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Discordbot|Pinterest|redditbot|SkypeUriPreview|vkShare|Line/)
+	}
+	handle @og_crawler {
+		# /p/:slug  ->  /api/public/properties/:slug/og  (slug is capture group 1)
+		rewrite * /api/public/properties/{re.slug.1}/og
+		reverse_proxy {$SAMBUNG_API:localhost:3000}
+	}
+
+	# --- API ---
+	handle /api/* {
+		reverse_proxy {$SAMBUNG_API:localhost:3000}
+	}
+
+	# --- SPA: everyone else (humans, Googlebot) gets the real app ---
+	handle {
+		root * /srv/sambung/web
+		try_files {path} /index.html
+		file_server
+	}
+}

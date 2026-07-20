@@ -1,5 +1,6 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Header, Param, Req } from '@nestjs/common';
 import type { PublicPropertyResponse } from '@sambung/shared';
+import type { Request } from 'express';
 import { SlugParamPipe } from '../common/pipes/slug-param.pipe';
 import { PublicPropertiesService } from './public-properties.service';
 
@@ -27,5 +28,31 @@ export class PublicPropertiesController {
     @Param('slug', SlugParamPipe) slug: string,
   ): Promise<PublicPropertyResponse> {
     return this.properties.getBySlug(slug);
+  }
+
+  /**
+   * The static OG stub for link-preview crawlers (architecture §6 tier 2, #87,
+   * ADR-0019). Caddy matches a NARROW allowlist of crawler user agents on `/p/*`
+   * and proxies them here; humans and Googlebot never match and get the SPA. The
+   * UA match lives in `deploy/Caddyfile`, not the API - a crawler is identified
+   * at the edge, and the API just renders the stub for whatever reaches it.
+   *
+   * `@Header` makes Nest send the returned string as `text/html`. The canonical
+   * URL is the HUMAN page (`/p/:slug`) this stub represents, built here from the
+   * request host because it is not a property fact; the slug is already
+   * SLUG_PATTERN-validated by the pipe, so it is safe in a URL path.
+   */
+  @Get(':slug/og')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  getOg(
+    @Param('slug', SlugParamPipe) slug: string,
+    @Req() req: Request,
+  ): Promise<string> {
+    // `req.protocol`/`req.hostname` honour X-Forwarded-* only when TRUST_PROXY is
+    // set (main.ts) - i.e. behind Caddy in prod, which is the only place this
+    // route is reached. `req.get('host')` keeps the port for a dev/direct hit.
+    const host = req.get('host') ?? 'localhost';
+    const canonicalUrl = `${req.protocol}://${host}/p/${slug}`;
+    return this.properties.getOgHtmlBySlug(slug, canonicalUrl);
   }
 }

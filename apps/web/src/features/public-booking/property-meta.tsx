@@ -1,3 +1,4 @@
+import { buildPropertyOgTags } from "@sambung/shared";
 import type { PublicPropertyResponse } from "@sambung/shared";
 
 /**
@@ -7,23 +8,25 @@ import type { PublicPropertyResponse } from "@sambung/shared";
  * tree into <head> natively, so the dependency architecture §6 suggested is one
  * we simply don't take (it is also unmaintained upstream).
  *
+ * The tag VALUES come from `buildPropertyOgTags` in @sambung/shared, NOT from
+ * logic inlined here. The API's crawler stub (#87, tier 2) renders the same
+ * helper into static HTML, so a link preview shows the same card whether it was
+ * fetched by Googlebot (which runs this JS) or by WhatsApp (which never does).
+ * One source; no drift.
+ *
  * ---------------------------------------------------------------------------
- * READ THIS BEFORE TRUSTING THESE TAGS.
+ * WHY BOTH TIERS EXIST.
  *
- * They work for Googlebot, which renders JS. They do NOT work for link-preview
- * crawlers - WhatsApp, facebookexternalhit, Twitterbot, Telegram, LINE. Those
- * fetch raw HTML and never execute a line of JS, so what they see is the SPA's
- * static index.html: the title "Sambung" and no image.
+ * These JSX tags work for Googlebot, which renders JS. They are invisible to
+ * link-preview crawlers - WhatsApp, facebookexternalhit, Twitterbot, Telegram,
+ * LINE - which fetch raw HTML and never execute a line of JS. That is the case
+ * this product cares about most: #46's first line is "a guest opens a shared
+ * link", and in Indonesia that link arrives on WhatsApp.
  *
- * That is precisely the case this product cares about most. #46's first line is
- * "a guest opens a shared link", and in Indonesia that link arrives on WhatsApp.
- * So this file satisfies the acceptance criterion while delivering little of
- * what the criterion is FOR. It is tier 1 as specced, and tier 1 is not enough.
- *
- * The fix is cheaper than architecture §6 assumes: §6 imagines Puppeteer, but
- * social crawlers only READ meta tags - they never render - so Caddy can match
- * their user agents and proxy to a small API route returning a static OG stub,
- * with humans and Googlebot still getting the real SPA. Tracked as #87.
+ * Tier 2 (#87) closes it WITHOUT a headless browser, because social crawlers
+ * only READ meta tags: Caddy matches their user agents on /p/* and proxies them
+ * to `GET /public/properties/:slug/og`, which returns a static HTML document
+ * carrying these same values; humans and Googlebot keep getting this SPA.
  * ---------------------------------------------------------------------------
  */
 export function PropertyMeta({
@@ -31,20 +34,12 @@ export function PropertyMeta({
 }: {
   property: PublicPropertyResponse;
 }) {
-  const title = `${property.name} - Book direct`;
-  // The description a preview card shows: the owner's own words when they wrote
-  // any, the address as a fallback. Never a template like "Book NAME now" -
-  // that reads as spam and tells a guest nothing they can't see in the title.
-  const description =
-    property.description?.trim() ||
-    (property.address
-      ? `Book ${property.name} directly - ${property.address}`
-      : `Book ${property.name} directly.`);
+  const { title, description, image, twitterCard } =
+    buildPropertyOgTags(property);
 
-  // OG needs absolute URLs. Photo URLs already are (STORAGE_PUBLIC_BASE_URL);
-  // the page URL is built from the live origin rather than an env var, so a
-  // preview deep-links back to the host the guest actually opened.
-  const image = property.photos[0]?.url;
+  // OG needs an absolute URL. The page URL is built from the live origin rather
+  // than an env var, so a preview deep-links back to the host the guest actually
+  // opened. (Photo URLs are already absolute - STORAGE_PUBLIC_BASE_URL.)
   const url =
     typeof window === "undefined"
       ? undefined
@@ -61,12 +56,7 @@ export function PropertyMeta({
       {url && <meta property="og:url" content={url} />}
       {image && <meta property="og:image" content={image} />}
 
-      {/* summary_large_image only if there IS an image - otherwise the card
-          reserves space for one and renders a broken frame. */}
-      <meta
-        name="twitter:card"
-        content={image ? "summary_large_image" : "summary"}
-      />
+      <meta name="twitter:card" content={twitterCard} />
       <meta name="twitter:title" content={title} />
       <meta name="twitter:description" content={description} />
       {image && <meta name="twitter:image" content={image} />}

@@ -207,12 +207,12 @@ provider POSTs (maybe twice) → INSERT into payment_event (provider, provider_e
 ## 6. SEO for the public pages (the SPA trade-off)
 SPA HTML is thin until JS runs → weaker SEO by default. Handle it in tiers (pick per ambition):
 1. **Showcase-enough:** correct meta/OG tags per property. Modern Googlebot renders JS, so pages still index. **Built** (#46) — no dependency: React 19 hoists `<title>`/`<meta>` from anywhere in the tree into `<head>` natively, so the react-helmet this doc used to recommend is neither needed nor maintained.
-2. **Shows you get SEO:** serve bots real HTML.
+2. **Shows you get SEO:** serve link-preview crawlers real HTML. **Built** (#87) — see below.
 3. **Production-real:** SSR just the public pages via Astro (React islands) or Next, dashboard stays SPA.
 
 > **Tier 1 is not enough here, and it's worth being precise about why.** Client-rendered OG tags are invisible to *every* link-preview crawler — WhatsApp, `facebookexternalhit`, Twitterbot, Telegram, LINE. They fetch raw HTML and never execute JS, so a forwarded villa previews as a blank card reading "Sambung". Googlebot is fine; the crawler this product lives on is not. Sambung's whole distribution model is a link pasted into a chat — in Indonesia, WhatsApp — so the gap sits exactly where the value is (#46, FR-NOTIF-2).
 >
-> Tier 2 is also cheaper than "Prerender / Puppeteer snapshot" implies, which is what made it look like a bigger step than it is: **social crawlers only read meta tags — they never render.** So Caddy can match their user agents and proxy to a small API route that returns a static OG stub, while humans and Googlebot get the real SPA. A template, not a headless browser on a $5 VPS. Tracked as #87.
+> Tier 2 turned out far cheaper than the "Prerender / Puppeteer snapshot" this doc used to name — **social crawlers only read meta tags, they never render**, so no headless browser is needed. What shipped (#87, ADR-0019): `deploy/Caddyfile` matches a *narrow, explicit allowlist* of preview-crawler user agents (WhatsApp, `facebookexternalhit`, Twitterbot, Telegram, LINE, Slack, Discord, …) on `/p/*` and proxies just those to `GET /public/properties/:slug/og`, a small API route that returns a static HTML document carrying the same `og:*` tags. Humans and Googlebot never match the allowlist (Googlebot renders JS — serving it a stub would be cloaking), so they get the real SPA. The OG values come from one shared helper — `buildPropertyOgTags` in `packages/shared` — that the SPA's `<meta>` tags use too, so the crawler card and the rendered page cannot drift. A template, not a headless browser on a $5 VPS.
 
 For the portfolio, tier 1–2 + a README note "in production I'd SSR the public funnel" is the mature answer.
 
