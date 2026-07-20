@@ -1,0 +1,13 @@
+-- The owner's "handled" marker for the paid-but-lapsed inbox (#120, ADR-0022,
+-- boss fight #4 follow-up). When a guest settles AFTER their hold lapsed (swept
+-- to `expired`) or was cancelled, the webhook (ADR-0018) records the payment
+-- `paid` but never resurrects the booking - leaving money captured for a stay
+-- that no longer holds its dates. This column lets the owner acknowledge one:
+-- NULL = still awaiting reconciliation (shows in the inbox), a timestamp = dealt
+-- with (drops out). Set ONLY by POST /payments/:id/handle, which writes ONLY this
+-- column - payment.status stays `paid`, booking.status stays expired/cancelled,
+-- so the ledger is never mutated to clear an inbox item (ADR-0002). Nullable, so
+-- the marker is reversible by construction and destroys nothing. No RLS change
+-- needed: payment's tenant_isolation policy is row-level (scoped through the
+-- booking join), so the new column is already tenant-isolated.
+ALTER TABLE "payment" ADD COLUMN "handled_at" timestamp with time zone;

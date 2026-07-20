@@ -38,6 +38,9 @@ export function AppShell() {
             <Link to="/app/reservations" className={navLink} activeProps={navLinkActive} inactiveProps={navLinkIdle}>
               Reservations
             </Link>
+            <Link to="/app/inbox" className={navLink} activeProps={navLinkActive} inactiveProps={navLinkIdle}>
+              Inbox
+            </Link>
             <Link to="/app/properties" className={navLink} activeProps={navLinkActive} inactiveProps={navLinkIdle}>
               Properties
             </Link>

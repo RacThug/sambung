@@ -354,6 +354,15 @@ export const payment = pgTable(
     providerRef: text("provider_ref"), // order_id / transaction id
     amountIdr: bigint("amount_idr", { mode: "bigint" }).notNull(),
     status: paymentStatus("status").notNull().default("pending"),
+    // The owner's "I've dealt with this" marker for the paid-but-lapsed inbox
+    // (#120, ADR-0022). NULL = still awaiting reconciliation; a timestamp = the
+    // owner acknowledged it. Set ONLY by POST /payments/:id/handle, and it touches
+    // ONLY this column - never payment.status / booking.status (ADR-0002: the
+    // ledger is never mutated to clear an inbox item). Nullable so the marker is
+    // reversible by construction - nothing is destroyed. No RLS change: `payment`'s
+    // policy is row-level (scoped through the booking join), so a new column is
+    // already tenant-isolated.
+    handledAt: timestamptz("handled_at"),
     rawPayload: jsonb("raw_payload"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
     updatedAt: timestamptz("updated_at")
