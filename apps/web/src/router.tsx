@@ -8,7 +8,7 @@ import {
 import { HomePage } from "./features/public-booking/home-page";
 import { PropertyPage } from "./features/public-booking/property-page";
 import { CheckoutPage } from "./features/public-booking/checkout-page";
-import { BookingLandingPage } from "./features/public-booking/booking-landing-page";
+import { ConfirmationPage } from "./features/public-booking/confirmation-page";
 import { propertySearchSchema } from "./features/public-booking/property-search";
 import { LoginPage } from "./features/auth/login-page";
 import { RegisterPage } from "./features/auth/register-page";
@@ -54,13 +54,13 @@ const checkoutRoute = createRoute({
   component: CheckoutPage,
 });
 
-// Booking landing (page-spec §3.3, #52) - where the Provider returns the guest
-// after Snap. Public: a Guest has no token. Thin for now; the reconcile-on-read
-// confirmation page is #54.
+// Confirmation (page-spec §3.3, #54) - where the Provider returns the guest after
+// Snap, and the link in their email. Public: a Guest has no token. Reconciles on
+// read and polls to confirmed (ADR-0020).
 const bookingLandingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/booking/$bookingId",
-  component: BookingLandingPage,
+  component: ConfirmationPage,
 });
 
 const loginRoute = createRoute({

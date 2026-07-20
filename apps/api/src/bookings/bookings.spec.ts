@@ -57,7 +57,7 @@ describe('Guest booking + hold sweeper', () => {
         checkIn: '2027-01-10',
         checkOut: '2027-01-14',
         guestName: 'Made A.',
-        guestPhone: '+62 812 3456 7890',
+        guestPhone: '+6281234567890', // E.164 (#54)
         guestCount: 2,
         ...overrides,
       });
@@ -326,6 +326,11 @@ describe('Guest booking + hold sweeper', () => {
   it('400s a non-phone contact, a bad window, and an out-of-range party', async () => {
     const badPhone = await book({ guestPhone: 'call-me-maybe' });
     expect(badPhone.status).toBe(400);
+
+    // A bare national number (no country code) is ambiguous and rejected at the
+    // boundary - the server enforces E.164, not just the client (#54, #123 review).
+    const bareNationalPhone = await book({ guestPhone: '081234567890' });
+    expect(bareNationalPhone.status).toBe(400);
 
     const badWindow = await book({
       checkIn: '2027-10-14',

@@ -20,6 +20,7 @@ import { z } from "zod";
 export * from "./availability";
 export * from "./auth";
 export * from "./booking";
+export * from "./booking-confirmation";
 export * from "./booking-list";
 export * from "./channel";
 export * from "./conflict";
