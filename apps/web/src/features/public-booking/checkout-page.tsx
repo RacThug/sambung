@@ -17,13 +17,20 @@ import { formatIdr } from "../../lib/money";
 import { formatDate } from "../../lib/date";
 import { FormField } from "@/components/form-field";
 import { describeBlockedNights, describeReason } from "./availability-copy";
-import {
-  COUNTRY_OPTIONS,
-  DEFAULT_COUNTRY,
-  toE164,
-  type CountryCode,
-} from "./phone";
+// `phone` is imported for its TYPE only (erased at build). Its RUNTIME - the
+// country list and E.164 resolver - pulls in libphonenumber-js (~25 KB gzipped),
+// so it is loaded lazily via dynamic `import()` at the checkout phone step (#125,
+// ADR-0023). That keeps libphonenumber out of the property and confirmation pages
+// entirely, and out of the checkout chunk's initial paint.
+import type { CountryCode } from "./phone";
 import { useQuote } from "./use-availability";
+
+type PhoneKit = typeof import("./phone");
+
+/** Indonesia by default - this is a Bali direct-booking product. Kept in sync
+ * with phone.ts's DEFAULT_COUNTRY (a plain literal, so referencing it does not
+ * force libphonenumber into this chunk's static graph). */
+const DEFAULT_COUNTRY = "ID" satisfies CountryCode;
 
 const route = getRouteApi("/p/$slug/book");
 
@@ -98,6 +105,22 @@ function Checkout({
   const [held, setHeld] = useState<CreateBookingResponse | null>(null);
   const [holdLapsed, setHoldLapsed] = useState(false);
 
+  // The phone kit (country list + E.164 resolver) carries libphonenumber-js, so
+  // it is fetched as its own chunk when the checkout form mounts (#125) rather
+  // than shipped with the property/confirmation pages. Kick it off on mount so the
+  // country <select> populates promptly; until it resolves the select shows a
+  // disabled "Loading…" placeholder (the rest of the form is usable meanwhile).
+  const [phoneKit, setPhoneKit] = useState<PhoneKit | null>(null);
+  useEffect(() => {
+    let active = true;
+    void import("./phone").then((mod) => {
+      if (active) setPhoneKit(mod);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const createMut = useMutation({
     mutationFn: (body: CreateBookingRequest) =>
       api.post<CreateBookingResponse>("/public/bookings", body),
@@ -124,7 +147,10 @@ function Checkout({
     e.preventDefault();
     // Assemble E.164 from the selected country + national number (#54). A clear
     // inline error, never a silent transform - client validation is UX; the shared
-    // schema below (and the server) enforce E.164 as correctness.
+    // schema below (and the server) enforce E.164 as correctness. The resolver is
+    // in the lazily-loaded phone kit; `import()` is memoized, so this is the same
+    // in-flight/cached module the mount effect started (#125).
+    const { toE164 } = phoneKit ?? (await import("./phone"));
     const guestPhone = toE164(form.guestPhoneNational, form.guestPhoneCountry);
     if (!guestPhone) {
       setFieldErrors({
@@ -257,19 +283,26 @@ function Checkout({
                 <select
                   aria-label="Country"
                   value={form.guestPhoneCountry}
+                  disabled={!phoneKit}
                   onChange={(e) =>
                     setForm((f) => ({
                       ...f,
                       guestPhoneCountry: e.target.value as CountryCode,
                     }))
                   }
-                  className="max-w-[9rem] shrink-0 rounded-md border border-input bg-background px-2 py-2 text-sm"
+                  className="max-w-[9rem] shrink-0 rounded-md border border-input bg-background px-2 py-2 text-sm disabled:opacity-70"
                 >
-                  {COUNTRY_OPTIONS.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.name} (+{c.callingCode})
-                    </option>
-                  ))}
+                  {phoneKit ? (
+                    phoneKit.COUNTRY_OPTIONS.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.name} (+{c.callingCode})
+                      </option>
+                    ))
+                  ) : (
+                    // Placeholder while the phone kit loads; value matches the
+                    // selected country so the controlled <select> stays valid.
+                    <option value={form.guestPhoneCountry}>Loading…</option>
+                  )}
                 </select>
                 <input
                   {...control}
