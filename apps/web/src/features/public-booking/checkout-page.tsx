@@ -11,12 +11,16 @@ import {
   type PublicPropertyResponse,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
-import { conflictOf, describeConflict } from "../../lib/conflict";
+import { conflictOf } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { formatIdr } from "../../lib/money";
-import { formatDate } from "../../lib/date";
 import { FormField } from "@/components/form-field";
-import { describeBlockedNights, describeReason } from "./availability-copy";
+import { useI18n, type I18n } from "@/i18n/context";
+import {
+  describeBlockedNights,
+  describeReason,
+  describeRefusal,
+} from "./availability-copy";
 // `phone` is imported for its TYPE only (erased at build). Its RUNTIME - the
 // country list and E.164 resolver - pulls in libphonenumber-js (~25 KB gzipped),
 // so it is loaded lazily via dynamic `import()` at the checkout phone step (#125,
@@ -47,13 +51,12 @@ const route = getRouteApi("/p/$slug/book");
 export function CheckoutPage() {
   const { slug } = route.useParams();
   const { unit, from, to } = route.useSearch();
+  const { t } = useI18n();
 
   if (!(unit && from && to && to > from)) {
     return (
       <Shell slug={slug} unit={unit} from={from} to={to}>
-        <p className="mt-6 text-muted-foreground">
-          Choose your dates on the property page to start a booking.
-        </p>
+        <p className="mt-6 text-muted-foreground">{t("checkout.chooseDates")}</p>
       </Shell>
     );
   }
@@ -71,6 +74,8 @@ function Checkout({
   from: string;
   to: string;
 }) {
+  const i18n = useI18n();
+  const { t } = i18n;
   // Fresh quote for the exact stay (debounce 0 - immediate). Same cache key as the
   // picker's, so arriving from it is usually a cache hit. The stay is MEMOIZED: a
   // fresh object each render would make useDebounced(ms=0) re-set state every
@@ -167,9 +172,7 @@ function Checkout({
     if (!kit) return;
     const guestPhone = kit.toE164(form.guestPhoneNational, form.guestPhoneCountry);
     if (!guestPhone) {
-      setFieldErrors({
-        guestPhone: "Enter a valid WhatsApp number for the selected country",
-      });
+      setFieldErrors({ guestPhone: t("checkout.invalidPhone") });
       return;
     }
     const parsed = createBookingRequestSchema.safeParse({
@@ -213,10 +216,11 @@ function Checkout({
     return (
       <Shell slug={slug} unit={unitId} from={from} to={to}>
         <div className="mt-6 rounded-lg border border-border bg-card p-5">
-          <p className="font-medium text-foreground">Your hold has lapsed</p>
+          <p className="font-medium text-foreground">
+            {t("checkout.holdLapsedTitle")}
+          </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            We only hold dates for a few minutes. Please pick your dates again to
-            start over.
+            {t("checkout.holdLapsedBody")}
           </p>
           <Link
             to="/p/$slug"
@@ -224,7 +228,7 @@ function Checkout({
             search={{ unit: unitId, from, to }}
             className="mt-4 inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
           >
-            Pick dates again
+            {t("checkout.pickDatesAgain")}
           </Link>
         </div>
       </Shell>
@@ -234,6 +238,7 @@ function Checkout({
   return (
     <Shell slug={slug} unit={unitId} from={from} to={to}>
       <StaySummary
+        i18n={i18n}
         from={from}
         to={to}
         nights={nights}
@@ -246,11 +251,14 @@ function Checkout({
       {quote && !quote.available && (
         <div className="mt-4 rounded-lg border border-warning/40 bg-warning/10 p-4 text-sm text-warning">
           {quote.reasons.map((r) => (
-            <p key={r}>{describeReason(r, quote.minStay)}</p>
+            <p key={r}>{describeReason(i18n, r, quote.minStay)}</p>
           ))}
           {quote.blockedRanges.length > 0 && (
             <p className="mt-1">
-              Booked: {quote.blockedRanges.map(describeBlockedNights).join(", ")}
+              {t("picker.bookedLabel")}{" "}
+              {quote.blockedRanges
+                .map((r) => describeBlockedNights(i18n, r))
+                .join(", ")}
             </p>
           )}
           <Link
@@ -259,7 +267,7 @@ function Checkout({
             search={{ unit: unitId, from, to }}
             className="mt-2 inline-block font-medium underline"
           >
-            Pick other dates
+            {t("checkout.pickOtherDates")}
           </Link>
         </div>
       )}
@@ -268,6 +276,7 @@ function Checkout({
         // The Hold exists; the payment handoff failed (provider error). Retry it
         // against the same booking while the hold lives.
         <PaymentRetry
+          i18n={i18n}
           held={held}
           pending={payMut.isPending}
           providerError={payProviderError}
@@ -281,21 +290,21 @@ function Checkout({
           className="mt-6 space-y-4 rounded-lg border border-border bg-card p-6"
         >
           <h2 className="font-display text-lg font-semibold text-foreground">
-            Your details
+            {t("checkout.yourDetails")}
           </h2>
 
           <FormField
-            label="Full name"
+            label={t("checkout.fullName")}
             value={form.guestName}
             onChange={set("guestName")}
             error={fieldErrors.guestName}
             autoComplete="name"
           />
-          <FormField label="WhatsApp number" error={fieldErrors.guestPhone}>
+          <FormField label={t("checkout.whatsapp")} error={fieldErrors.guestPhone}>
             {(control) => (
               <div className="mt-1 flex gap-2">
                 <select
-                  aria-label="Country"
+                  aria-label={t("checkout.country")}
                   value={form.guestPhoneCountry}
                   disabled={!phoneKit}
                   onChange={(e) =>
@@ -317,7 +326,7 @@ function Checkout({
                     // value matches the selected country so the controlled
                     // <select> stays valid. The Retry affordance sits below.
                     <option value={form.guestPhoneCountry}>
-                      {phoneFailed ? "Unavailable" : "Loading…"}
+                      {phoneFailed ? t("checkout.unavailable") : t("checkout.loading")}
                     </option>
                   )}
                 </select>
@@ -337,18 +346,18 @@ function Checkout({
               retry rather than stranding them on a disabled "Loading…" select. */}
           {phoneFailed && (
             <p className="text-sm text-muted-foreground" role="alert">
-              We couldn't load the country list.{" "}
+              {t("checkout.countryLoadFailed")}{" "}
               <button
                 type="button"
                 onClick={() => void loadPhoneKit()}
                 className="font-medium text-primary underline"
               >
-                Retry
+                {t("picker.retry")}
               </button>
             </p>
           )}
           <FormField
-            label="Email (optional)"
+            label={t("checkout.emailOptional")}
             value={form.guestEmail}
             onChange={set("guestEmail")}
             error={fieldErrors.guestEmail}
@@ -356,7 +365,7 @@ function Checkout({
             autoComplete="email"
           />
           <FormField
-            label="Guests"
+            label={t("checkout.guests")}
             type="number"
             inputMode="numeric"
             min={1}
@@ -366,15 +375,18 @@ function Checkout({
           />
 
           {/* A 409 from the create - dates taken, min-stay, over capacity - is
-              machine-readable; the web composes the copy (#82). */}
+              machine-readable; the web composes its OWN localized copy (#82,
+              ADR-0024) from the reasons, never server prose. */}
           {createConflict && (
             <p className="rounded-md bg-warning/10 px-3 py-2 text-sm font-medium text-warning">
-              {describeConflict(createConflict)}
+              {createConflict.code === "dates_unavailable"
+                ? describeRefusal(i18n, createConflict.reasons)
+                : t("checkout.genericError")}
             </p>
           )}
           {createMut.isError && !createConflict && (
             <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
-              Something went wrong - please try again.
+              {t("checkout.genericError")}
             </p>
           )}
 
@@ -388,8 +400,8 @@ function Checkout({
             className="w-full rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
           >
             {createMut.isPending || payMut.isPending
-              ? "Starting secure payment…"
-              : "Continue to payment"}
+              ? t("checkout.startingPayment")
+              : t("checkout.continueToPayment")}
           </button>
         </form>
       )}
@@ -400,31 +412,34 @@ function Checkout({
 /** The Hold exists but payment didn't start (provider error). Retry against the
  * same booking while the hold lives; a lapsed hold sends the guest back. */
 function PaymentRetry({
+  i18n,
   held,
   pending,
   providerError,
   onRetry,
   onExpire,
 }: {
+  i18n: I18n;
   held: CreateBookingResponse;
   pending: boolean;
   providerError: boolean;
   onRetry: () => void;
   onExpire: () => void;
 }) {
+  const { t } = i18n;
   return (
     <div className="mt-6 rounded-lg border border-border bg-card p-6">
       <h2 className="font-display text-lg font-semibold text-foreground">
-        Your dates are held
+        {t("checkout.heldTitle")}
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        We couldn't reach the payment provider. Your booking is held for{" "}
-        <HoldCountdown expiresAt={held.holdExpiresAt} onExpire={onExpire} /> -
-        retry the payment before it lapses.
+        {t("checkout.heldBodyPre")}{" "}
+        <HoldCountdown expiresAt={held.holdExpiresAt} onExpire={onExpire} />{" "}
+        {t("checkout.heldBodyPost")}
       </p>
       {providerError && (
         <p className="mt-2 rounded-md bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
-          Payment couldn't start. Please try again.
+          {t("checkout.paymentCouldntStart")}
         </p>
       )}
       <button
@@ -433,7 +448,7 @@ function PaymentRetry({
         onClick={onRetry}
         className="mt-4 w-full rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
       >
-        {pending ? "Starting secure payment…" : "Retry payment"}
+        {pending ? t("checkout.startingPayment") : t("checkout.retryPayment")}
       </button>
     </div>
   );
@@ -443,18 +458,21 @@ function PaymentRetry({
  * a partial Deposit, show what's due now vs at the property, so the guest isn't
  * surprised by a smaller charge on the Provider page (ADR-0015). */
 function StaySummary({
+  i18n,
   from,
   to,
   nights,
   quote,
   depositPct,
 }: {
+  i18n: I18n;
   from: string;
   to: string;
   nights: number;
   quote: { available: boolean; totalPriceIdr: number } | undefined;
   depositPct: number | undefined;
 }) {
+  const { t } = i18n;
   const total = quote?.totalPriceIdr;
   // Only a real partial deposit (1-99%) gets a split; 100% or unknown just shows
   // the total. The amount mirrors the server's exactly (shared depositAmountIdr).
@@ -465,13 +483,11 @@ function StaySummary({
 
   return (
     <div className="mt-6 rounded-lg border border-border bg-card p-5">
-      <p className="text-sm text-muted-foreground">Your stay</p>
+      <p className="text-sm text-muted-foreground">{t("checkout.yourStay")}</p>
       <p className="mt-1 text-lg font-medium text-foreground">
-        {formatDate(from)} → {formatDate(to)}
+        {i18n.fmtDate(from)} → {i18n.fmtDate(to)}
       </p>
-      <p className="text-sm text-muted-foreground">
-        {nights} {nights === 1 ? "night" : "nights"}
-      </p>
+      <p className="text-sm text-muted-foreground">{i18n.fmtNights(nights)}</p>
       {quote?.available && total != null && (
         <p className="mt-3 text-lg font-semibold text-foreground">
           {formatIdr(total)}
@@ -480,11 +496,13 @@ function StaySummary({
       {quote?.available && deposit != null && total != null && (
         <div className="mt-2 rounded-md bg-muted px-3 py-2 text-sm">
           <p className="font-medium text-foreground">
-            Deposit due now: {formatIdr(deposit)}{" "}
+            {t("checkout.depositDueNow", { amount: formatIdr(deposit) })}{" "}
             <span className="text-muted-foreground">({depositPct}%)</span>
           </p>
           <p className="text-muted-foreground">
-            Balance {formatIdr(total - deposit)} due at the property
+            {t("checkout.balanceAtProperty", {
+              amount: formatIdr(total - deposit),
+            })}
           </p>
         </div>
       )}
@@ -539,6 +557,7 @@ function Shell({
   to: string | undefined;
   children: React.ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <main className="mx-auto max-w-xl px-6 py-16">
       <Link
@@ -547,10 +566,10 @@ function Shell({
         search={{ unit, from, to }}
         className="text-sm text-primary hover:underline"
       >
-        ← Back to the property
+        {t("checkout.back")}
       </Link>
       <h1 className="mt-4 font-display text-2xl font-semibold text-foreground">
-        Request to book
+        {t("checkout.title")}
       </h1>
       {children}
     </main>

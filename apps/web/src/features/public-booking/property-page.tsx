@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { PublicPropertyResponse, PublicUnit } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { formatIdr } from "../../lib/money";
+import { useI18n, type I18n } from "@/i18n/context";
 import { VerifiedBadge } from "../properties/verified-badge";
 import { PropertyMeta } from "./property-meta";
 import { AvailabilityPicker } from "./availability-picker";
@@ -22,6 +23,8 @@ export function PropertyPage() {
   const { slug } = route.useParams();
   const search = route.useSearch();
   const navigate = useNavigate();
+  const i18n = useI18n();
+  const { t } = i18n;
 
   // Which unit's picker is open, and its picked stay - all in the URL, so a
   // shared link reproduces the exact view (page-spec §3.1). Merge-update the
@@ -56,14 +59,12 @@ export function PropertyPage() {
     const missing = error instanceof ApiError && error.status === 404;
     return (
       <main className="mx-auto max-w-3xl px-6 py-16 text-center">
-        <title>{missing ? "Property not found - Sambung" : "Sambung"}</title>
+        <title>{missing ? t("property.metaNotFound") : "Sambung"}</title>
         <h1 className="font-display text-2xl font-semibold text-foreground">
-          {missing ? "This page doesn’t exist" : "Something went wrong"}
+          {missing ? t("property.notFoundTitle") : t("property.errorTitle")}
         </h1>
         <p className="mt-2 text-muted-foreground">
-          {missing
-            ? "The link may be mistyped, or the property is no longer listed."
-            : "We couldn’t load this property. Please try again."}
+          {missing ? t("property.notFoundBody") : t("property.errorBody")}
         </p>
       </main>
     );
@@ -83,7 +84,7 @@ export function PropertyPage() {
             {data.name}
           </h1>
           {/* FR-PROP-3: the badge is the licence being on file, nothing else. */}
-          {data.verified && <VerifiedBadge />}
+          {data.verified && <VerifiedBadge label={t("property.verified")} />}
         </div>
         {data.address && <p className="mt-2 text-muted-foreground">{data.address}</p>}
       </header>
@@ -95,19 +96,20 @@ export function PropertyPage() {
       )}
 
       <section className="mt-10">
-        <h2 className="text-lg font-semibold text-foreground">Rooms</h2>
+        <h2 className="text-lg font-semibold text-foreground">
+          {t("property.rooms")}
+        </h2>
         {data.units.length === 0 ? (
           // Publishable never gates this page (ADR-0004), so "nothing to sell
           // yet" is a state a guest can really land on. Say so plainly rather
           // than rendering an empty heading.
-          <p className="mt-2 text-muted-foreground">
-            No rooms are listed yet. Please check back soon.
-          </p>
+          <p className="mt-2 text-muted-foreground">{t("property.noRooms")}</p>
         ) : (
           <ul className="mt-4 space-y-3">
             {data.units.map((unit) => (
               <li key={unit.id}>
                 <UnitCard
+                  i18n={i18n}
                   unit={unit}
                   slug={slug}
                   open={search.unit === unit.id}
@@ -136,6 +138,7 @@ export function PropertyPage() {
  * "not bookable yet" and no picker or CTA - the sell-gate proper is #48.
  */
 function UnitCard({
+  i18n,
   unit,
   slug,
   open,
@@ -145,6 +148,7 @@ function UnitCard({
   onClose,
   onDates,
 }: {
+  i18n: I18n;
   unit: PublicUnit;
   slug: string;
   open: boolean;
@@ -154,6 +158,7 @@ function UnitCard({
   onClose: () => void;
   onDates: (dates: { from?: string; to?: string }) => void;
 }) {
+  const { t } = i18n;
   const bookable = unit.basePriceIdr > 0;
 
   return (
@@ -162,8 +167,9 @@ function UnitCard({
         <div>
           <p className="font-medium text-foreground">{unit.name}</p>
           <p className="text-sm text-muted-foreground">
-            Up to {unit.maxGuests} {unit.maxGuests === 1 ? "guest" : "guests"}
-            {unit.minStay > 1 && ` · ${unit.minStay}-night minimum`}
+            {t("unit.capacity", { guests: i18n.fmtGuests(unit.maxGuests) })}
+            {unit.minStay > 1 &&
+              ` · ${t("unit.minStayNote", { nights: i18n.fmtNights(unit.minStay) })}`}
           </p>
         </div>
         <p className="text-right">
@@ -172,18 +178,23 @@ function UnitCard({
               <span className="font-semibold tabular-nums text-foreground">
                 {formatIdr(unit.basePriceIdr)}
               </span>
-              <span className="text-sm text-muted-foreground"> / night</span>
+              <span className="text-sm text-muted-foreground">
+                {" "}
+                {t("unit.perNight")}
+              </span>
             </>
           ) : (
             <span className="text-sm text-muted-foreground">
-              Price on request
+              {t("unit.priceOnRequest")}
             </span>
           )}
         </p>
       </div>
 
       {!bookable ? (
-        <p className="mt-3 text-sm text-muted-foreground">Not bookable yet.</p>
+        <p className="mt-3 text-sm text-muted-foreground">
+          {t("unit.notBookable")}
+        </p>
       ) : open ? (
         <>
           <AvailabilityPicker
@@ -198,7 +209,7 @@ function UnitCard({
             onClick={onClose}
             className="mt-3 text-sm text-muted-foreground hover:text-foreground hover:underline"
           >
-            Close
+            {t("unit.close")}
           </button>
         </>
       ) : (
@@ -207,7 +218,7 @@ function UnitCard({
           onClick={onOpen}
           className="mt-3 inline-flex items-center rounded-md border border-input px-4 py-2 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
         >
-          Check availability
+          {t("unit.checkAvailability")}
         </button>
       )}
     </div>
@@ -241,6 +252,7 @@ function Gallery({
   photos: PublicPropertyResponse["photos"];
   name: string;
 }) {
+  const { t } = useI18n();
   if (photos.length === 0) return null;
 
   const [hero, ...rest] = photos;
@@ -250,8 +262,9 @@ function Gallery({
       <img
         src={hero.url}
         // The gallery illustrates the villa the <h1> already names, so the alt
-        // says which shot this is rather than repeating the name.
-        alt={`${name} - main photo`}
+        // says which shot this is rather than repeating the name. Localized
+        // (ADR-0024) - alt text is a funnel surface the catalog guard can't see.
+        alt={t("property.photoMain", { name })}
         className="aspect-[3/2] w-full rounded-xl object-cover"
         loading="eager"
       />
@@ -261,7 +274,7 @@ function Gallery({
             <img
               key={photo.url}
               src={photo.url}
-              alt={`${name} - photo ${i + 2}`}
+              alt={t("property.photoN", { name, n: i + 2 })}
               className="aspect-[3/2] w-full rounded-lg object-cover"
               loading="lazy"
             />

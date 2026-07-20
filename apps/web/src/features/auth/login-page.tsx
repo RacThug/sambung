@@ -7,6 +7,7 @@ import { setSession } from "../../lib/auth";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { FormField } from "@/components/form-field";
 import { Wordmark } from "@/components/wordmark";
+import { useI18n } from "@/i18n/context";
 
 const route = getRouteApi("/login");
 
@@ -15,6 +16,7 @@ const route = getRouteApi("/login");
 export function LoginPage() {
   const navigate = useNavigate();
   const { next } = route.useSearch();
+  const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -45,9 +47,9 @@ export function LoginPage() {
   // 401 is "wrong email or password" - never say which (no account oracle).
   const submitError =
     login.error instanceof ApiError && login.error.status === 401
-      ? "Invalid email or password"
+      ? t("auth.invalidCredentials")
       : login.error
-        ? "Something went wrong - please try again"
+        ? t("auth.genericError")
         : null;
 
   return (
@@ -55,11 +57,11 @@ export function LoginPage() {
       <h1>
         <Wordmark className="text-2xl" />
       </h1>
-      <p className="mt-1 text-muted-foreground">Sign in to your dashboard</p>
+      <p className="mt-1 text-muted-foreground">{t("auth.signInSubtitle")}</p>
 
       <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
         <FormField
-          label="Email"
+          label={t("auth.email")}
           type="email"
           autoComplete="email"
           value={email}
@@ -68,7 +70,7 @@ export function LoginPage() {
         />
 
         <FormField
-          label="Password"
+          label={t("auth.password")}
           type="password"
           autoComplete="current-password"
           value={password}
@@ -85,14 +87,14 @@ export function LoginPage() {
           disabled={login.isPending}
           className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-50"
         >
-          {login.isPending ? "Signing in…" : "Sign in"}
+          {login.isPending ? t("auth.signingIn") : t("auth.signIn")}
         </button>
       </form>
 
       <p className="mt-4 text-sm text-muted-foreground">
-        New to Sambung?{" "}
+        {t("auth.newToSambung")}{" "}
         <Link to="/register" search={{ next }} className="text-primary underline">
-          Create an account
+          {t("auth.createAccount")}
         </Link>
       </p>
     </main>

@@ -7,11 +7,12 @@ import {
   type RegisterRequest,
 } from "@sambung/shared";
 import { api } from "../../lib/api-client";
-import { conflictOf, describeConflict } from "../../lib/conflict";
+import { conflictOf } from "../../lib/conflict";
 import { setSession } from "../../lib/auth";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { FormField } from "@/components/form-field";
 import { Wordmark } from "@/components/wordmark";
+import { useI18n } from "@/i18n/context";
 
 const route = getRouteApi("/register");
 
@@ -21,6 +22,7 @@ const route = getRouteApi("/register");
 export function RegisterPage() {
   const navigate = useNavigate();
   const { next } = route.useSearch();
+  const { t } = useI18n();
   const [tenantName, setTenantName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -59,24 +61,20 @@ export function RegisterPage() {
   // anything else gets a generic retry line.
   const conflict = conflictOf(register.error);
   const emailError =
-    conflict?.code === "email_taken"
-      ? describeConflict(conflict)
-      : fieldErrors.email;
+    conflict?.code === "email_taken" ? t("auth.emailTaken") : fieldErrors.email;
   const submitError =
-    register.error && !conflict
-      ? "Something went wrong - please try again"
-      : null;
+    register.error && !conflict ? t("auth.genericError") : null;
 
   return (
     <main className="mx-auto max-w-sm p-8">
       <h1>
         <Wordmark className="text-2xl" />
       </h1>
-      <p className="mt-1 text-muted-foreground">Create your owner account</p>
+      <p className="mt-1 text-muted-foreground">{t("auth.registerSubtitle")}</p>
 
       <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
         <FormField
-          label="Business name"
+          label={t("auth.businessName")}
           type="text"
           autoComplete="organization"
           value={tenantName}
@@ -85,7 +83,7 @@ export function RegisterPage() {
         />
 
         <FormField
-          label="Email"
+          label={t("auth.email")}
           type="email"
           autoComplete="email"
           value={email}
@@ -94,7 +92,7 @@ export function RegisterPage() {
         />
 
         <FormField
-          label="Password"
+          label={t("auth.password")}
           type="password"
           autoComplete="new-password"
           value={password}
@@ -111,14 +109,16 @@ export function RegisterPage() {
           disabled={register.isPending}
           className="w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-50"
         >
-          {register.isPending ? "Creating account…" : "Create account"}
+          {register.isPending
+            ? t("auth.creatingAccount")
+            : t("auth.createAccountBtn")}
         </button>
       </form>
 
       <p className="mt-4 text-sm text-muted-foreground">
-        Already have an account?{" "}
+        {t("auth.alreadyHaveAccount")}{" "}
         <Link to="/login" search={{ next }} className="text-primary underline">
-          Sign in
+          {t("auth.signInLink")}
         </Link>
       </p>
     </main>
