@@ -34,14 +34,28 @@ export class NotificationsService {
         return;
       }
       const messages = renderConfirmationEmail(data);
+      let sent = 0;
       for (const message of messages) {
-        await this.mailer.send(message);
+        // Per-recipient isolation (#126): each send is its own best-effort unit.
+        // The guest is sent FIRST, so without this a guest-address bounce would
+        // abort the loop and silently drop the owner's new-booking email (the
+        // operationally more important one) - and vice-versa. Catch here so one
+        // recipient's failure is logged and the OTHER is still attempted.
+        try {
+          await this.mailer.send(message);
+          sent++;
+        } catch (err) {
+          this.logger.warn(
+            `Confirmation email to ${message.to} failed for booking ${bookingId}: ${String(err)}`,
+          );
+        }
       }
       this.logger.log(
-        `Confirmation emailed for booking ${bookingId} (${messages.length} message(s))`,
+        `Confirmation emailed for booking ${bookingId} (${sent}/${messages.length} sent)`,
       );
     } catch (err) {
-      // Never rethrow: a send failure must not break the webhook / reconcile flow.
+      // Never rethrow: a read/render failure must not break the webhook / reconcile
+      // flow. Individual send failures are already isolated + logged in the loop.
       this.logger.error(
         `Confirmation notification failed for booking ${bookingId}: ${String(err)}`,
       );
