@@ -1,4 +1,4 @@
-# ADR-0019: Reconcile-on-read pulls the same event the webhook pushes
+# ADR-0020: Reconcile-on-read pulls the same event the webhook pushes
 
 - **Status:** Accepted
 - **Date:** 2026-07-20

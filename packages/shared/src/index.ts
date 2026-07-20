@@ -25,6 +25,7 @@ export * from "./booking-list";
 export * from "./channel";
 export * from "./conflict";
 export * from "./money";
+export * from "./og";
 export * from "./payment";
 export * from "./photo";
 export * from "./property";

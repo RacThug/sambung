@@ -338,4 +338,119 @@ describe('Public property page', () => {
       'Seminyak Beach Villa & Spa',
     );
   });
+
+  /**
+   * The OG stub for link-preview crawlers (#87, ADR-0019, architecture §6 tier
+   * 2). Caddy proxies a known-crawler UA on /p/:slug here; the route reuses the
+   * SAME tenant-scoped read as the JSON page, so its scoping, archived→404, and
+   * malformed-slug→404 are inherited, not re-implemented. These assert the stub
+   * carries the OG values a preview needs and that a crawler sees no more than a
+   * Visitor does.
+   */
+  describe('OG stub for link-preview crawlers (#87)', () => {
+    // NB: the rename test above ran first and set A's name to "... & Spa", so the
+    // title carries an "&" - which the stub must HTML-escape in the attribute.
+    it('serves static HTML with the property name, description, and hero photo', async () => {
+      const res = await request(server()).get(
+        `/api/public/properties/${slugA}/og`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('text/html');
+
+      // AC (a): og:title (name), og:description, og:image (hero photo).
+      expect(res.text).toContain(
+        // "&" in the renamed title is HTML-escaped in the attribute.
+        `<meta property="og:title" content="Seminyak Beach Villa &amp; Spa - Book direct">`,
+      );
+      expect(res.text).toContain(
+        '<meta property="og:description" content="Steps from the beach.">',
+      );
+      // publicUrl(key) is STORAGE_PUBLIC_BASE_URL + the first photo key.
+      expect(res.text).toMatch(
+        /<meta property="og:image" content="[^"]*photo-a-1\.jpg">/,
+      );
+      // A human who lands here is bounced to the real /p/:slug page.
+      expect(res.text).toContain(`/p/${slugA}`);
+    });
+
+    it('reveals nothing of a neighbour tenant (same scope as the JSON page)', async () => {
+      const res = await request(server()).get(
+        `/api/public/properties/${slugA}/og`,
+      );
+      expect(res.text).not.toContain('Neighbour Villa');
+      expect(res.text).not.toContain(slugB);
+      // No PII/internal ever belonged in an OG card, and the license never
+      // reaches this projection to begin with.
+      expect(res.text).not.toContain('NIB-');
+    });
+
+    it('404s an unknown slug', async () => {
+      await request(server())
+        .get(`/api/public/properties/${testSlug()}/og`)
+        .expect(404);
+    });
+
+    it('404s a malformed slug before any lookup (SlugParamPipe)', async () => {
+      for (const slug of ['%00', 'UPPERCASE', '../../etc/passwd']) {
+        const res = await request(server()).get(
+          `/api/public/properties/${slug}/og`,
+        );
+        expect([slug, res.status]).toEqual([slug, 404]);
+      }
+    });
+
+    /**
+     * ADR-0006: an archived Property is a deliberate take-down → public 404. The
+     * crawler stub must inherit that, or a retired villa keeps previewing on
+     * WhatsApp. It does, because getOgHtmlBySlug goes through getBySlug, which
+     * returns null (→404) for an archived property.
+     */
+    it('404s an archived property, exactly like the JSON page', async () => {
+      const slug = testSlug();
+      const [p] = await dbs.db
+        .insert(property)
+        .values({
+          tenantId: createdTenantIds[0],
+          name: 'Retired Villa',
+          slug,
+          archivedAt: new Date(),
+          photos: ['x.jpg'],
+        })
+        .returning({ id: property.id });
+
+      await request(server()).get(`/api/public/properties/${slug}`).expect(404);
+      await request(server())
+        .get(`/api/public/properties/${slug}/og`)
+        .expect(404);
+
+      await dbs.db.delete(property).where(eq(property.id, p.id));
+    });
+
+    /**
+     * The name and description are tenant-authored, and the stub is HTML we
+     * serve. A name crafted to break out of the attribute must be escaped, not
+     * reflected - otherwise the OG route is a stored-XSS vector on our origin.
+     */
+    it('HTML-escapes a hostile property name (no injection into the stub)', async () => {
+      const slug = testSlug();
+      const [p] = await dbs.db
+        .insert(property)
+        .values({
+          tenantId: createdTenantIds[0],
+          name: '"><script>alert(1)</script>',
+          slug,
+        })
+        .returning({ id: property.id });
+
+      const res = await request(server()).get(
+        `/api/public/properties/${slug}/og`,
+      );
+      expect(res.status).toBe(200);
+      expect(res.text).not.toContain('<script>alert(1)</script>');
+      expect(res.text).not.toContain('"><script>');
+      expect(res.text).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
+
+      await dbs.db.delete(property).where(eq(property.id, p.id));
+    });
+  });
 });

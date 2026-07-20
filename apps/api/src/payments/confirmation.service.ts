@@ -20,7 +20,7 @@ import {
  * that RECONCILES against the Provider on read, so a lost webhook still confirms
  * here (risk R3).
  *
- * The shape (ADR-0019):
+ * The shape (ADR-0020):
  *  1. Resolve the tenant from the booking id (the third pure resolver, ADR-0008)
  *     - an unknown id is a 404 at the door.
  *  2. Reconcile if still pending: pull the Provider's status and drive the SAME

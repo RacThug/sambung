@@ -11,7 +11,7 @@ const route = getRouteApi("/booking/$bookingId");
  * Confirmation - `/booking/:id` (page-spec §3.3, #54). Where the Provider returns
  * the guest after Snap, and the link in their email. Live status that RECONCILES
  * on the server (risk R3): a lost webhook still confirms here. This page just
- * polls the read - the reconcile is the API's job (ADR-0019).
+ * polls the read - the reconcile is the API's job (ADR-0020).
  *
  * Polls every 5s WHILE pending and stops on any terminal status, so a confirmation
  * appears with no manual refresh. States: confirmed / pending+spinner / expired /

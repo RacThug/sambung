@@ -56,7 +56,7 @@ const checkoutRoute = createRoute({
 
 // Confirmation (page-spec §3.3, #54) - where the Provider returns the guest after
 // Snap, and the link in their email. Public: a Guest has no token. Reconciles on
-// read and polls to confirmed (ADR-0019).
+// read and polls to confirmed (ADR-0020).
 const bookingLandingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/booking/$bookingId",

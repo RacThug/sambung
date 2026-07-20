@@ -8,7 +8,7 @@ import { NotificationsRepository } from './notifications.repository';
  * to `confirmed`. Called from the payment webhook's post-commit seam, on the
  * transition that happens EXACTLY ONCE across every delivery path (the pushed
  * webhook and the confirmation page's reconcile-on-read both funnel through the
- * same status-guarded confirm, ADR-0018/0019) - so "email exactly once per
+ * same status-guarded confirm, ADR-0018/0020) - so "email exactly once per
  * confirmation" is guaranteed upstream, and this class need only send.
  *
  * BEST-EFFORT by construction (api-spec §6.2 step 3): every failure is caught and
