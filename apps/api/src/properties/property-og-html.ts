@@ -1,6 +1,34 @@
 import type { PropertyOgTags } from '@sambung/shared';
 
 /**
+ * The canonical origin for the OG stub's `og:url` / `<link rel=canonical>`.
+ *
+ * Derived from TRUSTED CONFIG (`WEB_BASE_URL`, the real public site base), NOT the
+ * inbound request. The stub is reached over Caddy, which sets `Host` from the TLS
+ * SNI - but `Host` is client-settable and `req.protocol` is `http` unless
+ * TRUST_PROXY is set, so a request-derived `og:url` could be spoofed or wrong-scheme
+ * (#127). A crawler that follows the canonical to a forged host is a real risk, so
+ * the address a preview points at is a fact we own, not one the caller supplies.
+ *
+ * `requestOrigin` is a FALLBACK used only when `WEB_BASE_URL` is unset - a dev or
+ * direct hit with no config - mirroring how `payments.service` falls back for the
+ * Snap finish URL. A trailing slash on the configured base is trimmed so the
+ * canonical is never `https://host//p/slug`.
+ */
+export function ogCanonicalUrl(input: {
+  /** `WEB_BASE_URL` from config, the public site base. Absent in an unconfigured run. */
+  configuredBase: string | undefined | null;
+  /** `scheme://host` rebuilt from the request, used only when no config is set. */
+  requestOrigin: string;
+  /** Already SLUG_PATTERN-validated by SlugParamPipe, so safe in a URL path. */
+  slug: string;
+}): string {
+  const configured = input.configuredBase?.trim();
+  const base = (configured || input.requestOrigin).replace(/\/+$/, '');
+  return `${base}/p/${input.slug}`;
+}
+
+/**
  * Renders a property's Open Graph values (built by `buildPropertyOgTags` in
  * @sambung/shared) into a STATIC HTML document for link-preview crawlers
  * (architecture §6 tier 2, #87, ADR-0019). Hand-rolled, no template engine: this

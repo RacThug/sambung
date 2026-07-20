@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   buildPropertyOgTags,
   publicPropertyResponseSchema,
@@ -7,7 +8,7 @@ import {
 } from '@sambung/shared';
 import { PublicScope } from '../common/public-scope.service';
 import { StorageService } from '../storage/storage.service';
-import { renderPropertyOgHtml } from './property-og-html';
+import { ogCanonicalUrl, renderPropertyOgHtml } from './property-og-html';
 import { PropertiesRepository } from './properties.repository';
 
 /**
@@ -24,6 +25,7 @@ export class PublicPropertiesService {
     private readonly scope: PublicScope,
     private readonly repo: PropertiesRepository,
     private readonly storage: StorageService,
+    private readonly config: ConfigService,
   ) {}
 
   async getBySlug(slug: string): Promise<PublicPropertyResponse> {
@@ -76,11 +78,17 @@ export class PublicPropertiesService {
    * The values come from the SHARED `buildPropertyOgTags`, the exact helper the
    * SPA's <meta> tags use, then `renderPropertyOgHtml` escapes them into a static
    * document. `canonicalUrl` is the human page (`/p/:slug`) this stands in for -
-   * the controller builds it from the request host, since it is not a fact about
-   * the property.
+   * derived from TRUSTED CONFIG (`WEB_BASE_URL`) rather than the inbound `Host`,
+   * which is client-settable (#127); `requestOrigin` is only a dev/direct-hit
+   * fallback when no public base is configured.
    */
-  async getOgHtmlBySlug(slug: string, canonicalUrl: string): Promise<string> {
+  async getOgHtmlBySlug(slug: string, requestOrigin: string): Promise<string> {
     const property = await this.getBySlug(slug);
+    const canonicalUrl = ogCanonicalUrl({
+      configuredBase: this.config.get<string>('WEB_BASE_URL'),
+      requestOrigin,
+      slug,
+    });
     return renderPropertyOgHtml({
       tags: buildPropertyOgTags(property),
       canonicalUrl,

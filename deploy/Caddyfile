@@ -28,9 +28,17 @@
 	# would risk cloaking a search engine. This is an allowlist of the specific
 	# social/chat preview fetchers that matter - and it deliberately does NOT
 	# include Googlebot/Bingbot, which render JS and must get the real SPA.
+	#
+	# LINE (#127): its link-preview scraper is `facebookexternalhit/1.1;line-poker/1.0`
+	# (reverse-DNS nio-pagepoker.line-apps.com, LINE Corp), so `line-poker` is the
+	# right token - already covered by `facebookexternalhit`, kept explicit as
+	# belt-and-suspenders. NOT the bare `Line/`: that appears in the LINE in-app
+	# BROWSER (a human, e.g. `... Line/11.10.2/IAB`), which must get the SPA, not the
+	# stub. LINE's SEARCH crawler `Linespider` is deliberately absent (it renders
+	# for search - serving it a stub would be cloaking, like Googlebot).
 	@og_crawler {
 		path_regexp slug ^/p/([a-z0-9]+(?:-[a-z0-9]+)*)/?$
-		header_regexp User-Agent (?i)(facebookexternalhit|Facebot|WhatsApp|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Discordbot|Pinterest|redditbot|SkypeUriPreview|vkShare|Line/)
+		header_regexp User-Agent (?i)(facebookexternalhit|Facebot|WhatsApp|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Discordbot|Pinterest|redditbot|SkypeUriPreview|vkShare|line-poker)
 	}
 	handle @og_crawler {
 		# /p/:slug  ->  /api/public/properties/:slug/og  (slug is capture group 1)
