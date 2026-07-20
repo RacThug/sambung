@@ -3,7 +3,7 @@ import { getRouteApi, Link } from "@tanstack/react-router";
 import type { BookingConfirmationResponse } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { formatIdr } from "../../lib/money";
-import { formatDate } from "../../lib/date";
+import { useI18n, type I18n } from "@/i18n/context";
 
 const route = getRouteApi("/booking/$bookingId");
 
@@ -15,10 +15,13 @@ const route = getRouteApi("/booking/$bookingId");
  *
  * Polls every 5s WHILE pending and stops on any terminal status, so a confirmation
  * appears with no manual refresh. States: confirmed / pending+spinner / expired /
- * cancelled / not-found.
+ * cancelled / not-found. All copy is localized (ADR-0024); dates follow the
+ * visitor's locale.
  */
 export function ConfirmationPage() {
   const { bookingId } = route.useParams();
+  const i18n = useI18n();
+  const { t } = i18n;
   const query = useQuery({
     queryKey: ["booking-confirmation", bookingId],
     queryFn: () =>
@@ -39,12 +42,8 @@ export function ConfirmationPage() {
     return (
       <Shell>
         <StateCard
-          title={notFound ? "Booking not found" : "Something went wrong"}
-          body={
-            notFound
-              ? "We couldn't find this booking. Check the link, or contact your host."
-              : "We couldn't load your booking just now. Please try again."
-          }
+          title={notFound ? t("confirm.notFoundTitle") : t("confirm.errorTitle")}
+          body={notFound ? t("confirm.notFoundBody") : t("confirm.errorBody")}
         />
       </Shell>
     );
@@ -60,36 +59,50 @@ export function ConfirmationPage() {
 
   return (
     <Shell>
-      <Booking booking={query.data} />
+      <Booking i18n={i18n} booking={query.data} />
     </Shell>
   );
 }
 
-function Booking({ booking }: { booking: BookingConfirmationResponse }) {
+function Booking({
+  i18n,
+  booking,
+}: {
+  i18n: I18n;
+  booking: BookingConfirmationResponse;
+}) {
+  const { t } = i18n;
   switch (booking.status) {
     case "confirmed":
-      return <Confirmed booking={booking} />;
+      return <Confirmed i18n={i18n} booking={booking} />;
     case "pending_payment":
-      return <Pending />;
+      return <Pending i18n={i18n} />;
     case "expired":
       return (
         <StateCard
-          title="Your hold has lapsed"
-          body="We only hold dates for a few minutes, and this hold has expired. Nothing was charged - please start a new booking."
+          title={t("confirm.expiredTitle")}
+          body={t("confirm.expiredBody")}
         />
       );
     case "cancelled":
       return (
         <StateCard
-          title="This booking was cancelled"
-          body="If you think this is a mistake, contact your host."
+          title={t("confirm.cancelledTitle")}
+          body={t("confirm.cancelledBody")}
         />
       );
   }
 }
 
 /** The party view (page-spec §3.3): dates, property, amount paid, wa.me button. */
-function Confirmed({ booking }: { booking: BookingConfirmationResponse }) {
+function Confirmed({
+  i18n,
+  booking,
+}: {
+  i18n: I18n;
+  booking: BookingConfirmationResponse;
+}) {
+  const { t } = i18n;
   return (
     <div className="mt-6 rounded-lg border border-border bg-card p-6">
       <div className="flex items-center gap-2">
@@ -100,23 +113,25 @@ function Confirmed({ booking }: { booking: BookingConfirmationResponse }) {
           ✓
         </span>
         <h2 className="font-display text-xl font-semibold text-foreground">
-          You're all set
+          {t("confirm.allSet")}
         </h2>
       </div>
       <p className="mt-2 text-sm text-muted-foreground">
-        Your booking is confirmed. A copy is on its way to your email.
+        {t("confirm.confirmedBody")}
       </p>
 
       <dl className="mt-6 space-y-3 border-t border-border pt-4 text-sm">
-        <Row label="Stay">
+        <Row label={t("confirm.stay")}>
           {booking.propertyName} - {booking.unitName}
         </Row>
-        <Row label="Check-in">{formatDate(booking.checkIn)}</Row>
-        <Row label="Check-out">{formatDate(booking.checkOut)}</Row>
-        <Row label="Paid online">{formatIdr(booking.amountPaidIdr)}</Row>
+        <Row label={t("confirm.checkIn")}>{i18n.fmtDate(booking.checkIn)}</Row>
+        <Row label={t("confirm.checkOut")}>{i18n.fmtDate(booking.checkOut)}</Row>
+        <Row label={t("confirm.paidOnline")}>
+          {formatIdr(booking.amountPaidIdr)}
+        </Row>
         {booking.totalPriceIdr !== null &&
           booking.totalPriceIdr > booking.amountPaidIdr && (
-            <Row label="Balance at the property">
+            <Row label={t("confirm.balanceAtProperty")}>
               {formatIdr(booking.totalPriceIdr - booking.amountPaidIdr)}
             </Row>
           )}
@@ -129,7 +144,7 @@ function Confirmed({ booking }: { booking: BookingConfirmationResponse }) {
           rel="noopener noreferrer"
           className="mt-6 flex w-full items-center justify-center rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground"
         >
-          Send WhatsApp confirmation
+          {t("confirm.sendWhatsapp")}
         </a>
       )}
     </div>
@@ -137,20 +152,20 @@ function Confirmed({ booking }: { booking: BookingConfirmationResponse }) {
 }
 
 /** Still pending: spinner + reassurance that the page updates itself. */
-function Pending() {
+function Pending({ i18n }: { i18n: I18n }) {
+  const { t } = i18n;
   return (
     <div className="mt-6 rounded-lg border border-border bg-card p-6 text-center">
       <div
         role="status"
-        aria-label="Confirming your payment"
+        aria-label={t("confirm.pendingAria")}
         className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary"
       />
       <h2 className="mt-4 font-display text-lg font-semibold text-foreground">
-        Confirming your payment…
+        {t("confirm.pendingTitle")}
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        This can take a moment. This page updates automatically - no need to
-        refresh.
+        {t("confirm.pendingBody")}
       </p>
     </div>
   );
@@ -166,17 +181,18 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 function StateCard({ title, body }: { title: string; body: string }) {
+  const { t } = useI18n();
   return (
     <div className="mt-6 rounded-lg border border-border bg-card p-6 text-center">
       <h2 className="font-display text-lg font-semibold text-foreground">
         {title}
       </h2>
-      <p className="mt-2 text-sm text-muted-foreground">{body}</p>
+      <p className="mt-2 text-muted-foreground">{body}</p>
       <Link
         to="/"
         className="mt-6 inline-block text-sm text-primary hover:underline"
       >
-        ← Back home
+        {t("confirm.backHome")}
       </Link>
     </div>
   );
@@ -184,10 +200,11 @@ function StateCard({ title, body }: { title: string; body: string }) {
 
 /** The page frame, shared by every state. */
 function Shell({ children }: { children: React.ReactNode }) {
+  const { t } = useI18n();
   return (
     <main className="mx-auto max-w-xl px-6 py-16">
       <h1 className="font-display text-2xl font-semibold text-foreground">
-        Your booking
+        {t("confirm.title")}
       </h1>
       {children}
     </main>

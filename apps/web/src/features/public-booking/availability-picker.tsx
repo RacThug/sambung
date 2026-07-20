@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { DayPicker, type DateRange } from "react-day-picker";
+import { enGB, id as idLocale, zhCN } from "react-day-picker/locale";
 import type { AvailabilityResponse, PublicUnit } from "@sambung/shared";
 import { todayIso } from "../../lib/date";
 import { formatIdr } from "../../lib/money";
+import { useI18n, type I18n } from "@/i18n/context";
+import type { Locale } from "@/i18n/locale";
 import {
   blockedMatchers,
   dateToIso,
@@ -14,12 +17,17 @@ import {
   rangeFromSearch,
   stayFromRange,
 } from "./availability-model";
-import {
-  describeBlockedNights,
-  describeReason,
-  describeStay,
-} from "./availability-copy";
+import { describeBlockedNights, describeReason } from "./availability-copy";
 import { useMonthBlocked, useQuote } from "./use-availability";
+
+/** The calendar's month/weekday/ARIA localization (ADR-0024). react-day-picker
+ * bundles these date-fns locales, so no new dependency: EN funnel dates use en-GB
+ * (day-month-year), matching `i18n/format.ts`. */
+const CALENDAR_LOCALE: Record<Locale, typeof enGB> = {
+  en: enGB,
+  id: idLocale,
+  zh: zhCN,
+};
 
 /**
  * The availability picker + quote card for one unit (page-spec §3.1, FR-CAL-1/2,
@@ -48,6 +56,7 @@ export function AvailabilityPicker({
   onChange: (next: { from?: string; to?: string }) => void;
   debounceMs?: number;
 }) {
+  const i18n = useI18n();
   const today = todayIso();
   const [month, setMonth] = useState<Date>(() => initialMonth(from, today));
 
@@ -67,6 +76,9 @@ export function AvailabilityPicker({
     <div className="mt-4 rounded-lg border border-border bg-card p-4">
       <DayPicker
         mode="range"
+        // The visitor's locale drives month/weekday names, ARIA labels, and the
+        // week-start convention (ADR-0024); the wire stays YYYY-MM-DD throughout.
+        locale={CALENDAR_LOCALE[i18n.locale]}
         month={month}
         onMonthChange={setMonth}
         // Can't book the past, so don't let the guest page into it.
@@ -84,6 +96,7 @@ export function AvailabilityPicker({
 
       <div className="mt-4 border-t border-border pt-4">
         <QuoteCard
+          i18n={i18n}
           stay={stay}
           slug={slug}
           unit={unit}
@@ -99,23 +112,24 @@ export function AvailabilityPicker({
  * available + price · blocked / min_stay · availability-API error (retry
  * inline). The server's verdict is authoritative - the card only renders it. */
 function QuoteCard({
+  i18n,
   stay,
   slug,
   unit,
   quote,
   syncing,
 }: {
+  i18n: I18n;
   stay: { from: string; to: string } | null;
   slug: string;
   unit: PublicUnit;
   quote: ReturnType<typeof useQuote>["query"];
   syncing: boolean;
 }) {
+  const { t } = i18n;
   if (!stay) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Select your check-in and check-out dates to see availability and price.
-      </p>
+      <p className="text-sm text-muted-foreground">{t("picker.selectDates")}</p>
     );
   }
 
@@ -124,15 +138,13 @@ function QuoteCard({
   if (quote.isError && !quote.isFetching && !syncing) {
     return (
       <div className="flex flex-wrap items-center gap-3">
-        <p className="text-sm text-destructive">
-          Couldn’t check those dates. Please try again.
-        </p>
+        <p className="text-sm text-destructive">{t("picker.checkError")}</p>
         <button
           type="button"
           onClick={() => void quote.refetch()}
           className="rounded-md border border-input px-3 py-1.5 text-sm font-medium text-foreground hover:bg-muted"
         >
-          Retry
+          {t("picker.retry")}
         </button>
       </div>
     );
@@ -141,24 +153,26 @@ function QuoteCard({
   if (syncing || quote.isFetching || !quote.data) {
     return (
       <p className="text-sm text-muted-foreground" aria-live="polite">
-        Checking availability…
+        {t("picker.checking")}
       </p>
     );
   }
 
   return quote.data.available ? (
-    <Available res={quote.data} stay={stay} slug={slug} unit={unit} />
+    <Available i18n={i18n} res={quote.data} stay={stay} slug={slug} unit={unit} />
   ) : (
-    <Unavailable res={quote.data} unit={unit} />
+    <Unavailable i18n={i18n} res={quote.data} unit={unit} />
   );
 }
 
 function Available({
+  i18n,
   res,
   stay,
   slug,
   unit,
 }: {
+  i18n: I18n;
   res: AvailabilityResponse;
   stay: { from: string; to: string };
   slug: string;
@@ -167,9 +181,11 @@ function Available({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <p className="text-sm font-medium text-success">Available</p>
+        <p className="text-sm font-medium text-success">
+          {i18n.t("picker.available")}
+        </p>
         <p className="text-sm text-muted-foreground">
-          {describeStay(stay.from, stay.to)} ·{" "}
+          {i18n.fmtNights(res.nights)} ·{" "}
           <span className="font-semibold text-foreground">
             {formatIdr(res.totalPriceIdr)}
           </span>
@@ -181,28 +197,31 @@ function Available({
         search={{ unit: unit.id, from: stay.from, to: stay.to }}
         className="inline-flex items-center rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
-        Book these dates
+        {i18n.t("picker.book")}
       </Link>
     </div>
   );
 }
 
 function Unavailable({
+  i18n,
   res,
   unit,
 }: {
+  i18n: I18n;
   res: AvailabilityResponse;
   unit: PublicUnit;
 }) {
+  const { t } = i18n;
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-foreground">
-        Not available for these dates
+        {t("picker.notAvailable")}
       </p>
       <ul className="space-y-1">
         {res.reasons.map((reason) => (
           <li key={reason} className="text-sm text-muted-foreground">
-            {describeReason(reason, unit.minStay)}
+            {describeReason(i18n, reason, unit.minStay)}
           </li>
         ))}
       </ul>
@@ -212,8 +231,10 @@ function Unavailable({
         <ul className="space-y-1">
           {res.blockedRanges.map((r) => (
             <li key={r.from} className="text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">Booked:</span>{" "}
-              {describeBlockedNights(r)}
+              <span className="font-medium text-foreground">
+                {t("picker.bookedLabel")}
+              </span>{" "}
+              {describeBlockedNights(i18n, r)}
             </li>
           ))}
         </ul>
