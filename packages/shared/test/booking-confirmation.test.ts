@@ -6,13 +6,14 @@ import {
 } from "../src/booking-confirmation";
 
 describe("normalizeWaPhone", () => {
-  it("strips the + and separators from an international number", () => {
-    expect(normalizeWaPhone("+62 812 3456 7890")).toBe("6281234567890");
-    expect(normalizeWaPhone("+1 (415) 555-0100")).toBe("14155550100");
+  it("strips the + from a stored E.164 number, for any country", () => {
+    expect(normalizeWaPhone("+6281234567890")).toBe("6281234567890"); // ID
+    expect(normalizeWaPhone("+447911123456")).toBe("447911123456"); // GB
+    expect(normalizeWaPhone("+14155550100")).toBe("14155550100"); // US
   });
 
-  it("strips a leading 00 international access code", () => {
-    expect(normalizeWaPhone("0062 812 3456 7890")).toBe("6281234567890");
+  it("tolerates stray separators defensively", () => {
+    expect(normalizeWaPhone("+62 812 3456 7890")).toBe("6281234567890");
   });
 
   it("returns '' for a missing or implausible number", () => {
@@ -25,7 +26,7 @@ describe("normalizeWaPhone", () => {
 
 describe("buildWaMeLink", () => {
   const base = {
-    phone: "+62 812 3456 7890",
+    phone: "+6281234567890",
     guestName: "Made A.",
     propertyName: "Seminyak Beach Villa",
     unitName: "Garden Room 1",
@@ -33,7 +34,7 @@ describe("buildWaMeLink", () => {
     checkOut: "2027-03-14",
   };
 
-  it("builds a wa.me link to the guest's number with a prefilled message", () => {
+  it("builds a wa.me link to the guest's E.164 number with a prefilled message", () => {
     const link = buildWaMeLink(base);
     expect(link).not.toBeNull();
     const url = new URL(link!);
@@ -44,6 +45,11 @@ describe("buildWaMeLink", () => {
     expect(text).toContain("2027-03-10");
     expect(text).toContain("2027-03-14");
     expect(text).toContain("Made A.");
+  });
+
+  it("addresses a non-Indonesian country correctly", () => {
+    const link = buildWaMeLink({ ...base, phone: "+447911123456" });
+    expect(new URL(link!).pathname).toBe("/447911123456");
   });
 
   it("omits the guest name gracefully", () => {

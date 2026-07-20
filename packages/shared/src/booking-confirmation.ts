@@ -40,21 +40,20 @@ export type BookingConfirmationResponse = z.infer<
 >;
 
 /**
- * Reduce a human-typed phone to the digits `wa.me` wants: international format,
- * digits only, no `+`, spaces, or punctuation.
+ * Reduce a stored **E.164** number to the digits `wa.me` wants: strip the `+` and
+ * any separators, leaving the full international number (`+6281234567890` →
+ * `6281234567890`).
  *
- * Deliberately conservative - it does NOT guess a country code. A national
- * "0812..." stays "0812..." (which `wa.me` may misresolve); the guest-phone field
- * accepts a leading `+`, which is how a guest supplies the country code, so the
- * common case (`+62 812 ...`) normalizes correctly. A leading "00" international
- * access code is stripped. Returns "" when the result isn't a plausible number
- * (the E.164 8-15 digit range), so the caller can omit the link rather than emit
- * a broken one.
+ * Correct for EVERY country by construction, because the input is already
+ * unambiguous E.164 - the checkout captured the country and stored E.164 (#54), so
+ * the builder no longer guesses a country from a bare national number (the bug that
+ * made `0812...` normalize to an unresolvable `wa.me/0812...`). Returns "" when the
+ * result isn't a plausible international number (8-15 digits), so the caller can
+ * omit the link rather than emit a broken one.
  */
 export function normalizeWaPhone(raw: string | null | undefined): string {
   if (!raw) return "";
-  let digits = raw.replace(/\D/g, "");
-  if (digits.startsWith("00")) digits = digits.slice(2);
+  const digits = raw.replace(/\D/g, "");
   return digits.length >= 8 && digits.length <= 15 ? digits : "";
 }
 

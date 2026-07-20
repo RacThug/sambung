@@ -81,13 +81,34 @@ export const bookingRefusalReasonSchema = z.enum([
 export type BookingRefusalReason = z.infer<typeof bookingRefusalReasonSchema>;
 
 /**
- * A plausible international phone number. WhatsApp is the confirmation channel
- * (M3's wa.me deeplink), so this is REQUIRED for a direct booking. Deliberately
- * permissive: it accepts a leading `+` and spaces/hyphens/dots/parens around
- * 8-15 digits (the E.164 range) and stores what the guest typed. It does NOT
- * normalize to wa.me form - that is M3's job, where the link is built and the
- * exact target format is known. Validate presence and plausibility now; validate
- * shape when something actually dials it.
+ * A phone in strict **E.164** form: `+`, a country code, then digits - no spaces
+ * or punctuation (e.g. `+6281234567890`). This is the GUEST funnel's phone (#54)
+ * and the SERVER's correctness boundary for it.
+ *
+ * WhatsApp is the confirmation channel, and its `wa.me` deeplink only resolves an
+ * unambiguous international number. A bare national number like `0812...` is
+ * genuinely ambiguous - you can't know the country from the digits - which is why
+ * it broke the link. The checkout form now captures the country and submits E.164
+ * (client-side `libphonenumber-js` does the per-country parse + validate, which is
+ * UX); this regex is the guarantee the server enforces (correctness), so a bare
+ * national number is REJECTED here, never silently guessed at.
+ *
+ * `^\+[1-9]\d{7,14}$` = `+`, a non-zero leading country-code digit, then 7-14 more
+ * (8-15 digits total, the E.164 range).
+ */
+export const e164PhoneSchema = z
+  .string()
+  .trim()
+  .regex(/^\+[1-9]\d{7,14}$/, {
+    message: "must be an international phone number (E.164, e.g. +6281234567890)",
+  });
+
+/**
+ * A lenient phone for the OWNER's walk-in record (#50): the owner types a contact
+ * to dial by hand, not a `wa.me` target, so format is not load-bearing here.
+ * Accepts a leading `+` and spaces/hyphens/dots/parens around 8-15 digits, and
+ * stores what the owner typed. The GUEST funnel uses the strict `e164PhoneSchema`
+ * instead - its number feeds the confirmation deeplink and must be unambiguous.
  */
 const guestPhoneSchema = z
   .string()
@@ -121,7 +142,7 @@ export const createBookingRequestSchema = z
     checkIn: z.string().date(),
     checkOut: z.string().date(),
     guestName: z.string().trim().min(1).max(120),
-    guestPhone: guestPhoneSchema,
+    guestPhone: e164PhoneSchema,
     guestEmail: z.string().trim().toLowerCase().email().max(254).optional(),
     /**
      * Party size. The upper bound here is sanity only (a typo can't exceed
