@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
+  buildPropertyOgTags,
   publicPropertyResponseSchema,
   toRupiah,
   type PublicPropertyResponse,
 } from '@sambung/shared';
 import { PublicScope } from '../common/public-scope.service';
 import { StorageService } from '../storage/storage.service';
+import { renderPropertyOgHtml } from './property-og-html';
 import { PropertiesRepository } from './properties.repository';
 
 /**
@@ -61,6 +63,27 @@ export class PublicPropertiesService {
         maxGuests: u.maxGuests,
         minStay: u.minStay,
       })),
+    });
+  }
+
+  /**
+   * The static OG stub for link-preview crawlers (architecture §6 tier 2, #87,
+   * ADR-0019). NOT a second read path: it goes through `getBySlug`, so the tenant
+   * scope (enterFromSlug + RLS), the archived→404 (ADR-0006), and the malformed-
+   * slug→404 (SlugParamPipe) are the SAME ones the JSON page has - a crawler
+   * cannot see a property a Visitor cannot.
+   *
+   * The values come from the SHARED `buildPropertyOgTags`, the exact helper the
+   * SPA's <meta> tags use, then `renderPropertyOgHtml` escapes them into a static
+   * document. `canonicalUrl` is the human page (`/p/:slug`) this stands in for -
+   * the controller builds it from the request host, since it is not a fact about
+   * the property.
+   */
+  async getOgHtmlBySlug(slug: string, canonicalUrl: string): Promise<string> {
+    const property = await this.getBySlug(slug);
+    return renderPropertyOgHtml({
+      tags: buildPropertyOgTags(property),
+      canonicalUrl,
     });
   }
 }
