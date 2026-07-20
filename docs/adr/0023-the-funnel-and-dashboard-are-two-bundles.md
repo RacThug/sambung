@@ -53,7 +53,12 @@ the fact that *nothing* was split, so the whole SPA paid for it.
    computes the property route's initial-JS closure, and fails if the dashboard or
    the phone chunk is statically reachable from it, if `phone.ts` stops being a
    dynamic import of checkout, or if the gzipped total crosses a budget (185 KB,
-   between the ~161 KB measured today and the ~234 KB monolith).
+   between the ~161 KB measured today and the ~234 KB monolith). The guard is
+   **chained into the web `build` script** (`… && node scripts/check-bundle.mjs`),
+   so it runs on every build - and since there is no cloud CI and deploy always
+   builds, a regression fails there rather than silently regrowing. It stays out of
+   the pre-push hook, which is lint+typecheck only: a full web build on every push
+   would tax unrelated pushes, and the manifest only exists after a build anyway.
 
 ## Consequences
 
@@ -67,7 +72,11 @@ the fact that *nothing* was split, so the whole SPA paid for it.
 - **The country `<select>` has a brief loading state** while the phone chunk
   arrives (a disabled "Loading…" placeholder); the rest of the checkout form is
   usable meanwhile, and E.164 assembly at submit awaits the (by then cached)
-  module. This is the one visible UX change.
+  module. This is the one visible UX change. If that chunk **fails to fetch** (a
+  network blip mid-funnel), the guest gets a **Retry** affordance instead of a
+  stuck "Loading…" select, and submit stops cleanly rather than throwing an
+  unhandled rejection - one `loadPhoneKit` loader backs the mount, the retry, and
+  the submit path (covered by `checkout-phone-load.test.tsx`).
 - **Tests get a raised async timeout.** Under vitest each route chunk is
   transformed on first import; that cold transform can exceed testing-library's 1 s
   default before the component resolves, so the first render of a lazy route in a
