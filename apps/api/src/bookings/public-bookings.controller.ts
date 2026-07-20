@@ -1,12 +1,12 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import {
-  createBookingRequestSchema,
   type CreateBookingRequest,
   type CreateBookingResponse,
 } from '@sambung/shared';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { ThrottleSensitive } from '../common/throttle/throttle.decorator';
 import { BookingsService } from './bookings.service';
+import { apiCreateBookingRequestSchema } from './public-booking.schema';
 
 /**
  * The guest funnel's checkout (api-spec §5.3, page-spec §3.2) - the third
@@ -17,6 +17,10 @@ import { BookingsService } from './bookings.service';
  * controller stays HTTP only. ZodValidationPipe rejects a malformed body -
  * bad dates, a non-phone contact, an out-of-range guest count - as a 400 naming
  * the field, before the service touches the database. @Post defaults to 201.
+ *
+ * The pipe validates against `apiCreateBookingRequestSchema` (the server-only
+ * per-country phone validity gate, #124), NOT the shared shape schema directly -
+ * see public-booking.schema.ts. The response type is unchanged.
  */
 @Controller('public/bookings')
 export class PublicBookingsController {
@@ -29,7 +33,7 @@ export class PublicBookingsController {
   @ThrottleSensitive()
   @Post()
   create(
-    @Body(new ZodValidationPipe(createBookingRequestSchema))
+    @Body(new ZodValidationPipe(apiCreateBookingRequestSchema))
     body: CreateBookingRequest,
   ): Promise<CreateBookingResponse> {
     return this.bookings.createPublicBooking(body);
