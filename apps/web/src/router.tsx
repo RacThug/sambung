@@ -20,6 +20,7 @@ import { PropertiesPage } from "./features/properties/properties-page";
 import { PropertyEditPage } from "./features/properties/property-edit-page";
 import { ReservationsPage } from "./features/reservations/reservations-page";
 import { reservationsSearchSchema } from "./features/reservations/reservations-search";
+import { LapsedPaymentsPage } from "./features/payments/lapsed-payments-page";
 import { BookingDetailPage } from "./features/bookings/booking-detail-page";
 import { ensureSession } from "./lib/auth";
 
@@ -133,6 +134,16 @@ const reservationsRoute = createRoute({
   component: ReservationsPage,
 });
 
+// Paid-but-lapsed payment inbox (#120, ADR-0022). The owner's reconciliation
+// surface for late settlements: a guest paid after their hold lapsed / the booking
+// was cancelled, so money is captured for dates that no longer hold. No search
+// params - it is the whole (small) list, acted on in place.
+const inboxRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "inbox",
+  component: LapsedPaymentsPage,
+});
+
 const propertiesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "properties",
@@ -165,6 +176,7 @@ export const routeTree = rootRoute.addChildren([
     appIndexRoute,
     calendarRoute,
     reservationsRoute,
+    inboxRoute,
     propertiesRoute,
     propertyEditRoute,
     bookingDetailRoute,
