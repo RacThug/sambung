@@ -60,6 +60,21 @@ current state, not a 500.
 number (the channel they gave) with a prefilled summary. It is a server-built string,
 so retargeting to a stored host number later is a zero-shape change.
 
+**The number is captured as E.164 at the input, not guessed at link time.** A bare
+national number (`0812 3456 7890`) is genuinely ambiguous — the country cannot be
+recovered from the digits, and defaulting `0`→`62` would corrupt a foreign guest's own
+national number. That produced a broken `wa.me/081234567890` for the product's primary
+channel. The fix solves the ambiguity where it lives — the checkout form gains a country
+selector (default 🇮🇩 ID) and submits **E.164** (`+62812…`); the value is stored E.164
+in `guest_phone` (a value change, no migration), and `buildWaMeLink` just strips the `+`,
+correct for every country forever. Validation is two-sided: the client uses
+`libphonenumber-js` for per-country parse + validity (UX), the shared schema enforces a
+strict E.164 regex `^\+[1-9]\d{7,14}$` (server correctness). `libphonenumber-js` is
+imported **only in the web funnel component** (the lighter `/min` metadata) — never in
+`packages/shared`, which both sides import and the server runs — so the dep lands solely
+in the public bundle where the UI already needs it. The owner walk-in keeps its lenient
+phone (a manual record it dials, not a wa.me target).
+
 ### Alternatives rejected
 
 - **Confirm directly under the Visitor RLS scope on read** (a second write-to-confirmed
@@ -81,5 +96,9 @@ so retargeting to a stored host number later is a zero-shape change.
 - `fetchStatus` is bound by the fake gateway in tests (a per-order status map), so no
   suite reaches live Midtrans; the confirmation email is asserted against a recording
   fake mailer, not a log grep.
+- `libphonenumber-js` (free, no recurring cost) is added to the **web** app only, using
+  the `/min` metadata build to keep the funnel bundle small (calling-code/formatting
+  metadata, not the full per-country pattern tables). It ships in the public guest-funnel
+  chunk; `packages/shared` and the API stay dep-free (E.164 regex only).
 - New env `MIDTRANS_API_BASE_URL` (Core-API base for Get-Status); unset is fine for
   dev/test.
