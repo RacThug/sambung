@@ -1,5 +1,5 @@
 /**
- * Photo GC sweep timings (ADR-0016, #69). Constants, not env: these are product
+ * Photo GC sweep timings (ADR-0017, #69). Constants, not env: these are product
  * rules (an abandoned upload is reclaimed after a day), not per-deploy knobs.
  */
 

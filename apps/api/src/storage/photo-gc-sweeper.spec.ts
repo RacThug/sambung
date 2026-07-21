@@ -22,7 +22,7 @@ import { DbService } from '../db/db.service';
 import { PhotoGcSweeperService } from './photo-gc-sweeper.service';
 import { PHOTO_GC_GRACE_MS } from './storage.constants';
 
-// Orphaned-photo GC sweep (#69, ADR-0016) over real DB + Garage. It DELETES
+// Orphaned-photo GC sweep (#69, ADR-0017) over real DB + Garage. It DELETES
 // storage objects, and the Garage bucket is SHARED across worktree lanes while
 // each lane's DB is isolated - so every object here is test-owned (a key under a
 // freshly-registered tenant's prefix), every sweep is confined to that tenant
@@ -121,7 +121,7 @@ describe('Photo GC sweeper', () => {
   // Just over the 5 MB cap - the oversize backstop's trigger.
   const OVERSIZE = Buffer.alloc(MAX_PHOTO_SIZE_BYTES + 1024, 0x61);
   // 25 h in the future: relative to it, an object uploaded "now" is past the
-  // 24 h grace window, without faking its server-set mtime (ADR-0016 §3).
+  // 24 h grace window, without faking its server-set mtime (ADR-0017 §3).
   const aged = () => new Date(Date.now() + PHOTO_GC_GRACE_MS + 60 * 60 * 1000);
 
   beforeAll(async () => {

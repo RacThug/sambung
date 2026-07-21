@@ -23,7 +23,7 @@ const PRESIGN_EXPIRES_SECONDS = 300;
 /** S3 DeleteObjects caps at 1000 keys per request; the GC sweep chunks to it. */
 const DELETE_BATCH_MAX = 1000;
 
-/** One stored object as the GC sweep needs to reason about it (ADR-0016). */
+/** One stored object as the GC sweep needs to reason about it (ADR-0017). */
 export interface StorageObject {
   key: string;
   /** Bytes. Drives the oversize-eviction backstop. */
@@ -153,7 +153,7 @@ export class StorageService {
 
   /**
    * List every object under a prefix, following pagination to the end (S3 caps a
-   * page at 1000 keys). The GC sweep (ADR-0016) calls this per `<tenantId>/`
+   * page at 1000 keys). The GC sweep (ADR-0017) calls this per `<tenantId>/`
    * prefix - never the bare bucket - so it only ever sees objects it has
    * authority over. Safe on an empty prefix: `Contents` is absent, so we return
    * `[]`.
