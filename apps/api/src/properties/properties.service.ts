@@ -147,8 +147,15 @@ export class PropertiesService {
     // with 40 photos live and every edit - including deleting one, which is the
     // very thing that would fix it - arrives as more than 30 keys and is
     // refused. Comparing against the gallery it is growing FROM lets reorders
-    // (equal length) and every shrink through, so lowering the cap blocks new
-    // adds and nothing else, and no cap change has ever needed to touch a photo.
+    // (equal length) and every shrink through.
+    //
+    // The rule is about COUNT, deliberately, and that has one consequence worth
+    // naming: over the cap, a same-length SWAP (drop one key, add one) passes.
+    // The owner of a 40-photo gallery under a cap of 30 can still replace a bad
+    // cover photo; what they cannot do is reach 41. Refusing swaps would mean an
+    // over-cap gallery is frozen rather than merely closed to growth - the same
+    // trap in a smaller room - and it would buy nothing, since the count is what
+    // the cap bounds. Bytes are not this check's job (ADR-0017).
     const cap = await this.settings.galleryCap();
     if (dto.keys.length > cap && dto.keys.length > existing.photos.length) {
       throw new BadRequestException(

@@ -203,7 +203,7 @@ const propertyEditRoute = createRoute({
   ),
 });
 
-// Tenant settings (page-spec §4.6, #67). One knob today - the gallery cap - and
+// Tenant settings (page-spec §4.7, #67). One knob today - the gallery cap - and
 // the home #57 will hang staff/Team settings on. Readable by staff; the write is
 // owner-only and the server enforces that.
 const settingsRoute = createRoute({

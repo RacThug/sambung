@@ -31,7 +31,9 @@ Four parts.
 if (dto.keys.length > cap && dto.keys.length > existing.photos.length) throw …
 ```
 
-Reorders (equal length) and every shrink pass unconditionally. Lowering the cap therefore blocks new adds and nothing else.
+Reorders (equal length) and every shrink pass unconditionally. Lowering the cap therefore blocks **growth** and nothing else.
+
+The check is on **count**, deliberately, and that has a consequence worth naming rather than discovering: over the cap, a same-length **swap** (drop one key, add one) passes. The owner of a 40-photo gallery under a cap of 30 can still replace a bad cover photo; what they cannot do is reach 41. Refusing swaps would freeze an over-cap gallery rather than merely close it to growth - the same trap in a smaller room - and would buy nothing, since count is what the cap bounds and bytes are the sweeper's job (ADR-0017). The SPA never offers it (it disables "Add photos" at `length >= cap`), so this is an API-level nuance, pinned by a test so it stays a decision.
 
 **4. `GET /settings` (any signed-in user) and `PATCH /settings` (`@Roles('owner')`).** The read is open because the property workbench needs the cap to know when a gallery is full; only the write is the owner's.
 

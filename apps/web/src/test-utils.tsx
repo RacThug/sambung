@@ -33,10 +33,14 @@ window.scrollTo = () => {};
  * query varies per call (the availability quote fires once per visible month and
  * once per selection) without pinning every from/to combination; the handler
  * reads the URL to branch. Exact keys still win, so existing stubs are unchanged.
+ *
+ * A handler may return a Promise, so a test can hold one endpoint pending while
+ * the rest of the page resolves - which is how "this control stays disabled
+ * until the cap arrives" is tested without racing it.
  */
 export type FetchStubs = Record<
   string,
-  (init?: RequestInit, url?: string) => Response
+  (init?: RequestInit, url?: string) => Response | Promise<Response>
 >;
 
 export function stubFetch(stubs: FetchStubs) {

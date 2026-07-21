@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useSettings, useUpdateSettings } from "./use-settings";
 
 /**
- * Tenant settings (page-spec §4.6, #67). One knob today - how many photos a
+ * Tenant settings (page-spec §4.7, #67). One knob today - how many photos a
  * property's gallery may hold - and the page #57 will hang staff/Team settings
  * on.
  *

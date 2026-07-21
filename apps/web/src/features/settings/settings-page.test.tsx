@@ -21,7 +21,7 @@ afterEach(() => {
   clearSession();
 });
 
-describe("settings page (§4.6, #67)", () => {
+describe("settings page (§4.7, #67)", () => {
   it("shows the tenant's current cap and its bounds", async () => {
     stubFetch({
       "GET /api/settings": () =>

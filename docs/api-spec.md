@@ -194,6 +194,8 @@ Shared types: `packages/shared/src/settings.ts`. A **singular** resource - the t
 
 **Lowering the cap never deletes a photo.** The photo write refuses only requests that **grow** a gallery past the cap - `keys.length > cap AND keys.length > existing.length`. Since `PATCH …/photos` is a whole-set operation, a plain `length > cap` would trap an over-cap gallery: every edit, *including the removal that would fix it*, sends more keys than the cap. Reorders and shrinks therefore always pass, and a gallery above its cap stays readable and editable until its owner trims it.
 
+The bound is on **count**: over the cap, a same-length **swap** (drop one key, add one) is accepted - an over-cap gallery is closed to growth, not frozen, so a bad cover photo can still be replaced. It cannot reach `existing.length + 1`. The SPA never offers this (it disables "Add photos" at `length >= cap`); it is an API-level nuance, and it is test-pinned.
+
 **This is not a storage quota.** Property count is unbounded, so the cap bounds one request body and one gallery grid, nothing more. Bytes are bounded by `MAX_PHOTO_SIZE_BYTES` (signed into the presigned PUT) and the orphan sweeper ([ADR-0017](adr/0017-orphaned-photos-are-swept-against-the-gallery.md)).
 
 > `@Roles(...)` + `RolesGuard` (`apps/api/src/common/`) are the codebase's **first** role check, built here as the seam §3.6's staff invites extend - not a one-off `if`, which would give #57 a second authorization path to reconcile. Property-scoped permissions are deliberately out of scope here.

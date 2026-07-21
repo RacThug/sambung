@@ -19,11 +19,7 @@ export class SettingsService {
   constructor(private readonly repo: SettingsRepository) {}
 
   async get(): Promise<TenantSettingsResponse> {
-    const galleryCap = await this.repo.getGalleryCap();
-    if (galleryCap === undefined) {
-      throw new NotFoundException('Tenant not found');
-    }
-    return { galleryCap, galleryCeiling: PHOTO_GALLERY_CEILING };
+    return this.toResponse(await this.galleryCap());
   }
 
   /**
@@ -41,11 +37,9 @@ export class SettingsService {
     dto: UpdateTenantSettingsRequest,
   ): Promise<TenantSettingsResponse> {
     if (dto.galleryCap === undefined) return this.get();
-    const galleryCap = await this.repo.setGalleryCap(dto.galleryCap);
-    if (galleryCap === undefined) {
-      throw new NotFoundException('Tenant not found');
-    }
-    return { galleryCap, galleryCeiling: PHOTO_GALLERY_CEILING };
+    return this.toResponse(
+      this.orThrow(await this.repo.setGalleryCap(dto.galleryCap)),
+    );
   }
 
   /**
@@ -56,10 +50,23 @@ export class SettingsService {
    * authority.
    */
   async galleryCap(): Promise<number> {
-    const galleryCap = await this.repo.getGalleryCap();
+    return this.orThrow(await this.repo.getGalleryCap());
+  }
+
+  /**
+   * The repository answers `undefined` when the row is invisible - an
+   * authenticated principal whose tenant was deleted mid-session. That is a 404,
+   * never the default: silently substituting 30 would answer a question about a
+   * tenant that no longer exists.
+   */
+  private orThrow(galleryCap: number | undefined): number {
     if (galleryCap === undefined) {
       throw new NotFoundException('Tenant not found');
     }
     return galleryCap;
+  }
+
+  private toResponse(galleryCap: number): TenantSettingsResponse {
+    return { galleryCap, galleryCeiling: PHOTO_GALLERY_CEILING };
   }
 }

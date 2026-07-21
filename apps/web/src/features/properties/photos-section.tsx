@@ -38,7 +38,14 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
   // a request. Until it does, `cap` is undefined and "Add photos" stays disabled:
   // a beat of latency is better than guessing a number and either blocking an
   // allowed upload or letting one through to a 400.
-  const cap = useSettings().data?.galleryCap;
+  //
+  // If that request FAILS, the same `undefined` would disable the button
+  // forever with nothing on screen to explain it - a page that looks broken and
+  // reads as "you may not add photos". So the error is surfaced with a retry;
+  // the gallery below stays fully editable either way, since removing and
+  // reordering never need the cap.
+  const settings = useSettings();
+  const cap = settings.data?.galleryCap;
   const galleryFull = cap !== undefined && keys.length >= cap;
 
   const savePhotos = useMutation({
@@ -255,6 +262,18 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
               Settings
             </Link>
             , or remove a photo.
+          </span>
+        )}
+        {settings.isError && (
+          <span className="text-sm text-destructive">
+            We couldn’t load your photo limit.{" "}
+            <button
+              type="button"
+              onClick={() => void settings.refetch()}
+              className="underline underline-offset-2"
+            >
+              Retry
+            </button>
           </span>
         )}
         {savePhotos.isError && !uploading && (

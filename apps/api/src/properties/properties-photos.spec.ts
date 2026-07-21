@@ -436,9 +436,23 @@ describe('Property photos', () => {
       k3 = await uploadPhoto(tokenC, propC.id);
     });
 
+    /**
+     * Put the tenant at `galleryCap` with exactly `keys` in the gallery, from
+     * whatever the previous test left behind. Order matters: raise the cap
+     * first so seeding a gallery is never itself refused by the cap under test.
+     *
+     * Each test seeds its own world rather than inheriting the last one's - a
+     * chain of `it`s that only passes in file order is a chain that breaks on a
+     * `.only` or a reorder, and does it silently.
+     */
+    async function given(galleryCap: number, keys: string[]) {
+      await setCap(PHOTO_GALLERY_CEILING);
+      await patchPhotos(tokenC, propC.id, keys).expect(200);
+      await setCap(galleryCap);
+    }
+
     it('accepts a gallery up to the cap and refuses the one that grows past it', async () => {
-      await setCap(2);
-      await patchPhotos(tokenC, propC.id, [k1, k2]).expect(200);
+      await given(2, [k1, k2]);
 
       const over = await patchPhotos(tokenC, propC.id, [k1, k2, k3]).expect(
         400,
@@ -448,15 +462,16 @@ describe('Property photos', () => {
     });
 
     it('lowering the cap below a live gallery deletes nothing', async () => {
-      // The gallery is at 2 from the test above; the cap drops under it.
-      await setCap(1);
+      await given(1, [k1, k2]);
       expect(await photoCount()).toBe(2);
     });
 
     it('an over-cap gallery can still be reordered and shrunk', async () => {
-      // Cap is 1, gallery is 2. Both of these send MORE keys than the cap and
-      // both must pass: neither grows the gallery. A plain `length > cap` check
-      // would trap the owner here with no way back down.
+      // Cap 1, gallery 2. Both of these send MORE keys than the cap and both
+      // must pass: neither grows the gallery. A plain `length > cap` check would
+      // trap the owner here with no way back down.
+      await given(1, [k1, k2]);
+
       const reordered = await patchPhotos(tokenC, propC.id, [k2, k1]).expect(
         200,
       );
@@ -468,8 +483,25 @@ describe('Property photos', () => {
       expect(await photoCount()).toBe(1);
     });
 
+    it('accepts a same-length swap over the cap - closed to growth, not frozen', async () => {
+      // Cap 1, gallery 2, and this drops k1 for k3: a photo NEW to the gallery
+      // lands while the gallery is over its cap. Deliberate (ADR-0030) - the
+      // bound is on count, so an owner can still replace a bad cover photo; the
+      // one thing they cannot do is reach 3. Pinned so it stays a decision.
+      await given(1, [k1, k2]);
+
+      const swapped = await patchPhotos(tokenC, propC.id, [k3, k2]).expect(200);
+      expect(
+        bodyOf<PropertyResponse>(swapped).photos.map((p) => p.key),
+      ).toEqual([k3, k2]);
+      expect(await photoCount()).toBe(2);
+
+      await patchPhotos(tokenC, propC.id, [k3, k2, k1]).expect(400);
+    });
+
     it('refuses to grow back over the lowered cap, then allows it once raised', async () => {
-      // Gallery is 1, cap is 1: adding the second is a genuine new add.
+      // Gallery 1, cap 1: adding the second is a genuine new add.
+      await given(1, [k2]);
       await patchPhotos(tokenC, propC.id, [k2, k1]).expect(400);
       expect(await photoCount()).toBe(1);
 

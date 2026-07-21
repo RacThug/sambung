@@ -248,16 +248,72 @@ describe("photos section (§4.5, #39)", () => {
     });
 
     it("waits for the cap before offering an upload", async () => {
-      // /settings unstubbed → 404 → cap unknown. Better a disabled button for a
-      // beat than a guessed limit that blocks a legal upload or invites a 400.
+      // /settings held pending: the cap is unknown but nothing has failed. A
+      // disabled button for a beat beats a guessed limit that would either block
+      // a legal upload or wave one through to a 400.
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
       stubFetch({
         [`GET /api/properties/${PROPERTY_ID}`]: () => json(property({})),
+        "GET /api/settings": async () => {
+          await gate;
+          return json(tenantSettingsResponse({ galleryCap: 4 }));
+        },
       });
       renderAt(`/app/properties/${PROPERTY_ID}`);
 
       await screen.findByText("Photos");
       expect(screen.getByRole("button", { name: "Add photos" })).toBeDisabled();
-      expect(DEFAULT_GALLERY_CAP).toBe(30); // the default is a server fact
+      // Nothing failed, so nothing is claimed to have failed.
+      expect(
+        screen.queryByText(/couldn’t load your photo limit/),
+      ).not.toBeInTheDocument();
+
+      // …and it enables once the cap lands, so the wait really was a wait.
+      release();
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Add photos" }),
+        ).not.toBeDisabled(),
+      );
+    });
+
+    it("surfaces a failed cap fetch with a retry, instead of a dead button", async () => {
+      // The failure mode a bare `cap === undefined` guard hides: /settings
+      // errors and "Add photos" is disabled forever with nothing explaining it.
+      let attempts = 0;
+      stubFetch({
+        [`GET /api/properties/${PROPERTY_ID}`]: () => json(property({})),
+        "GET /api/settings": () => {
+          attempts += 1;
+          return attempts === 1
+            ? new Response(null, { status: 500 })
+            : json(tenantSettingsResponse({ galleryCap: 4 }));
+        },
+      });
+      renderAt(`/app/properties/${PROPERTY_ID}`);
+
+      const retry = await screen.findByRole("button", { name: "Retry" });
+      expect(
+        screen.getByText(/couldn’t load your photo limit/),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Add photos" })).toBeDisabled();
+
+      fireEvent.click(retry);
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Add photos" }),
+        ).not.toBeDisabled(),
+      );
+      expect(
+        screen.queryByText(/couldn’t load your photo limit/),
+      ).not.toBeInTheDocument();
+      // The gallery below never depended on the cap: removal and reorder are
+      // unaffected by the failure, which is why only the button was disabled.
+      expect(DEFAULT_GALLERY_CAP).toBe(30);
     });
   });
 });
