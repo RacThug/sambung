@@ -428,11 +428,12 @@ describe('Property CRUD', () => {
     });
   });
 
-  // The property's local clock (#145, ADR-0028): the missing input that lets the
-  // iCal import resolve a UTC-stamped OTA entry to the night a guest sleeps here.
-  // A CLOSED set, validated at BOTH the zod boundary (400) and the
+  // The property's local clock (#145, ADR-0028) - a fact about WHERE the property
+  // is, alongside address and coordinates, which today has exactly one reader: the
+  // iCal import, resolving a UTC-stamped OTA entry to the night a guest sleeps
+  // here. A CLOSED set, validated at BOTH the zod boundary (400) and the
   // property_time_zone_known CHECK - the same two layers as deposit % above.
-  describe('time zone (iCal import setting)', () => {
+  describe('time zone (where the property is)', () => {
     it('defaults a new property to WITA (Bali)', async () => {
       const created = await createProperty(tokenA, {
         name: 'Zone Default Villa',

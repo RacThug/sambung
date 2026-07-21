@@ -39,9 +39,19 @@ export const depositPctSchema = z.number().int().min(1).max(100);
  * Listing a property outside Indonesia is a migration, deliberately: that is a
  * product-scope change, not a data-entry choice.
  *
- * What it is FOR: turning a UTC-stamped OTA calendar entry into the calendar date
- * a guest actually sleeps here (ical-parse.ts). Nothing else reads it - a stay is
- * stored as `date` columns and is timezone-free by construction (invariant #4).
+ * It is a fact about WHERE the property is - the same question `address` and
+ * `latitude`/`longitude` answer - and it is classified, placed, and worded that
+ * way throughout (the edit page renders it in the location group, not beside the
+ * payment settings). That is what lets the default mean "the owner saw this while
+ * saying where the villa is" rather than "we assumed Bali".
+ *
+ * Today exactly one reader USES it: turning a UTC-stamped OTA calendar entry into
+ * the calendar date a guest actually sleeps here (ical-parse.ts). A stay is stored
+ * as `date` columns and is timezone-free by construction (invariant #4), so the
+ * zone converts at the import boundary and never enters the ledger. If it ever
+ * gains a second reader whose failure is immediate and visible - a check-in cutoff,
+ * a reporting day boundary - the light-touch capture below should be revisited
+ * (see ADR-0028's Consequences).
  *
  * No exported DEFAULT constant: the default lives in the DB column, which is the
  * only place that can enforce it, and a second copy here would be one more thing

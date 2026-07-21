@@ -255,6 +255,38 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
           error={fieldErrors.longitude}
         />
       </div>
+
+      {/* Deliberately HERE, in the location group, and not down with the payment
+          settings (#145, ADR-0028). A property's zone is a fact about WHERE it
+          is - the third answer to the same question the address and coordinates
+          above are asking - not a setting belonging to one integration. Placing
+          it there is what lets the WITA default mean "the owner saw this while
+          telling us where the villa is and accepted it" rather than "we guessed
+          Bali": the copy leads with the place and mentions OTA calendars second,
+          for the same reason. */}
+      <FormField label="Time zone" error={fieldErrors.timeZone}>
+        {(field) => (
+          <div>
+            <select
+              value={form.timeZone}
+              onChange={set("timeZone")}
+              className={inputClass}
+              {...field}
+            >
+              {propertyTimeZoneSchema.options.map((tz) => (
+                <option key={tz} value={tz}>
+                  {TIME_ZONE_LABELS[tz]}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The local clock where the property is. Imported OTA calendars are
+              read against it.
+            </p>
+          </div>
+        )}
+      </FormField>
+
       <FormField label="Description" error={fieldErrors.description}>
         {(field) => (
           <textarea
@@ -299,33 +331,6 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
             />
             <p className="mt-1 text-sm text-muted-foreground">
               Share of the total charged at checkout. 100 = pay in full.
-            </p>
-          </div>
-        )}
-      </FormField>
-
-      {/* The property's local clock (#145, ADR-0028). Read by one thing: the iCal
-          import, turning a UTC-stamped OTA calendar entry into the night a guest
-          actually sleeps here. Wrong by an hour is wrong by a night at the day
-          boundary, which is why it is a visible field and not a hidden constant. */}
-      <FormField label="Time zone" error={fieldErrors.timeZone}>
-        {(field) => (
-          <div>
-            <select
-              value={form.timeZone}
-              onChange={set("timeZone")}
-              className={inputClass}
-              {...field}
-            >
-              {propertyTimeZoneSchema.options.map((tz) => (
-                <option key={tz} value={tz}>
-                  {TIME_ZONE_LABELS[tz]}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Used to read imported OTA calendars. Set it to where the property
-              actually is.
             </p>
           </div>
         )}
