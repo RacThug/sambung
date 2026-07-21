@@ -304,13 +304,21 @@ describe('Guest booking + hold sweeper', () => {
     expect(swept).toBeGreaterThanOrEqual(1);
     expect(await statusOf(lapsedId)).toBe('expired');
 
-    // Freed dates are immediately bookable.
+    // Freed dates are immediately bookable - this creates a fresh, future-TTL
+    // pending_payment hold on the same nights (born ~15 min out, ADR-0009).
     const res = await book({ checkIn: '2027-08-10', checkOut: '2027-08-14' });
     expect(res.status).toBe(201);
+    const freshHoldId = bodyOf<CreateBookingResponse>(res).bookingId;
 
-    // Idempotent: the new hold has a future TTL, nothing lapsed remains.
-    expect(await sweeper.sweepExpiredHolds()).toBe(0);
+    // Idempotent: sweeping again is a no-op. The sweep is cross-tenant (ADR-0009)
+    // and returns a GLOBAL count, so a concurrently running suite can seed its own
+    // lapsed hold and make that count non-zero (#139). We therefore assert on THIS
+    // test's own rows, not the global count: the already-expired hold stays
+    // 'expired' (not resurrected), and the fresh future-TTL hold stays
+    // 'pending_payment' - proving the sweep genuinely left a LIVE hold alone.
+    await sweeper.sweepExpiredHolds();
     expect(await statusOf(lapsedId)).toBe('expired');
+    expect(await statusOf(freshHoldId)).toBe('pending_payment');
   });
 
   it('lets the changeover day rebook: a checkout is the next check-in', async () => {
