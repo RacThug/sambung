@@ -11,6 +11,7 @@ import "./load-env";
 import { count, eq } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { closeDb, db } from "../src/index";
+import { demoDates } from "./demo-dates";
 import { uploadSeedPhotos } from "./seed-photos";
 import {
   appUser,
@@ -52,17 +53,11 @@ const DEMO_PASSWORD = "sambung123";
 const DEMO_PASSWORD_HASH =
   "$2b$12$l/JDRuTK3RV2ZPO5tKDPrOJ7DvutHzlXTbFqTUgwFrO4GI1HPts.y";
 
-// Sample bookings are anchored to the CURRENT month, not fixed calendar dates,
-// so the unified calendar's default view (this month) is populated the moment
-// you seed - a fixed August date silently falls outside the view once the month
-// passes. Only the DATES move with time; the stable demo surface (ids, slugs,
-// logins) stays fixed. `day(n)` = the nth day of the current month, half-open.
-const monthAnchor = new Date();
-const monthStart = `${monthAnchor.getFullYear()}-${String(monthAnchor.getMonth() + 1).padStart(2, "0")}-01`;
-const day = (offset: number): string =>
-  new Date(Date.parse(`${monthStart}T00:00:00Z`) + offset * 86_400_000)
-    .toISOString()
-    .slice(0, 10);
+// Sample stays are anchored to TODAY, not to fixed calendar dates - see
+// ./demo-dates.ts for why (short version: the picker hides the past, so a stay
+// seeded behind the presenter is invisible, not just stale). Only the DATES
+// move with time; the stable demo surface (ids, slugs, logins) stays fixed.
+const D = demoDates(new Date());
 
 async function main() {
   await db.transaction(async (tx) => {
@@ -186,7 +181,10 @@ async function main() {
       channel: "airbnb",
       importIcalUrl: "https://www.airbnb.com/calendar/ical/EXAMPLE.ics",
       lastStatus: "ok",
-      lastSyncedAt: new Date("2026-07-20T00:00:00.000Z"),
+      // Relative, like the conflict's timestamps below: a fixed date reads as
+      // "last synced two years ago" at demo time. Half a cron cycle back, so the
+      // panel looks like a feed that is genuinely being polled every 30 min.
+      lastSyncedAt: new Date(Date.now() - 15 * 60_000),
     });
 
     // --- sample bookings (non-overlapping per unit; respects no_overlap) ---
@@ -198,8 +196,8 @@ async function main() {
         unitId: U_VILLA,
         source: "direct",
         status: "confirmed",
-        checkIn: day(4),
-        checkOut: day(8),
+        checkIn: D.villaDirect.checkIn,
+        checkOut: D.villaDirect.checkOut,
         guestName: "Wayan D.",
         guestPhone: "+62 812-0000-0001",
         guestEmail: "wayan@example.com",
@@ -214,8 +212,8 @@ async function main() {
         unitId: U_VILLA,
         source: "airbnb",
         status: "confirmed",
-        checkIn: day(13),
-        checkOut: day(17),
+        checkIn: D.villaImported.checkIn,
+        checkOut: D.villaImported.checkOut,
         guestName: "Airbnb guest",
         channelConnectionId: CC_AIRBNB,
         externalUid: "airbnb-evt-0001@airbnb.com", // idempotent re-sync key
@@ -226,8 +224,8 @@ async function main() {
         unitId: U_GARDEN,
         source: "direct",
         status: "pending_payment",
-        checkIn: day(6),
-        checkOut: day(9),
+        checkIn: D.gardenHold.checkIn,
+        checkOut: D.gardenHold.checkOut,
         guestName: "Komang S.",
         guestPhone: "+62 812-0000-0002",
         guestCount: 2,
@@ -240,8 +238,8 @@ async function main() {
         unitId: U_SURF,
         source: "manual_block",
         status: "confirmed",
-        checkIn: day(17),
-        checkOut: day(20),
+        checkIn: D.surfBlock.checkIn,
+        checkOut: D.surfBlock.checkOut,
         guestName: null,
       },
       // Riverside Suite (tenant 2): a direct confirmed booking.
@@ -250,8 +248,8 @@ async function main() {
         unitId: U_RIVER,
         source: "direct",
         status: "confirmed",
-        checkIn: day(8),
-        checkOut: day(11),
+        checkIn: D.riverDirect.checkIn,
+        checkOut: D.riverDirect.checkOut,
         guestName: "Asian traveler",
         guestPhone: "+86 138-0000-0003",
         guestCount: 2,
@@ -282,9 +280,10 @@ async function main() {
     // GET /sync-conflicts derives it live through the same `daterange &&` the
     // constraint itself uses. The inbox shows a true picture, not a mock.
     //
-    // Dates: day(5)-day(9) against Wayan's day(4)-day(8) - a PARTIAL overlap on
+    // Dates: `refusedImport` against `villaDirect` - a PARTIAL overlap on
     // purpose. Identical dates would hide the bug where the two ranges get
-    // conflated; a partial one makes the inbox prove it shows both.
+    // conflated; a partial one makes the inbox prove it shows both. The overlap
+    // is asserted in test/demo-dates.test.ts, not just intended here.
     //
     // Timestamps are relative so the demo never looks stale: first seen two days
     // ago (it has been waiting), last seen one cron cycle ago (still being
@@ -295,8 +294,8 @@ async function main() {
       channelConnectionId: CC_AIRBNB,
       unitId: U_VILLA,
       externalUid: "airbnb-evt-0002@airbnb.com",
-      checkIn: day(5),
-      checkOut: day(9),
+      checkIn: D.refusedImport.checkIn,
+      checkOut: D.refusedImport.checkOut,
       status: "open",
       firstDetectedAt: new Date(Date.now() - 2 * 86_400_000),
       lastSeenAt: new Date(Date.now() - 30 * 60_000),
@@ -333,6 +332,21 @@ async function main() {
   );
   console.log(
     `Demo logins: owner@balibreeze.test / owner@ubudretreats.test - password "${DEMO_PASSWORD}"`,
+  );
+  // The demo script (docs/demo.md) names these by role, never by absolute date -
+  // they move with the calendar. Print them so a presenter can check the state
+  // they are about to talk over, and so "all in the future" is visible, not
+  // claimed.
+  console.log(
+    [
+      "Demo window (all future, half-open):",
+      `  first bookable night   ${D.firstFreeNight}  (Whole Villa is free from here)`,
+      `  Wayan D., paid direct  ${D.villaDirect.checkIn} -> ${D.villaDirect.checkOut}  (Whole Villa)`,
+      `  refused Airbnb import  ${D.refusedImport.checkIn} -> ${D.refusedImport.checkOut}  (the inbox conflict)`,
+      `  Komang S., live hold   ${D.gardenHold.checkIn} -> ${D.gardenHold.checkOut}  (Garden Room, 15 min)`,
+      `  imported from Airbnb   ${D.villaImported.checkIn} -> ${D.villaImported.checkOut}  (Whole Villa)`,
+      `  maintenance block      ${D.surfBlock.checkIn} -> ${D.surfBlock.checkOut}  (Surf Loft)`,
+    ].join("\n"),
   );
 }
 

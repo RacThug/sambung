@@ -67,7 +67,7 @@ into interval logic and invite off-by-one bugs at UTC boundaries.
 pnpm --filter @sambung/db db:generate      # diff schema.ts -> new SQL migration
 pnpm --filter @sambung/db db:migrate       # apply pending migrations
 pnpm --filter @sambung/db db:setup-role    # create the non-owner app role (RLS)
-pnpm --filter @sambung/db db:seed          # 2 tenants, 3 properties, sample bookings
+pnpm --filter @sambung/db db:seed          # 2 tenants, 3 properties, demo-ready bookings (docs/demo.md)
 pnpm --filter @sambung/db db:reset         # drop everything, replay migrations, role + seed
 pnpm --filter @sambung/db db:studio        # browse data
 pnpm --filter @sambung/db test             # constraint/RLS integration tests (needs Docker)
@@ -83,3 +83,4 @@ it is the only way to exercise the RLS policies, because the owner is exempt fro
 | `overlap.test.ts` | `booking_no_overlap` — one test per clause of the exclusion constraint |
 | `tenant-consistency.test.ts` | the composite FKs that make a wrong `tenant_id` unrepresentable |
 | `rls.test.ts` | all 9 RLS policies: scoping, `WITH CHECK`, and fail-closed on a **warm** connection (#74) |
+| `demo-dates.test.ts` | the seed's date model (`scripts/demo-dates.ts`): every seeded stay lands in the future on any day of the year, no two stays in one unit overlap, and the seeded sync conflict overlaps its blocking booking only partially (#60). Pure - the one file here that needs no database |
