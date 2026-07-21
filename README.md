@@ -51,8 +51,13 @@ flowchart TB
     ota -->|subscribes to the .ics export| api
     funnel -->|Snap redirect| pay
     pay -->|signed webhook| hook
-    funnel -.->|presigned PUT, public GET| store
+    dash -.->|presigned PUT| store
+    funnel -.->|public GET| store
 ```
+
+Note which arrow goes which way at the object store: only the authenticated dashboard **writes**
+(the owner's browser PUTs a photo straight to storage with a presigned URL, so the API never
+handles the bytes). The public funnel only ever **reads** them.
 
 The one principle everything follows: **the frontend never touches the database.** The SPA is
 presentation; the API owns business rules, money, tenancy and every long-running job. `web` may
