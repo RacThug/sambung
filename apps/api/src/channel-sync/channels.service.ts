@@ -19,9 +19,9 @@ import { IcalImportService } from './ical-import.service';
  * of sync. Connect an OTA iCal URL to a Unit (validated at the boundary +
  * smoke-fetched here), list connections with their health, disconnect.
  *
- * The IMPORT pipeline (the 30-min cron, per-VEVENT reconciliation, the
- * sync-conflict inbox) is boss fight #3, a separate M4 issue - this issue is the
- * lifecycle plus the EXPORT feed (IcalExportService).
+ * The IMPORT pipeline itself is boss fight #3 and lives in IcalImportService (#56)
+ * + SyncConflictsService (#38); this class drives it from the owner's side ("Sync
+ * now") and reports its health, including the `openConflicts` count.
  */
 @Injectable()
 export class ChannelsService {
@@ -67,16 +67,24 @@ export class ChannelsService {
       // Only a healthy pull stamps a sync time; a failed probe never "synced".
       lastSyncedAt: probe.ok ? new Date() : null,
     });
-    return this.toResponse(row);
+    // A connection that has never imported cannot have conflicted - no query needed,
+    // and the row id didn't exist to be referenced a moment ago.
+    return this.toResponse(row, 0);
   }
 
-  /** List a unit's connections (api-spec §7.2). 404 for an unknown/foreign unit. */
+  /** List a unit's connections (api-spec §7.2). 404 for an unknown/foreign unit.
+   * `openConflicts` (#38) comes from ONE grouped count over the unit's connections,
+   * not a query per row - the panel renders a handful of feeds, but N+1 in a list is
+   * how a handful becomes a page load. */
   async list(unitId: string): Promise<ChannelConnectionResponse[]> {
     if (!(await this.repo.unitExists(unitId))) {
       throw new NotFoundException('Unit not found');
     }
     const rows = await this.repo.findByUnit(unitId);
-    return rows.map((row) => this.toResponse(row));
+    const openConflicts = await this.repo.countOpenConflictsByUnit(unitId);
+    return rows.map((row) =>
+      this.toResponse(row, openConflicts.get(row.id) ?? 0),
+    );
   }
 
   /**
@@ -122,16 +130,21 @@ export class ChannelsService {
       lastError: outcome.lastError,
       imported: outcome.imported,
       cancelled: outcome.cancelled,
+      conflicts: outcome.conflicts,
     });
   }
 
-  private toResponse(row: ChannelConnection): ChannelConnectionResponse {
+  private toResponse(
+    row: ChannelConnection,
+    openConflicts: number,
+  ): ChannelConnectionResponse {
     const { createdAt, lastSyncedAt, ...columns } = row;
     // Parsed on the way out so the payload cannot silently widen, and so a corrupt
     // `channel` / `last_status` in the DB fails loud rather than reaching a client.
     return channelConnectionResponseSchema.parse({
       ...columns,
       lastSyncedAt: lastSyncedAt ? lastSyncedAt.toISOString() : null,
+      openConflicts,
       createdAt: createdAt.toISOString(),
     });
   }

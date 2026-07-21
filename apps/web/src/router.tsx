@@ -172,16 +172,16 @@ const reservationsRoute = createRoute({
   ),
 });
 
-// Paid-but-lapsed payment inbox (#120, ADR-0022). The owner's reconciliation
-// surface for late settlements: a guest paid after their hold lapsed / the booking
-// was cancelled, so money is captured for dates that no longer hold. No search
-// params - it is the whole (small) list, acted on in place.
+// The operations inbox: sync conflicts (#38, ADR-0027) + paid-but-lapsed payments
+// (#120, ADR-0022). Both are "the system did the safe thing and now needs a human" -
+// a double-sold room, or money captured for dates that no longer hold. No search
+// params - each is a whole (small) list, acted on in place.
 const inboxRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "inbox",
   component: lazyRouteComponent(
-    () => import("./features/payments/lapsed-payments-page"),
-    "LapsedPaymentsPage",
+    () => import("./features/dashboard/inbox-page"),
+    "InboxPage",
   ),
 });
 

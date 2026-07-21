@@ -1,5 +1,6 @@
 /**
- * Seed: 2 tenants, 3 properties, units, and sample bookings - instant demo state.
+ * Seed: 2 tenants, 3 properties, units, sample bookings, and one open sync
+ * conflict - instant demo state.
  *
  * Idempotent: wipes all rows then re-inserts, inside one transaction, with fixed
  * UUIDs so demo links stay stable across runs. Dev/demo only.
@@ -18,6 +19,7 @@ import {
   payment,
   paymentEvent,
   property,
+  syncConflict,
   tenant,
   unit,
   userProperty,
@@ -40,6 +42,7 @@ const U_GARDEN = "bbbbbbbb-0000-0000-0000-000000000002";
 const U_SURF = "bbbbbbbb-0000-0000-0000-000000000003";
 const U_RIVER = "bbbbbbbb-0000-0000-0000-000000000004";
 const CC_AIRBNB = "cccccccc-0000-0000-0000-000000000001";
+const SC_DOUBLE_SELL = "dddddddd-0000-0000-0000-000000000001";
 
 // bcrypt("sambung123", 12 rounds) - matches the auth service's BCRYPT_ROUNDS,
 // so seeded owners can log into the dashboard. Precomputed constant: keeps the
@@ -64,6 +67,7 @@ const day = (offset: number): string =>
 async function main() {
   await db.transaction(async (tx) => {
     // --- wipe (FK-safe order) so the seed is idempotent ---
+    await tx.delete(syncConflict);
     await tx.delete(paymentEvent);
     await tx.delete(payment);
     await tx.delete(booking);
@@ -264,6 +268,40 @@ async function main() {
       status: "paid",
     });
 
+    // --- an open sync conflict (#38, ADR-0027) ---
+    // A real-world double-sell: Airbnb sold nights on the Whole Villa that
+    // "Wayan D." above has ALREADY booked direct and PAID for. The exclusion
+    // constraint refused the import (as it should - the alternative is two guests
+    // at one door), so it lands in the owner's inbox for a human to sort out.
+    //
+    // Seeded as a row rather than produced by a real import, because an import
+    // needs a reachable https feed and the fetcher blocks localhost by design
+    // (SSRF, ADR-0016) - so there is no way to generate one offline. What matters
+    // for the demo is that everything AROUND it is real: the blocking booking
+    // genuinely exists and genuinely overlaps, so `blockingBookings` on
+    // GET /sync-conflicts derives it live through the same `daterange &&` the
+    // constraint itself uses. The inbox shows a true picture, not a mock.
+    //
+    // Dates: day(5)-day(9) against Wayan's day(4)-day(8) - a PARTIAL overlap on
+    // purpose. Identical dates would hide the bug where the two ranges get
+    // conflated; a partial one makes the inbox prove it shows both.
+    //
+    // Timestamps are relative so the demo never looks stale: first seen two days
+    // ago (it has been waiting), last seen one cron cycle ago (still being
+    // re-detected every 30 min, and still refused).
+    await tx.insert(syncConflict).values({
+      id: SC_DOUBLE_SELL,
+      tenantId: T1,
+      channelConnectionId: CC_AIRBNB,
+      unitId: U_VILLA,
+      externalUid: "airbnb-evt-0002@airbnb.com",
+      checkIn: day(5),
+      checkOut: day(9),
+      status: "open",
+      firstDetectedAt: new Date(Date.now() - 2 * 86_400_000),
+      lastSeenAt: new Date(Date.now() - 30 * 60_000),
+    });
+
     // --- demo photos (#46) ---
     // Seminyak and Ubud get a gallery; CANGGU DELIBERATELY DOES NOT. The seed
     // already withholds licenseNo from Canggu to demo the conditional Verified
@@ -291,7 +329,7 @@ async function main() {
     return row.n;
   };
   console.log(
-    `Seeded: ${await n(tenant)} tenants, ${await n(property)} properties, ${await n(unit)} units, ${await n(booking)} bookings, ${await n(payment)} payments.`,
+    `Seeded: ${await n(tenant)} tenants, ${await n(property)} properties, ${await n(unit)} units, ${await n(booking)} bookings, ${await n(payment)} payments, ${await n(syncConflict)} sync conflict.`,
   );
   console.log(
     `Demo logins: owner@balibreeze.test / owner@ubudretreats.test - password "${DEMO_PASSWORD}"`,

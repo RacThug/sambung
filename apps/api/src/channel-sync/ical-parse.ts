@@ -67,10 +67,25 @@ function splitLine(line: string): { name: string; value: string } | null {
   return { name, value: line.slice(colon + 1) };
 }
 
-/** Extract a `YYYY-MM-DD` calendar date from an iCalendar DATE or DATE-TIME value
- * (`20260801` or `20260801T140000Z`). The time, if any, is intentionally dropped:
- * availability is night-granular, and half-open dates carry the semantics. Returns
- * null for anything that isn't a leading `YYYYMMDD` so the caller can skip it. */
+/**
+ * Extract a `YYYY-MM-DD` calendar date from an iCalendar DATE or DATE-TIME value
+ * (`20260801` or `20260801T140000Z`). Returns null for anything that isn't a leading
+ * `YYYYMMDD` so the caller can skip it.
+ *
+ * **The time is dropped, not converted - a known, accepted limitation (#145).** For
+ * the all-day `VALUE=DATE` VEVENTs every OTA we support actually publishes, that is
+ * exactly right: there is no time to convert, and half-open dates carry the whole
+ * semantics. For a *timed* DTSTART it is a silent off-by-one near the day boundary -
+ * `20260801T170000Z` is already 2 Aug in Bali (UTC+8), but yields `2026-08-01` here,
+ * shifting the imported block one night early.
+ *
+ * Not fixed, deliberately (owner's call, 2026-07-21): "property-local" is undefined
+ * in this schema - `property` has lat/lng but no timezone - so a correct fix needs a
+ * per-property IANA timezone column, and `channelSchema` is a closed set of three
+ * OTAs none of which emit timed availability. Revisit with #145 when a channel that
+ * does is added; do NOT paper over it with a hardcoded UTC+8, which breaks the first
+ * property listed in Java (WIB) or Papua (WIT).
+ */
 function toIsoDate(value: string): string | null {
   const m = /^\s*(\d{4})(\d{2})(\d{2})/.exec(value);
   if (!m) return null;

@@ -48,7 +48,7 @@ describe("paid-but-lapsed inbox page (#120)", () => {
     expect(screen.getByText("Late Larry")).toBeInTheDocument();
     expect(screen.getByText(/\+62 811 2233 4455/)).toBeInTheDocument();
     expect(
-      screen.getByText("Seminyak Beach Villa — Garden Room 1"),
+      screen.getByText("Seminyak Beach Villa - Garden Room 1"),
     ).toBeInTheDocument();
     expect(screen.getByText("Expired")).toBeInTheDocument();
 

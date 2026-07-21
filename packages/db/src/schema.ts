@@ -62,6 +62,17 @@ export const paymentStatus = pgEnum("payment_status", [
   "paid",
   "failed",
 ]);
+// The lifecycle of one sync conflict (#38, ADR-0027). `open` = an imported VEVENT
+// the exclusion constraint still refuses; `resolved` = the world fixed itself (the
+// blocking booking was cancelled, or the OTA withdrew its event) - a MEASUREMENT the
+// next sync re-takes; `dismissed` = the owner judged it a non-issue, which re-detection
+// must never undo. That asymmetry is the whole reason there are three states and not
+// two (ADR-0027: dismiss is a judgement, resolve is a measurement).
+export const syncConflictStatus = pgEnum("sync_conflict_status", [
+  "open",
+  "resolved",
+  "dismissed",
+]);
 
 // ---- Tenancy ------------------------------------------------------------------
 export const tenant = pgTable("tenant", {
@@ -261,6 +272,87 @@ export const channelConnection = pgTable(
   ],
 );
 
+/**
+ * The sync-conflict inbox (#38, boss fight #3, ADR-0027, db-design §4.8).
+ *
+ * When an OTA sells nights that overlap an existing occupying booking, a real-world
+ * double-sell has happened out there, and the `booking_no_overlap` exclusion
+ * constraint refuses the import (`23P01`). That refusal is CORRECT - but the losing
+ * VEVENT is then a fact that exists nowhere: no booking row, and the feed is
+ * transient. This is the one place Sambung stores what it cannot derive.
+ *
+ * It is an OPS INBOX, never an availability source - nothing in the availability or
+ * booking path reads this table, so invariant #3 is untouched. A conflict blocks
+ * nothing; it asks a human to go pick the loser in the real world, because money and
+ * a guest are attached to both sides and the machine must not choose (ADR 2026-07-16).
+ *
+ * No raw VEVENT is kept. ADR-0025's parser deliberately drops SUMMARY/DESCRIPTION so
+ * imported guest PII cannot enter through the feed; storing the raw block here would
+ * re-admit exactly that through a side door. The uid + unit + nights are what an
+ * owner needs to phone the OTA (ADR-0027).
+ */
+export const syncConflict = pgTable(
+  "sync_conflict",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    // Denormalized for RLS, like booking/unit (db-design §4.5) - and load-bearing
+    // rather than a backstop here, because the WRITER is the RLS-bypassed owner
+    // connection (the import cron). The composite FK below is what makes a wrong
+    // tenant_id unrepresentable instead of merely discouraged.
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    // Cascade, unlike booking's `set null`: a booking is LEDGER and outlives its
+    // connection, but a conflict is an ops todo ABOUT a feed. Disconnect the
+    // channel and the todo is moot (ADR-0027).
+    channelConnectionId: uuid("channel_connection_id")
+      .notNull()
+      .references(() => channelConnection.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    unitId: uuid("unit_id")
+      .notNull()
+      .references(() => unit.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    // NOT NULL (unlike booking.external_uid): the parser skips a UID-less VEVENT
+    // before it can ever reach the insert that conflicts, so every conflict has one.
+    externalUid: text("external_uid").notNull(),
+    // The refused stay, half-open [check_in, check_out) like every other date pair
+    // (invariant #4). Two `date` columns, NOT a `daterange`: the only daterange in
+    // this schema is built inline inside the exclusion constraint, and a second
+    // idiom for the same fact is how drift starts (ADR-0027).
+    checkIn: date("check_in", { mode: "string" }).notNull(),
+    checkOut: date("check_out", { mode: "string" }).notNull(),
+    status: syncConflictStatus("status").notNull().default("open"),
+    firstDetectedAt: timestamptz("first_detected_at").notNull().defaultNow(),
+    lastSeenAt: timestamptz("last_seen_at").notNull().defaultNow(),
+    // When it stopped being `open`, whichever exit it took. Nullable, and the only
+    // thing dismiss writes besides the status - the same shape as payment.handled_at
+    // (ADR-0022): annotate in place, destroy nothing.
+    closedAt: timestamptz("closed_at"),
+  },
+  (t) => [
+    // Idempotent re-detection (AC #2): re-polling a still-conflicting feed UPDATEs
+    // one row instead of growing the inbox every 30 minutes. A plain unique
+    // constraint, not booking's PARTIAL index, because both columns are NOT NULL.
+    unique("sync_conflict_connection_uid_uniq").on(
+      t.channelConnectionId,
+      t.externalUid,
+    ),
+    // The inbox read: open conflicts for one tenant.
+    index("sync_conflict_tenant_status_idx").on(t.tenantId, t.status),
+    // tenant_id must equal its unit's tenant_id (db-design §4.5, #40). Cascade is
+    // right here (unlike booking's `no action`): an inbox item is not the ledger,
+    // so it has no claim to outlive the inventory it points at.
+    foreignKey({
+      name: "sync_conflict_unit_tenant_fk",
+      columns: [t.unitId, t.tenantId],
+      foreignColumns: [unit.id, unit.tenantId],
+    }).onDelete("cascade"),
+    check("sync_conflict_stay_nonempty", sql`${t.checkOut} > ${t.checkIn}`),
+  ],
+);
+
 // ---- Bookings (the heart) ---------------------------------------------------
 // Availability is DERIVED from these rows - there is no availability table
 // (invariant #3). Stay dates are half-open [check_in, check_out) (invariant #4)
@@ -402,6 +494,7 @@ export type AppUser = typeof appUser.$inferSelect;
 export type Property = typeof property.$inferSelect;
 export type Unit = typeof unit.$inferSelect;
 export type ChannelConnection = typeof channelConnection.$inferSelect;
+export type SyncConflict = typeof syncConflict.$inferSelect;
 export type Booking = typeof booking.$inferSelect;
 export type Payment = typeof payment.$inferSelect;
 export type PaymentEvent = typeof paymentEvent.$inferSelect;
@@ -409,3 +502,4 @@ export type UserRole = (typeof userRole.enumValues)[number];
 export type BookingSource = (typeof bookingSource.enumValues)[number];
 export type BookingStatus = (typeof bookingStatus.enumValues)[number];
 export type PaymentStatus = (typeof paymentStatus.enumValues)[number];
+export type SyncConflictStatus = (typeof syncConflictStatus.enumValues)[number];

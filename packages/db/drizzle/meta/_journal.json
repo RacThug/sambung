@@ -85,6 +85,13 @@
       "when": 1784517775934,
       "tag": "0011_payment_handled_at",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784603541323,
+      "tag": "0012_sync_conflict",
+      "breakpoints": true
     }
   ]
 }

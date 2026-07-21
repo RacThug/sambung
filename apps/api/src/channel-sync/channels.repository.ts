@@ -3,6 +3,7 @@ import { and, asc, count, eq, sql } from 'drizzle-orm';
 import {
   booking,
   channelConnection,
+  syncConflict,
   unit,
   type ChannelConnection,
 } from '@sambung/db';
@@ -140,6 +141,36 @@ export class ChannelsRepository {
         );
       return n;
     });
+  }
+
+  /**
+   * How many conflicts are still open per connection on this unit (#38) - the
+   * `openConflicts` health field api-spec §7.2 reserved and #55 shipped without a
+   * source. One grouped query for the whole unit, keyed by connection id, so the
+   * list renders N connections in 1 query rather than N.
+   *
+   * Counts ONLY `open`: a resolved or dismissed conflict is history, and a badge
+   * that included them would never return to zero.
+   */
+  async countOpenConflictsByUnit(unitId: string): Promise<Map<string, number>> {
+    const tenantId = this.tenant.tenantId;
+    const rows = await this.db.run((tx) =>
+      tx
+        .select({
+          connectionId: syncConflict.channelConnectionId,
+          n: count(),
+        })
+        .from(syncConflict)
+        .where(
+          and(
+            eq(syncConflict.unitId, unitId),
+            eq(syncConflict.tenantId, tenantId),
+            eq(syncConflict.status, 'open'),
+          ),
+        )
+        .groupBy(syncConflict.channelConnectionId),
+    );
+    return new Map(rows.map((r) => [r.connectionId, r.n]));
   }
 
   async delete(id: string): Promise<void> {

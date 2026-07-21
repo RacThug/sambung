@@ -32,6 +32,7 @@ export * from "./photo";
 export * from "./property";
 export * from "./public-property";
 export * from "./slug";
+export * from "./sync-conflict";
 export * from "./unit";
 
 /** Health-check response shape, shared by API and any client probe. */

@@ -190,6 +190,23 @@ nothing, so a broken download can never mass-cancel real stays. A Healthy feed w
 cancels nothing - "empty" and "cut off" are indistinguishable, so Sambung refuses to guess.
 _Avoid_: valid, good, successful
 
+**Sync conflict**:
+A Booking a Channel sold on nights Sambung already holds - a real double-sell out in the
+world, which Sambung refuses to mirror rather than put two Guests at one door. It is a
+record of something that could *not* happen, so it is the one thing here that is stored
+rather than derived. An ops item, never an Availability source: it blocks nothing and no
+calendar reads it. Sambung never picks the loser - the Owner does, in the real world.
+_Avoid_: overbooking, double booking, error, sync failure
+
+**Dismissed / Resolved**:
+The two ways a Sync conflict stops needing attention, and they are different kinds of
+fact. **Resolved** is a *measurement*: the clash is gone, as observed by a Sync - because
+the blocking Booking was cancelled, or the Channel withdrew its event. A later Sync can
+measure the opposite and reopen it. **Dismissed** is the Owner's *judgement* that it
+never mattered; no Sync may undo it. So a conflict the Owner dismissed stays quiet even
+while the feed keeps offering it.
+_Avoid_: closed, ignored, done, archived (for either)
+
 **Import / Export**:
 The two directions of one calendar. Import pulls a Channel's blocks *into* Sambung (the channel-manager
 half); Export publishes Sambung's confirmed stays *out* as an .ics a Channel reads. Neither carries a

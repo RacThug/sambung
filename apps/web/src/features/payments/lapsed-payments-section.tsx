@@ -8,8 +8,8 @@ import { Button } from "../../components/ui/button";
 import { useLapsedPayments, useMarkHandled } from "./use-lapsed-payments";
 
 /**
- * The paid-but-lapsed payment inbox - `/app/inbox` (#120, ADR-0022). The
- * late-settlement reconciliation surface the webhook (#53, ADR-0018) handles
+ * The paid-but-lapsed payment section of the inbox - `/app/inbox` (#120, ADR-0022).
+ * The late-settlement reconciliation surface the webhook (#53, ADR-0018) handles
  * silently: a guest paid AFTER their hold lapsed (swept to `expired`) or the
  * booking was cancelled, so the money is captured but the dates no longer hold.
  *
@@ -17,22 +17,25 @@ import { useLapsedPayments, useMarkHandled } from "./use-lapsed-payments";
  * a link to the full booking, and a "Mark handled" action. Handling only removes
  * the item from the list; the refund/re-accommodate is a manual, offline act at
  * sandbox (ADR-0011), and nothing here mutates the payment or the booking.
+ *
+ * A section rather than the whole page since #38: the sync-conflict inbox sits above
+ * it, because both are "the system did the safe thing and now needs a human".
  */
-export function LapsedPaymentsPage() {
+export function LapsedPaymentsSection() {
   const query = useLapsedPayments();
 
   return (
-    <section className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-foreground">
+    <section>
+      <h2 className="text-lg font-semibold text-foreground">
         Payments needing attention
-      </h1>
+      </h2>
       <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
         These guests paid after their hold expired or the booking was cancelled,
         so the money is captured but the dates are no longer held. Refund or
         re-accommodate them, then mark it handled to clear it from here.
       </p>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <Body query={query} />
       </div>
     </section>
@@ -104,7 +107,7 @@ function LapsedRow({ item }: { item: LapsedPayment }) {
             )}
           </p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {item.propertyName} — {item.unitName}
+            {item.propertyName} - {item.unitName}
           </p>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {formatDate(item.checkIn)} → {formatDate(item.checkOut)} ({nights}{" "}
