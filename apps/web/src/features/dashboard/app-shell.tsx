@@ -44,6 +44,9 @@ export function AppShell() {
             <Link to="/app/properties" className={navLink} activeProps={navLinkActive} inactiveProps={navLinkIdle}>
               Properties
             </Link>
+            <Link to="/app/settings" className={navLink} activeProps={navLinkActive} inactiveProps={navLinkIdle}>
+              Settings
+            </Link>
           </nav>
           <div className="flex items-center gap-4">
             {session && (

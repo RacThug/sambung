@@ -24,7 +24,20 @@ export const PHOTO_EXTENSIONS: Record<PhotoContentType, string> = {
 };
 
 export const MAX_PHOTO_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
-export const MAX_PHOTOS_PER_PROPERTY = 30;
+
+/**
+ * The system ceiling on a Gallery - the highest a tenant may raise its own cap
+ * to (#67, ADR-0030). This is NOT a storage quota: property count is unbounded,
+ * so it bounds one request body and one gallery grid, nothing more. The real
+ * storage guards are MAX_PHOTO_SIZE_BYTES and the orphan sweeper (ADR-0017).
+ *
+ * Mirrored by the `tenant_gallery_cap_range` CHECK. Widening it is a migration
+ * on purpose, like property_time_zone_known: it is a product decision.
+ */
+export const PHOTO_GALLERY_CEILING = 100;
+
+/** What a new tenant's cap starts at - mirrored by the column default. */
+export const DEFAULT_GALLERY_CAP = 30;
 
 export const presignPhotoRequestSchema = z.object({
   contentType: photoContentTypeSchema,
@@ -46,11 +59,16 @@ export type PresignPhotoResponse = z.infer<typeof presignPhotoResponseSchema>;
  * and delete are all "send the list you want" - idempotent by construction.
  * Key *shape* is validated here; that every key belongs to the caller's
  * tenant + property is checked in the service (needs request context).
+ *
+ * The bound here is the CEILING, not the tenant's cap: a static schema cannot
+ * know which tenant is asking. The tenant value is enforced in the service,
+ * where "never grow past the cap" can also see the gallery it is growing from
+ * (ADR-0030).
  */
 export const updatePhotosRequestSchema = z.object({
   keys: z
     .array(z.string().min(1).max(200).regex(/^[A-Za-z0-9/._-]+$/))
-    .max(MAX_PHOTOS_PER_PROPERTY)
+    .max(PHOTO_GALLERY_CEILING)
     .refine((keys) => new Set(keys).size === keys.length, {
       message: "Duplicate photo keys",
     }),

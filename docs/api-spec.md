@@ -79,6 +79,8 @@ Sources: `direct | airbnb | booking_com | vrbo | manual_block`. Transitions outs
 | 35 | `GET /bookings/:id` | Booking detail (owner, full disclosure) | M2 | - |
 | 36 | `GET /payments/lapsed` | Paid-but-lapsed inbox (owner) | **Built** (#120) | PAY-2 |
 | 37 | `POST /payments/:id/handle` | Mark a lapsed payment handled | **Built** (#120) | PAY-2 |
+| 38 | `GET /settings` | Tenant settings (gallery cap) | **Built** (#67) | PROP-1 |
+| 39 | `PATCH /settings` | Update settings (owner only) | **Built** (#67) | PROP-1 |
 
 Notifications (FR-NOTIF-1/2) have **no endpoints**: email fires on the `confirmed` transition (webhook handler); the WhatsApp `wa.me` deeplink is a field on #25's response.
 
@@ -133,7 +135,7 @@ The `409` carries `code: "property_has_bookings"` / `"unit_has_bookings"` with t
 ### 4.5 Photos - **Built** (#39, architecture §3.6)
 Shared types: `packages/shared/src/photo.ts` (`presignPhotoRequestSchema`, `presignPhotoResponseSchema`, `updatePhotosRequestSchema`).
 - `POST /properties/:id/photos/presign` body `{ contentType, size }` → 201 `{ uploadUrl, key, expiresInSeconds }`. Validates: content type in `image/jpeg|png|webp`, `size ≤ 5 MB`, property ownership. Key is tenant-prefixed (`<tenantId>/<propertyId>/<uuid>.<ext>`). Browser PUTs bytes directly to storage (Garage dev / R2 prod) - the API never proxies bytes. Content type **and** length are signed headers: an upload that doesn't repeat them exactly fails at the storage layer (403), test-proven against Garage.
-- `PATCH /properties/:id/photos` body `{ keys: string[] }` (ordered, ≤ 30, all must carry the caller's `<tenantId>/<propertyId>/` prefix - a key for another tenant OR another own property → 400) → 200 full `PropertyResponse`. Persist + reorder + delete in one idempotent set-operation. Keys **new to the gallery** must reference a real uploaded image - one ranged GET verifies existence + magic bytes against the stored content type (presigned-but-never-uploaded or junk-bytes-as-jpeg → 400); already-persisted keys are trusted, so reorders cost nothing. Orphaned objects are GC'd out-of-band (deferred).
+- `PATCH /properties/:id/photos` body `{ keys: string[] }` (ordered, ≤ the tenant's **gallery cap** - see §4.9, all must carry the caller's `<tenantId>/<propertyId>/` prefix - a key for another tenant OR another own property → 400) → 200 full `PropertyResponse`. Persist + reorder + delete in one idempotent set-operation. Keys **new to the gallery** must reference a real uploaded image - one ranged GET verifies existence + magic bytes against the stored content type (presigned-but-never-uploaded or junk-bytes-as-jpeg → 400); already-persisted keys are trusted, so reorders cost nothing. Orphaned objects are GC'd out-of-band (deferred).
 - `PropertyResponse` carries `photos: [{ key, url }]` (order = gallery order, url = `STORAGE_PUBLIC_BASE_URL/<key>`); `publishable` counts these photos.
 
 ### 4.6 Units - **Built** (#45)
@@ -179,6 +181,22 @@ The verb for **retiring inventory that has history** - the exit ADR-0002's delet
 **Not RLS.** Archive is intra-tenant visibility - the owner must still see their archived inventory, so the predicate is application-level, not a policy (which would hide it from the owner too). A tenant-isolation test covers archive/unarchive; no policy changes.
 
 > **Landed / deferred:** the **quote read** `404` for an archived Unit shipped with #47 (§5.1), and the `POST /public/bookings` → `409` (`unavailable`) refusal shipped with #48 (§5.3). The iCal export-archive-blind behavior still lands with M4 (channel-sync doesn't exist yet) - recorded here so the later build honours it.
+
+### 4.9 Tenant settings - **Built** (#67, [ADR-0030](adr/0030-a-cap-is-a-preference-the-ceiling-is-the-guard.md))
+
+Shared types: `packages/shared/src/settings.ts`. A **singular** resource - the tenant is implicit in every authenticated request, exactly as it is for `/properties`.
+
+`GET /settings` → 200 `{ galleryCap, galleryCeiling }` - readable by **any** signed-in user, because the property workbench (§4.5) needs the cap to know when a gallery is full.
+
+`PATCH /settings` body `{ galleryCap? }` → 200 the same shape - **owner only** (`@Roles('owner')`; staff → **403**, not 404: there is no existence to hide, and "you lack the role" is the actionable answer). Partial: an empty body is a no-op returning current settings. `galleryCap` outside `1..galleryCeiling` → **400** at the boundary, with the `tenant_gallery_cap_range` CHECK as the DB backstop.
+
+**The cap is a preference; the ceiling is the guard.** `PHOTO_GALLERY_CEILING = 100` lives in `packages/shared` and no tenant can raise it; `tenant.gallery_cap` (default 30) is the tenant's own line inside it. The shared `updatePhotosRequestSchema` bounds the array by the **ceiling** (a static schema cannot know which tenant is asking); the **cap** is enforced in `PropertiesService.updatePhotos`.
+
+**Lowering the cap never deletes a photo.** The photo write refuses only requests that **grow** a gallery past the cap - `keys.length > cap AND keys.length > existing.length`. Since `PATCH …/photos` is a whole-set operation, a plain `length > cap` would trap an over-cap gallery: every edit, *including the removal that would fix it*, sends more keys than the cap. Reorders and shrinks therefore always pass, and a gallery above its cap stays readable and editable until its owner trims it.
+
+**This is not a storage quota.** Property count is unbounded, so the cap bounds one request body and one gallery grid, nothing more. Bytes are bounded by `MAX_PHOTO_SIZE_BYTES` (signed into the presigned PUT) and the orphan sweeper ([ADR-0017](adr/0017-orphaned-photos-are-swept-against-the-gallery.md)).
+
+> `@Roles(...)` + `RolesGuard` (`apps/api/src/common/`) are the codebase's **first** role check, built here as the seam §3.6's staff invites extend - not a one-off `if`, which would give #57 a second authorization path to reconcile. Property-scoped permissions are deliberately out of scope here.
 
 ---
 

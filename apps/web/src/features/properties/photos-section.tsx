@@ -1,14 +1,15 @@
 import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
   MAX_PHOTO_SIZE_BYTES,
-  MAX_PHOTOS_PER_PROPERTY,
   photoContentTypeSchema,
   type PresignPhotoResponse,
   type PropertyResponse,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { uploadToPresignedUrl } from "../../lib/upload";
+import { useSettings } from "../settings/use-settings";
 
 interface UploadItem {
   id: number;
@@ -33,7 +34,12 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
   const [uploading, setUploading] = useState(false);
 
   const keys = property.photos.map((p) => p.key);
-  const galleryFull = keys.length >= MAX_PHOTOS_PER_PROPERTY;
+  // The cap is the TENANT's, not a constant (#67, ADR-0030), so it arrives with
+  // a request. Until it does, `cap` is undefined and "Add photos" stays disabled:
+  // a beat of latency is better than guessing a number and either blocking an
+  // allowed upload or letting one through to a 400.
+  const cap = useSettings().data?.galleryCap;
+  const galleryFull = cap !== undefined && keys.length >= cap;
 
   const savePhotos = useMutation({
     mutationFn: (nextKeys: string[]) =>
@@ -83,8 +89,8 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
         patch({ error: "Too large - the limit is 5 MB" });
         continue;
       }
-      if (currentKeys.length >= MAX_PHOTOS_PER_PROPERTY) {
-        patch({ error: `Gallery is full (${MAX_PHOTOS_PER_PROPERTY} photos)` });
+      if (cap !== undefined && currentKeys.length >= cap) {
+        patch({ error: `Gallery is full (${cap} photos)` });
         continue;
       }
 
@@ -236,7 +242,7 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
       <div className="mt-4 flex items-center gap-3">
         <button
           type="button"
-          disabled={busy || galleryFull}
+          disabled={busy || galleryFull || cap === undefined}
           onClick={() => inputRef.current?.click()}
           className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
@@ -244,7 +250,11 @@ export function PhotosSection({ property }: { property: PropertyResponse }) {
         </button>
         {galleryFull && (
           <span className="text-sm text-muted-foreground">
-            Gallery is full ({MAX_PHOTOS_PER_PROPERTY} photos)
+            Gallery is full ({cap} photos) - raise the limit in{" "}
+            <Link to="/app/settings" className="underline underline-offset-2">
+              Settings
+            </Link>
+            , or remove a photo.
           </span>
         )}
         {savePhotos.isError && !uploading && (

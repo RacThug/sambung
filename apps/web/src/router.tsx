@@ -203,6 +203,18 @@ const propertyEditRoute = createRoute({
   ),
 });
 
+// Tenant settings (page-spec §4.6, #67). One knob today - the gallery cap - and
+// the home #57 will hang staff/Team settings on. Readable by staff; the write is
+// owner-only and the server enforces that.
+const settingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "settings",
+  component: lazyRouteComponent(
+    () => import("./features/settings/settings-page"),
+    "SettingsPage",
+  ),
+});
+
 // Booking detail (page-spec §4.3, #50). Deep-linkable: fetches its own row, so a
 // bookmarked/forwarded link opens with a cold cache. $bookingId is the path param.
 const bookingDetailRoute = createRoute({
@@ -230,6 +242,7 @@ export const routeTree = rootRoute.addChildren([
     propertiesRoute,
     propertyEditRoute,
     bookingDetailRoute,
+    settingsRoute,
   ]),
 ]);
 

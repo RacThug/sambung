@@ -53,6 +53,19 @@ A Property's permanent public address (`/p/seminyak-beach-villa`). Minted once f
 never moved by a rename - it is where the Property lives, not what it is called.
 _Avoid_: url, permalink, handle
 
+**Gallery**:
+A Property's ordered photos. The order is the meaning: the first photo is the cover of the public
+page. It is one whole thing, not a pile - adding, reordering and removing are all "this is the
+gallery now".
+_Avoid_: images, media, album, attachments
+
+**Gallery cap**:
+How many photos one Property's Gallery may hold, chosen by the Tenant. A preference, not a quota:
+it bounds a gallery, never storage. It is bounded in turn by the **gallery ceiling**, a fixed system
+limit no Tenant can raise. Lowering the cap never removes a photo - it only stops new ones being
+added, so a Gallery above the cap stays exactly as it is until its Owner trims it.
+_Avoid_: photo limit, quota, max photos
+
 **Archived**:
 Inventory the Owner has retired. It keeps its bookings and payments, disappears from the public page
 and every new-booking path, and stays visible to the Owner as history. A Unit is Archived on its own

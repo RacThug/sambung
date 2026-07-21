@@ -75,11 +75,31 @@ export const syncConflictStatus = pgEnum("sync_conflict_status", [
 ]);
 
 // ---- Tenancy ------------------------------------------------------------------
-export const tenant = pgTable("tenant", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  name: text("name").notNull(),
-  createdAt: timestamptz("created_at").notNull().defaultNow(),
-});
+export const tenant = pgTable(
+  "tenant",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    name: text("name").notNull(),
+    // How many photos ONE Property's Gallery may hold, for this tenant (#67,
+    // ADR-0030). A preference, not a quota: the guard is PHOTO_GALLERY_CEILING
+    // in @sambung/shared, and this is the tenant's own line inside it. Lives on
+    // `tenant` rather than in a settings table because one knob does not earn a
+    // table - the same call as property.deposit_pct.
+    //
+    // Editable via PATCH /settings (owner role only). Lowering it never touches
+    // a photo: the service refuses only requests that GROW a gallery past the
+    // cap, so an over-cap gallery stays readable, reorderable and shrinkable.
+    galleryCap: smallint("gallery_cap").notNull().default(30),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Mirrors galleryCapSchema in @sambung/shared. Same reasoning as
+    // property_deposit_pct_range: the app validates for the message, the DB
+    // backstops a bypassed app check. Raising the ceiling is a migration on
+    // purpose - it is a product decision, not a config tweak.
+    check("tenant_gallery_cap_range", sql`${t.galleryCap} between 1 and 100`),
+  ],
+);
 
 export const appUser = pgTable("app_user", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),

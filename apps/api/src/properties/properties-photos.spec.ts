@@ -12,7 +12,7 @@ import { inArray } from 'drizzle-orm';
 import request from 'supertest';
 import { tenant, unit } from '@sambung/db';
 import {
-  MAX_PHOTOS_PER_PROPERTY,
+  PHOTO_GALLERY_CEILING,
   type AuthResponse,
   type PresignPhotoResponse,
   type PropertyResponse,
@@ -366,7 +366,7 @@ describe('Property photos', () => {
         tokenA,
         propA.id,
         Array.from(
-          { length: MAX_PHOTOS_PER_PROPERTY + 1 },
+          { length: PHOTO_GALLERY_CEILING + 1 },
           () => `${tenantAId}/${propA.id}/${randomUUID()}.jpg`,
         ),
       ).expect(400);
@@ -400,6 +400,92 @@ describe('Property photos', () => {
       });
       expect(put.ok).toBe(true); // storage accepts it - the PATCH must not
       await patchPhotos(tokenA, propA.id, [key]).expect(400);
+    });
+  });
+
+  // The tenant-configurable cap (#67, ADR-0030). Its own tenant, so lowering the
+  // cap here cannot reach the galleries the tests above are building.
+  describe('the gallery cap', () => {
+    let tokenC: string;
+    let propC: PropertyResponse;
+    let k1: string;
+    let k2: string;
+    let k3: string;
+
+    const setCap = (galleryCap: number) =>
+      request(server())
+        .patch('/api/settings')
+        .set('Authorization', `Bearer ${tokenC}`)
+        .send({ galleryCap })
+        .expect(200);
+
+    const photoCount = async (): Promise<number> => {
+      const res = await request(server())
+        .get(`/api/properties/${propC.id}`)
+        .set('Authorization', `Bearer ${tokenC}`)
+        .expect(200);
+      return bodyOf<PropertyResponse>(res).photos.length;
+    };
+
+    beforeAll(async () => {
+      const c = await registerTenant('Photos Tenant C');
+      tokenC = c.accessToken;
+      propC = await createProperty(tokenC, 'Photo Villa C');
+      k1 = await uploadPhoto(tokenC, propC.id);
+      k2 = await uploadPhoto(tokenC, propC.id);
+      k3 = await uploadPhoto(tokenC, propC.id);
+    });
+
+    it('accepts a gallery up to the cap and refuses the one that grows past it', async () => {
+      await setCap(2);
+      await patchPhotos(tokenC, propC.id, [k1, k2]).expect(200);
+
+      const over = await patchPhotos(tokenC, propC.id, [k1, k2, k3]).expect(
+        400,
+      );
+      expect(JSON.stringify(over.body)).toContain('Gallery is full');
+      expect(await photoCount()).toBe(2);
+    });
+
+    it('lowering the cap below a live gallery deletes nothing', async () => {
+      // The gallery is at 2 from the test above; the cap drops under it.
+      await setCap(1);
+      expect(await photoCount()).toBe(2);
+    });
+
+    it('an over-cap gallery can still be reordered and shrunk', async () => {
+      // Cap is 1, gallery is 2. Both of these send MORE keys than the cap and
+      // both must pass: neither grows the gallery. A plain `length > cap` check
+      // would trap the owner here with no way back down.
+      const reordered = await patchPhotos(tokenC, propC.id, [k2, k1]).expect(
+        200,
+      );
+      expect(
+        bodyOf<PropertyResponse>(reordered).photos.map((p) => p.key),
+      ).toEqual([k2, k1]);
+
+      await patchPhotos(tokenC, propC.id, [k2]).expect(200);
+      expect(await photoCount()).toBe(1);
+    });
+
+    it('refuses to grow back over the lowered cap, then allows it once raised', async () => {
+      // Gallery is 1, cap is 1: adding the second is a genuine new add.
+      await patchPhotos(tokenC, propC.id, [k2, k1]).expect(400);
+      expect(await photoCount()).toBe(1);
+
+      await setCap(2);
+      await patchPhotos(tokenC, propC.id, [k2, k1]).expect(200);
+      expect(await photoCount()).toBe(2);
+    });
+
+    it("one tenant's cap does not bind another's gallery", async () => {
+      // Tenant C is capped at 2; tenant A is on the default and unaffected.
+      const keys = [
+        await uploadPhoto(tokenA, propA2.id),
+        await uploadPhoto(tokenA, propA2.id),
+        await uploadPhoto(tokenA, propA2.id),
+      ];
+      await patchPhotos(tokenA, propA2.id, keys).expect(200);
     });
   });
 });

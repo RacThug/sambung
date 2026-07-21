@@ -19,6 +19,7 @@ import {
 import { propertyHasBookings } from '../common/db-error/conflicts';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
+import { SettingsService } from '../settings/settings.service';
 import { StorageService } from '../storage/storage.service';
 import {
   PropertiesRepository,
@@ -32,6 +33,7 @@ export class PropertiesService {
     private readonly tenant: TenantContext,
     private readonly storage: StorageService,
     private readonly db: TenantDbService,
+    private readonly settings: SettingsService,
   ) {}
 
   async list(): Promise<PropertyResponse[]> {
@@ -134,6 +136,26 @@ export class PropertiesService {
   ): Promise<PropertyResponse> {
     // Existence first: a foreign property must 404 regardless of the body.
     const existing = await this.getOwnedOrThrow(id);
+
+    // The tenant's gallery cap (#67, ADR-0030). The schema already bounded the
+    // array by the system CEILING; this is the tenant's own line inside it,
+    // which a static schema cannot know.
+    //
+    // The rule is "never GROW past the cap", not "never exceed it", and the
+    // difference is the whole feature. This is a whole-set PATCH, so a plain
+    // `keys.length > cap` would trap an over-cap gallery: lower the cap to 30
+    // with 40 photos live and every edit - including deleting one, which is the
+    // very thing that would fix it - arrives as more than 30 keys and is
+    // refused. Comparing against the gallery it is growing FROM lets reorders
+    // (equal length) and every shrink through, so lowering the cap blocks new
+    // adds and nothing else, and no cap change has ever needed to touch a photo.
+    const cap = await this.settings.galleryCap();
+    if (dto.keys.length > cap && dto.keys.length > existing.photos.length) {
+      throw new BadRequestException(
+        `Gallery is full - this tenant allows ${cap} photos per property`,
+      );
+    }
+
     const prefix = this.storage.photoKeyPrefix(this.tenant.tenantId, id);
     if (dto.keys.some((key) => !key.startsWith(prefix))) {
       throw new BadRequestException(

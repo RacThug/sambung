@@ -7,12 +7,15 @@ import {
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  DEFAULT_GALLERY_CAP,
+  PHOTO_GALLERY_CEILING,
   rupiahSchema,
   type AuthResponse,
   type ChannelConnectionResponse,
   type PropertyResponse,
   type PublicPropertyResponse,
   type PublicUnit,
+  type TenantSettingsResponse,
   type UnitResponse,
 } from "@sambung/shared";
 import { routeTree } from "./router";
@@ -168,6 +171,17 @@ export function channelConnectionResponse(
     lastError: null,
     openConflicts: 0,
     createdAt: "2026-07-19T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** One TenantSettingsResponse factory, same reason as the others (#67). */
+export function tenantSettingsResponse(
+  overrides: Partial<TenantSettingsResponse> = {},
+): TenantSettingsResponse {
+  return {
+    galleryCap: DEFAULT_GALLERY_CAP,
+    galleryCeiling: PHOTO_GALLERY_CEILING,
     ...overrides,
   };
 }

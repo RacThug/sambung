@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { SettingsModule } from '../settings/settings.module';
 import { StorageModule } from '../storage/storage.module';
 import { PropertiesController } from './properties.controller';
 import { PropertiesRepository } from './properties.repository';
@@ -14,7 +15,9 @@ import { PublicPropertiesService } from './public-properties.service';
 // one repository, which is the point - a Visitor's read and an Owner's read
 // answer to the same tenant scoping.
 @Module({
-  imports: [AuthModule, StorageModule], // AuthModule provides JwtAuthGuard
+  // SettingsModule provides SettingsService - the one owner of "what is this
+  // tenant's gallery cap?", which the photo write consults (#67, ADR-0030).
+  imports: [AuthModule, StorageModule, SettingsModule], // AuthModule provides JwtAuthGuard
   controllers: [PropertiesController, PublicPropertiesController],
   providers: [PropertiesService, PropertiesRepository, PublicPropertiesService],
 })

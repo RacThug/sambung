@@ -31,6 +31,7 @@ export * from "./payment-inbox";
 export * from "./photo";
 export * from "./property";
 export * from "./public-property";
+export * from "./settings";
 export * from "./slug";
 export * from "./sync-conflict";
 export * from "./unit";
