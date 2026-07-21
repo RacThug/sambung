@@ -111,9 +111,12 @@ export class IcalImportService {
     const now = new Date();
     let imported = 0;
     let cancelled = 0;
-    // The UIDs the exclusion constraint STILL refuses after this pull. Everything
-    // else that was open is, by definition, no longer a conflict - see closeHealed.
-    const conflictingUids: string[] = [];
+    let conflicts = 0;
+    // Every UID the feed offered that did NOT land, for ANY reason - an overlap we
+    // filed, or a fault we only logged. This is the set closeHealed must protect,
+    // and it is deliberately WIDER than "what conflicted": a UID that failed for an
+    // unrelated reason has not been measured as healed either (see closeHealed).
+    const notImportedUids: string[] = [];
 
     await this.dbs.db.transaction(async (tx) => {
       for (const event of parsed.events) {
@@ -123,6 +126,7 @@ export class IcalImportService {
           await tx.transaction((sp) => this.upsertEvent(sp, conn, event));
           imported++;
         } catch (err) {
+          notImportedUids.push(event.uid);
           const { code, constraint } = pgError(err) ?? {};
           if (constraint === OVERLAP_CONSTRAINT) {
             // A real-world double-sell: the OTA sold nights we already hold. File
@@ -130,7 +134,7 @@ export class IcalImportService {
             // INSERT goes to `tx`, the OUTER transaction - the savepoint that just
             // rolled back would have taken the record of itself with it.
             await this.recordConflict(tx, conn, event, now);
-            conflictingUids.push(event.uid);
+            conflicts++;
           } else {
             // Any other per-event fault is a DEFECT, not an operational conflict -
             // it stays in the log rather than in an owner's inbox, which exists for
@@ -144,7 +148,7 @@ export class IcalImportService {
       }
 
       cancelled = await this.cancelAbsent(tx, conn, parsed.events);
-      await this.closeHealed(tx, conn, parsed.events, conflictingUids, now);
+      await this.closeHealed(tx, conn, parsed.events, notImportedUids, now);
 
       await tx
         .update(channelConnection)
@@ -159,10 +163,10 @@ export class IcalImportService {
         );
     });
 
-    if (imported > 0 || cancelled > 0 || conflictingUids.length > 0) {
+    if (imported > 0 || cancelled > 0 || conflicts > 0) {
       this.logger.log(
         `Synced connection ${conn.id}: ${imported} reconciled, ${cancelled} cancelled` +
-          `, ${conflictingUids.length} conflicted`,
+          `, ${conflicts} conflicted`,
       );
     }
     return {
@@ -171,7 +175,7 @@ export class IcalImportService {
       lastError: null,
       imported,
       cancelled,
-      conflicts: conflictingUids.length,
+      conflicts,
     };
   }
 
@@ -227,6 +231,13 @@ export class IcalImportService {
    * Runs in its OWN savepoint: this is the code that exists so one bad VEVENT can't
    * sink a cycle, so it must not become the thing that sinks one. If filing the
    * conflict somehow fails, the outer transaction survives and the sync completes.
+   *
+   * The Drizzle lives here rather than in SyncConflictsRepository - which looks like a
+   * layering break (controller → service → repository) but isn't a choice: that
+   * repository runs on TenantDbService (the authed owner's RLS connection), while
+   * this runs on DbService (RLS-bypassed, no principal) and must join the caller's
+   * open transaction to stay inside the savepoint. They are different connections,
+   * so they cannot share one repository. Same shape as upsertEvent/cancelAbsent (#56).
    */
   private async recordConflict(
     tx: DbTx,
@@ -279,13 +290,20 @@ export class IcalImportService {
   }
 
   /**
-   * Close every open conflict on this connection the world has since fixed - in one
-   * statement, because "fixed" has exactly one definition: **the feed still describes
-   * it and the constraint no longer refuses it, or the feed no longer describes it at
-   * all.** Both are the complement of `conflictingUids` (what still refused THIS
-   * pull), so both close together:
-   *   - the blocking booking was cancelled → the upsert succeeded this cycle
-   *   - the OTA withdrew its double-sold event → the UID is gone from the feed
+   * Close every open conflict the world has since fixed - in one statement, because
+   * "fixed" resolves to a single set. `resolved` is a MEASUREMENT (ADR-0027), so it
+   * may only be written where this pull actually measured the clash gone. There are
+   * exactly two such observations:
+   *   - the blocking booking was cancelled → the UID's upsert SUCCEEDED this cycle
+   *   - the OTA withdrew its double-sold event → the UID is absent from the feed
+   *
+   * Both are the complement of `notImportedUids` - every UID the feed offered that
+   * did not land. That set is deliberately wider than "what overlapped": a VEVENT
+   * that failed for an unrelated reason (a deadlock, a transient fault, a defect)
+   * was NOT measured as healed either, and stamping its conflict `resolved` would
+   * silently drop a live double-sell out of the inbox. Narrowing this to overlaps
+   * alone was a real bug, caught in review - the invariant to hold onto is that
+   * closing requires a POSITIVE observation, and a failure of any kind is not one.
    *
    * Guarded by `events.length >= 1`, the SAME rule as cancelAbsent and for the same
    * reason: on a healthy-but-empty feed every UID looks absent, and mass-closing an
@@ -299,7 +317,7 @@ export class IcalImportService {
     tx: DbTx,
     conn: ChannelConnection,
     events: ImportedEvent[],
-    conflictingUids: string[],
+    notImportedUids: string[],
     now: Date,
   ): Promise<void> {
     if (events.length === 0) return;
@@ -312,9 +330,9 @@ export class IcalImportService {
           eq(syncConflict.tenantId, conn.tenantId),
           eq(syncConflict.status, 'open'),
           // notInArray with an empty list is a no-op filter in drizzle, which is
-          // exactly right here: nothing conflicted, so every open row healed.
-          conflictingUids.length > 0
-            ? notInArray(syncConflict.externalUid, conflictingUids)
+          // exactly right here: every offered UID landed, so every open row healed.
+          notImportedUids.length > 0
+            ? notInArray(syncConflict.externalUid, notImportedUids)
             : undefined,
         ),
       );

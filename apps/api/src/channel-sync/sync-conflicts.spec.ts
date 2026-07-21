@@ -20,6 +20,7 @@ import { AppModule } from '../app.module';
 import { DbService } from '../db/db.service';
 import { FakeIcalFetcher } from './fake-ical-fetcher';
 import { ICAL_FETCHER } from './ical-fetcher';
+import { IcalImportService } from './ical-import.service';
 import { buildCalendar } from './ical';
 
 /**
@@ -523,6 +524,46 @@ describe('sync-conflict inbox (#38)', () => {
 
     const [after] = await conflictRows(connId);
     expect(after.status).toBe('open');
+  });
+
+  it('does NOT resolve a conflict whose VEVENT failed for an unrelated reason', async () => {
+    // Regression (found in review): closing used to be keyed on "did not overlap
+    // this cycle", so a VEVENT that failed for ANY other reason - a deadlock, a
+    // transient fault - fell into the healed complement and its live double-sell was
+    // silently stamped `resolved`, dropping out of the inbox. `resolved` is a
+    // MEASUREMENT (ADR-0027): closing needs a POSITIVE observation that the clash is
+    // gone, and a failure of any kind is not one.
+    const { unitId, connId, feedUrl } = await connectUnit();
+    const start = daysFromToday(360);
+    const end = daysFromToday(363);
+    await occupy(unitId, start, end);
+    fake.setFeed(feedUrl, feedWith([{ uid: 'faulty', start, end }]));
+
+    await syncNow(connId).expect(200);
+    expect((await conflictRows(connId))[0].status).toBe('open');
+
+    // Next cycle the SAME event fails, but with a deadlock rather than the overlap.
+    // The blocking booking is still there; nothing has healed.
+    const importer = app.get(IcalImportService);
+    const upsert = jest
+      .spyOn(
+        importer as unknown as {
+          upsertEvent: (...args: unknown[]) => Promise<void>;
+        },
+        'upsertEvent',
+      )
+      .mockRejectedValue(
+        Object.assign(new Error('deadlock detected'), { code: '40P01' }),
+      );
+    try {
+      await syncNow(connId).expect(200);
+    } finally {
+      upsert.mockRestore();
+    }
+
+    const [after] = await conflictRows(connId);
+    expect(after.status).toBe('open');
+    expect(after.closedAt).toBeNull();
   });
 
   // --- AC6: the count surfaces on the connection (the §7.2 field #55 deferred) ---

@@ -23,11 +23,8 @@ import {
  * (RLS + an explicit `tenant_id`), so there is no ownership check to run here - every
  * row this service can reach already belongs to the caller.
  *
- * There is deliberately no `resolve` method. Resolving a conflict means cancelling the
- * blocking booking in the REAL world; the next sync then measures that the constraint
- * no longer refuses and closes the row itself. A "mark resolved" button would let the
- * inbox claim something the constraint disagrees with - the read disagreeing with the
- * write, which is the one thing this codebase's whole spine is built to prevent.
+ * There is deliberately no `resolve` method - see the contract in
+ * `packages/shared/src/sync-conflict.ts` for why, and ADR-0027 for the full argument.
  */
 @Injectable()
 export class SyncConflictsService {

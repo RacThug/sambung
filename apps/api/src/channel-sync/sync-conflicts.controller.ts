@@ -45,8 +45,7 @@ export class SyncConflictsController {
 
   // Dismiss one - a verb-subresource like /bookings/:id/cancel and
   // /payments/:id/handle. Idempotent: dismissing twice returns the same 200.
-  // Unknown / cross-tenant id → 404. There is NO matching `resolve` route: that is
-  // the next sync's measurement to make, not a button's claim (api-spec §7.5).
+  // Unknown / cross-tenant id → 404. There is NO matching `resolve` route (§7.5).
   @Post(':id/dismiss')
   @HttpCode(200)
   dismiss(

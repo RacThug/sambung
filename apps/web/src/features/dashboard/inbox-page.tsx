@@ -1,5 +1,5 @@
 import { SyncConflictsSection } from "../channels/sync-conflicts-section";
-import { LapsedPaymentsSection } from "../payments/lapsed-payments-page";
+import { LapsedPaymentsSection } from "../payments/lapsed-payments-section";
 
 /**
  * The operations inbox - `/app/inbox`. One page for everything where Sambung took

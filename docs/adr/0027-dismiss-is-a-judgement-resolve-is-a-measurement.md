@@ -58,13 +58,19 @@ owner engineering noise is one they stop opening.
 **4. A conflict closes by being re-measured, and only ever heals itself.** There is no
 `resolve` endpoint. Resolving means cancelling the blocking booking in the *real
 world*; the next sync then observes that the constraint no longer refuses, and closes
-the row. One statement does it, because "healed" has exactly one definition: **the
-complement of what still conflicted on this pull** - which covers both the blocking
-booking being cancelled (the upsert now succeeds) and the OTA withdrawing its event
-(the UID is gone). That close is guarded by `events.length >= 1`, the *same* rule
-ADR-0025 put on the absent-UID cancellation and for the same reason: on a healthy-but-
-empty feed every UID looks absent, and mass-closing an owner's inbox on a feed that may
-have been truncated to zero is the same mistake as mass-cancelling their bookings.
+the row. One statement does it, because closing requires a **positive observation**,
+and there are exactly two: the UID's upsert *succeeded* this cycle (the blocking
+booking was cancelled), or the UID is *absent from the feed* (the OTA withdrew its
+event). Both are the complement of **every UID the feed offered that did not land** -
+which is deliberately wider than "what overlapped". Keying it on overlaps alone was a
+real bug, caught in review: a VEVENT failing for an unrelated reason (a deadlock, a
+transient fault) fell into the healed complement, so a live double-sell was stamped
+`resolved` and silently left the inbox. *A failure of any kind is not a measurement
+that the clash is gone.* The close is further guarded by `events.length >= 1`, the
+*same* rule ADR-0025 put on the absent-UID cancellation and for the same reason: on a
+healthy-but-empty feed every UID looks absent, and mass-closing an owner's inbox on a
+feed that may have been truncated to zero is the same mistake as mass-cancelling their
+bookings.
 
 **5. Re-detection treats the two closed states differently - the load-bearing rule.**
 
@@ -113,6 +119,13 @@ counts fill the field api-spec §7.2 reserved and #55 shipped without a source.
   gets a call about a double-sold week needs to see it happened, and #38's own auto-heal
   criterion is stated as *closing* a conflict, not erasing one. Cheap to keep, and
   `resolved` is what makes reopening (#5) expressible.
+- **Close only on a successful import, per the issue's literal wording** (*"if the
+  import now succeeds, mark the conflict `resolved`"*). Rejected: a UID the OTA has
+  withdrawn is never retried, so its conflict would sit open forever, and the owner
+  would have to hand-dismiss every double-sell the other side cancelled - turning
+  dismiss into routine clean-up and eroding its meaning as a judgement (decision 5).
+  Withdrawal is a genuine observation that the clash is gone, and it runs under the
+  same never-guess-from-a-doubtful-feed guard.
 - **Store `raw_vevent` as the issue specified.** Rejected - see decision 2.
 - **A separate `/app/sync-conflicts` page.** Rejected - see decision 8.
 

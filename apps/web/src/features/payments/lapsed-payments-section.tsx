@@ -107,7 +107,7 @@ function LapsedRow({ item }: { item: LapsedPayment }) {
             )}
           </p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {item.propertyName} — {item.unitName}
+            {item.propertyName} - {item.unitName}
           </p>
           <p className="mt-0.5 text-sm text-muted-foreground">
             {formatDate(item.checkIn)} → {formatDate(item.checkOut)} ({nights}{" "}

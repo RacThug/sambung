@@ -72,7 +72,7 @@ function ConflictRow({ item }: { item: SyncConflict }) {
             </span>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {item.propertyName} — {item.unitName}
+            {item.propertyName} - {item.unitName}
           </p>
           <p className="mt-0.5 text-sm text-foreground">
             {formatDate(item.stay.from)} → {formatDate(item.stay.to)} ({nights}{" "}

@@ -61,7 +61,7 @@ describe("sync-conflict inbox section (#38)", () => {
       await screen.findByText(/Airbnb booking couldn’t be imported/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Seminyak Beach Villa — Garden Room 1"),
+      screen.getByText("Seminyak Beach Villa - Garden Room 1"),
     ).toBeInTheDocument();
     expect(screen.getByText(/10 Feb 2030 → 13 Feb 2030 \(3 nights\)/))
       .toBeInTheDocument();

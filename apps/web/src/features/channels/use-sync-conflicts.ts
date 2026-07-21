@@ -25,10 +25,8 @@ export function useSyncConflicts() {
  * settle either way: a 404 means the row is already gone, and refetching shows the
  * truth instead of leaving a stuck item.
  *
- * There is no "resolve" mutation, deliberately (api-spec §7.5): resolving means
- * cancelling the blocking booking, after which the next sync measures that the clash
- * is gone. A button here that marked it resolved would be the UI asserting something
- * the exclusion constraint has not agreed to.
+ * There is no "resolve" mutation because there is no such endpoint (api-spec §7.5,
+ * ADR-0027) - resolution is measured by the next sync, not asserted by a button.
  */
 export function useDismissConflict() {
   const queryClient = useQueryClient();
