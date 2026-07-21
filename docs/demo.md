@@ -17,10 +17,15 @@ a live link-preview crawler), the script says so instead of pretending.
 
 ```bash
 pnpm install
-docker compose up -d                     # Postgres + Garage (photo storage)
+docker compose up -d                          # Postgres + Garage (photo storage)
+cp packages/db/.env.example packages/db/.env  # dev fixture credentials, committed on purpose
+cp apps/api/.env.example apps/api/.env
 pnpm --filter @sambung/db db:migrate
 pnpm --filter @sambung/db db:setup-role
 ```
+
+Do not skip the two `cp` lines. `scripts/load-env.ts` reads the `.env` with a silent catch and
+no fallback, so without them `db:migrate` has no `DATABASE_URL` and fails on a fresh clone.
 
 **Immediately before you present** (this is the "fresh `db:reset`" the acceptance criterion means)
 
@@ -33,24 +38,29 @@ pnpm dev                                 # web on :5173, api on :3000           
 
 ```
 Demo logins: owner@balibreeze.test / owner@ubudretreats.test - password "sambung123"
-Demo window (all future, half-open):
-  first bookable night   2026-07-22  (Whole Villa is free from here)
-  Wayan D., paid direct  2026-07-28 -> 2026-08-01  (Whole Villa)
-  refused Airbnb import  2026-07-29 -> 2026-08-02  (the inbox conflict)
-  Komang S., live hold   2026-07-30 -> 2026-08-02  (Garden Room, 15 min)
-  imported from Airbnb   2026-08-06 -> 2026-08-10  (Whole Villa)
-  maintenance block      2026-08-10 -> 2026-08-13  (Surf Loft)
+Demo window (all future, half-open, all within a week):
+  Wayan D., paid direct  2026-07-22 -> 2026-07-25  (Whole Villa)
+  refused Airbnb import  2026-07-23 -> 2026-07-26  (the inbox conflict)
+  Komang S., live hold   2026-07-23 -> 2026-07-25  (Garden Room, 15 min)
+  maintenance block      2026-07-24 -> 2026-07-27  (Surf Loft)
+  imported from Airbnb   2026-07-27 -> 2026-07-29  (Whole Villa)
+  bookable gap           2026-07-25 -> 2026-07-27  (Whole Villa, 2 nights = its min stay)
 ```
 
-Those dates move with the calendar: they are anchored to *today*, never to fixed dates, so
-the funnel (which hides the past) and the export feed (which serves current and future stays)
-always have something to show. The script never names an absolute date for that reason.
+Those dates move with the calendar: they are anchored to *today*, never to fixed dates, so the
+funnel (which hides the past) and the export feed (which serves current and future stays) always
+have something to show. The script never names an absolute date for that reason.
+
+Everything also starts within six days, so the dashboard's opening screen (which shows the
+current calendar month) has every bar on it. The one case that cannot work is the last few days
+of a month, when the month has no future days left to put them in: `db:reset` prints a NOTE
+telling you to click the next-month arrow, and there is nothing else to be done about it.
 
 **Two things to have ready**
 
 | | Why |
 |---|---|
-| `MIDTRANS_SERVER_KEY` in `apps/api/.env` | Sandbox key from [dashboard.sandbox.midtrans.com](https://dashboard.sandbox.midtrans.com) → Settings → Access Keys. Without it, Act 2's payment step returns *"Payments are not configured"*. See the fallback at the end of Act 2. |
+| `MIDTRANS_SERVER_KEY` in `apps/api/.env` | Sandbox key from [dashboard.sandbox.midtrans.com](https://dashboard.sandbox.midtrans.com) → Settings → Access Keys. Without it, Act 2's payment step leaves the guest on **"Your dates are held"** with **"Payment couldn't start. Please try again."** and a **Retry payment** button. (The server-side cause, in the API log, is *"Payments are not configured (MIDTRANS_SERVER_KEY is unset)"*.) See the fallback at the end of Act 2. |
 | Two browser windows | One signed in as the owner, one for the guest. Use a private window for the guest so the two sessions do not share a token. |
 
 **The 15-minute hold is real.** The seeded hold on the Garden Room expires 15 minutes after
@@ -80,14 +90,16 @@ talking and clicking: the machine is never the thing you are waiting for. Budget
 1. Open **http://localhost:5173/login**. Sign in as **`owner@balibreeze.test`** /
    **`sambung123`**.
 
-2. You land on **`/app/calendar`**, the unified calendar, already populated. One row per
-   *unit* across every property, bars coloured by source, the unpaid hold hatched.
+2. You land on **`/app/calendar`**, the unified calendar. One row per *unit* across every
+   property. On the four seeded stays you should see all three bar colours - a direct booking,
+   an Airbnb-imported one, a maintenance block - plus the unpaid hold, hatched.
 
    > "This is the owner's whole business on one screen. Every bar is a `booking` row. There is
    > no availability table anywhere in this system: free means no row overlaps you."
 
-   The view opens on the current month. If the seeded stays start after the month ends, click
-   **›** once.
+   The view opens on the current calendar month, and the seeded stays start within six days, so
+   they are on it - unless you seeded in the last few days of a month, in which case `db:reset`
+   printed a NOTE and you click **›** once.
 
 3. **Properties** in the top nav → **New property** → name it **`Uluwatu Cliff House`** →
    **Create**.
@@ -99,7 +111,9 @@ talking and clicking: the machine is never the thing you are waiting for. Budget
 
    Note the banner: *"The public page is live, but incomplete - it needs at least one photo
    and one unit with a price before it's worth sharing."* That is a checklist, not a gate.
-   The page is already live. (Optional, 15s: drag a photo into **Photos** → **Add photos**.)
+   The page is already live. (Optional, 15s: drag a photo into **Photos** → **Add photos**. The
+   browser uploads it straight to object storage with a presigned URL; the API never touches
+   the bytes.)
 
 5. Scroll to **Units**. In the bottom row of the table type **`Cliff Suite`**, price
    **`2000000`**, guests **`2`**, min stay **`1`** → **Add unit**.
@@ -113,7 +127,10 @@ talking and clicking: the machine is never the thing you are waiting for. Budget
 
 ## Act 2 - the guest books and pays (2m)
 
-7. In the **guest window**, paste the link: **http://localhost:5173/p/uluwatu-cliff-house**.
+7. In the **guest window**, paste **the link you just copied**. On a fresh seed it is
+   `http://localhost:5173/p/uluwatu-cliff-house`, but do not type that from memory: slugs are
+   minted once and never reused, so rehearsing twice without re-seeding gives the second
+   property a random suffix (ADR-0004) and the remembered URL 404s.
 
    Optional (10s, the i18n beat): switch the **Language** selector top-right to
    **Bahasa Indonesia**, then back. Dates, nights and copy follow the language; prices stay in
@@ -173,6 +190,7 @@ empty day of the unit's row, choose **Walk-in**, and **Add walk-in**. That booki
     ```
     BEGIN:VEVENT
     UID:<the booking id>
+    DTSTAMP:20260721T075658Z
     DTSTART;VALUE=DATE:<check-in>
     DTEND;VALUE=DATE:<check-out>
     SUMMARY:Unavailable (Sambung)
@@ -192,9 +210,14 @@ empty day of the unit's row, choose **Walk-in**, and **Add walk-in**. That booki
 
 15. Connect the other direction while you are here: in the same panel pick a **Channel**, paste
     a public https `.ics` URL (a Google Calendar "secret address in iCal format" works as an
-    OTA stand-in), and **Connect**. A feed that is unreachable still connects, with a **Sync
-    error** badge rather than a refusal. Private and loopback hosts are rejected outright, so
-    a `localhost` feed will not work here on purpose.
+    OTA stand-in), and **Connect**.
+
+    Two different refusals live here, and it is worth being precise about which is which. A
+    non-`https` URL never reaches the network at all: zod rejects it at the boundary with
+    *"must be an https URL"*. An https URL always **connects** - the smoke fetch only decides
+    the badge - so an unreachable feed, or one pointing at a private or loopback address, lands
+    as a **Sync error** with `lastError` reading *"Feed host is not allowed"*. That second one
+    is the SSRF guard refusing to *fetch*, not the endpoint refusing to *save*.
 
     > "The import runs every 30 minutes, or on demand. Each event gets its own savepoint, so
     > one bad event skips instead of killing the cycle, and a truncated feed is detected and
@@ -207,8 +230,8 @@ empty day of the unit's row, choose **Walk-in**, and **Add walk-in**. That booki
 16. Open **Inbox** in the top nav (**`/app/inbox`**). Under **Calendar conflicts**:
 
     *"Airbnb booking couldn't be imported"* · Seminyak Beach Villa - Whole Villa · the stay
-    dates · **First seen** two days ago, and under **Already booked here**, Wayan D.'s
-    confirmed direct booking on overlapping nights.
+    dates · **First seen** with a date two days back, and under **Already booked here**,
+    Wayan D.'s confirmed direct booking on overlapping nights.
 
     > "Airbnb sold nights this owner had already sold direct, and been paid for. The import
     > tried to write it and the exclusion constraint refused, so the system did the one safe
@@ -224,8 +247,11 @@ empty day of the unit's row, choose **Walk-in**, and **Add walk-in**. That booki
     > this by itself. Dismiss is a judgement, so it stays dismissed. Anything the system
     > measures again can come back."
 
-17. Click **View booking ›** on the blocking booking to land on the reservation, then **Dismiss**
-    the conflict. It leaves the inbox.
+17. Click **Dismiss** on the conflict. It leaves the inbox.
+
+    Then, if you want the last beat: **View booking ›** under *Already booked here* opens the
+    blocking reservation at `/app/bookings/<id>` - the stay that won, guest and all. That link
+    navigates away from the inbox, so take it last, or use the browser back button to return.
 
 Below it sits the inbox's other half, **Payments needing attention**. The seed leaves it on
 **All clear**, deliberately: it fills when a guest pays *after* their hold lapsed, so the money is
@@ -263,9 +289,10 @@ than discovered by a guest at the door.
 
 | Symptom | Fix |
 |---|---|
+| `db:migrate` cannot find `DATABASE_URL` | The `cp .env.example .env` steps were skipped. `load-env.ts` swallows the missing file. |
 | Login fails | The seed ran against a different database than the API. Check `DATABASE_URL` in `apps/api/.env` and `packages/db/.env` match. |
-| The calendar looks empty | The default view is the current month and the seeded stays start about a week out. Click **›**. |
-| *"Payments are not configured"* | `MIDTRANS_SERVER_KEY` is unset. Use the Act 2 fallback. |
+| The calendar looks empty | You seeded in the last few days of a month, so the stays are in the next one. Click **›**. `db:reset` warns when this applies. |
+| **"Payment couldn't start. Please try again."** on a "Your dates are held" panel | `MIDTRANS_SERVER_KEY` is unset (the API log says so plainly). Use the Act 2 fallback. |
 | The public page 404s | The property is archived, or the slug is wrong. An archived property's URL stays reserved and returns 404 on purpose. |
 | Photos do not load | Garage is down (`docker compose up -d`). The rest of the demo is unaffected. |
 | The hold has already lapsed | Re-run `db:reset` (about 3 seconds). |
