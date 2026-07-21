@@ -75,11 +75,13 @@ export type CreateChannelConnectionRequest = z.infer<
  * surface the health (FR-SYNC-3). `importIcalUrl` is echoed so the UI can show
  * what an owner connected without re-typing it.
  *
- * Deliberately NOT carrying `openConflicts` (spec'd in §7.2): the sync-conflict
- * inbox belongs to the iCal IMPORT pipeline (#38, boss fight #3), which is a
- * separate M4 issue - there is no `sync_conflict` table to count yet, and a
- * hard-coded 0 would be a field with no source. It joins this shape when the
- * import side lands.
+ * `openConflicts` was deferred when this shape shipped (#55) - there was no
+ * `sync_conflict` table to count, and a hard-coded 0 would have been a field with no
+ * source. #38 built the table, so it now has one: how many imported VEVENTs this
+ * connection currently cannot land because they overlap an existing booking (a
+ * real-world double-sell). A non-zero count is health information exactly like
+ * `lastStatus` - the feed is reachable and parsing fine, yet not everything in it is
+ * making it in (FR-SYNC-3: failures surface, never silent).
  */
 export const channelConnectionResponseSchema = z.object({
   id: z.string().uuid(),
@@ -89,6 +91,7 @@ export const channelConnectionResponseSchema = z.object({
   lastSyncedAt: z.string().nullable(), // ISO-8601 UTC or null
   lastStatus: syncStatusSchema,
   lastError: z.string().nullable(),
+  openConflicts: z.number().int().nonnegative(),
   createdAt: z.string(), // ISO-8601 UTC
 });
 export type ChannelConnectionResponse = z.infer<
@@ -118,6 +121,12 @@ export type DisconnectChannelResponse = z.infer<
  * events reconciled, and OTA-side cancellations reflected. Both are 0 on an
  * unhealthy feed (nothing changed), so a `lastStatus: 'error'` response is
  * unambiguous.
+ *
+ * `conflicts` (#38) counts VEVENTs this pull could NOT land because they overlap a
+ * booking Sambung already holds - a real-world double-sell, now filed in the inbox.
+ * It is reported separately from `imported` rather than folded into `lastStatus:
+ * 'error'` on purpose: the feed was perfectly healthy, and the owner needs "3 in, 1
+ * clashed" rather than a red badge that hides the 3.
  */
 export const syncConnectionResponseSchema = z.object({
   lastStatus: syncStatusSchema,
@@ -125,6 +134,7 @@ export const syncConnectionResponseSchema = z.object({
   lastError: z.string().nullable(),
   imported: z.number().int().nonnegative(),
   cancelled: z.number().int().nonnegative(),
+  conflicts: z.number().int().nonnegative(),
 });
 export type SyncConnectionResponse = z.infer<
   typeof syncConnectionResponseSchema

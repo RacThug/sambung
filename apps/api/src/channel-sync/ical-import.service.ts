@@ -4,6 +4,7 @@ import {
   booking,
   channelConnection,
   pgError,
+  syncConflict,
   type BookingSource,
   type ChannelConnection,
   type DbTx,
@@ -23,7 +24,18 @@ export interface SyncOutcome {
   lastError: string | null;
   imported: number;
   cancelled: number;
+  /** VEVENTs this pull could not land because they overlap an existing occupying
+   * booking - a real-world double-sell, recorded in the `sync_conflict` inbox for
+   * the owner to resolve (#38). Not an error: the feed was healthy and the rest of
+   * it imported. */
+  conflicts: number;
 }
+
+/** The constraint whose refusal MEANS "the outside world double-sold these nights".
+ * Keyed on the constraint NAME, not bare SQLSTATE 23P01, for ADR-0012's reason: the
+ * DB names the domain fact, and a future exclusion constraint on some other table
+ * must not silently start filing sync conflicts. */
+const OVERLAP_CONSTRAINT = 'booking_no_overlap';
 
 /**
  * The iCal IMPORT pipeline (#56, boss fight #3, architecture flow B). Pulls each
@@ -99,6 +111,9 @@ export class IcalImportService {
     const now = new Date();
     let imported = 0;
     let cancelled = 0;
+    // The UIDs the exclusion constraint STILL refuses after this pull. Everything
+    // else that was open is, by definition, no longer a conflict - see closeHealed.
+    const conflictingUids: string[] = [];
 
     await this.dbs.db.transaction(async (tx) => {
       for (const event of parsed.events) {
@@ -108,19 +123,28 @@ export class IcalImportService {
           await tx.transaction((sp) => this.upsertEvent(sp, conn, event));
           imported++;
         } catch (err) {
-          // 23P01 = overlaps an existing occupying booking (a real double-sell),
-          // or any other per-event fault. Skip it, keep the cycle alive. Recording
-          // it in a `sync_conflict` inbox is #38 - this is where that INSERT lands
-          // (db-design §4.8).
-          const code = pgError(err)?.code;
-          this.logger.warn(
-            `Skipping VEVENT ${event.uid} on connection ${conn.id}` +
-              `${code ? ` (${code})` : ''}: ${String(err)}`,
-          );
+          const { code, constraint } = pgError(err) ?? {};
+          if (constraint === OVERLAP_CONSTRAINT) {
+            // A real-world double-sell: the OTA sold nights we already hold. File
+            // it in the inbox for a human to resolve and keep going (#38). NOTE the
+            // INSERT goes to `tx`, the OUTER transaction - the savepoint that just
+            // rolled back would have taken the record of itself with it.
+            await this.recordConflict(tx, conn, event, now);
+            conflictingUids.push(event.uid);
+          } else {
+            // Any other per-event fault is a DEFECT, not an operational conflict -
+            // it stays in the log rather than in an owner's inbox, which exists for
+            // things a human can actually go and fix in the real world.
+            this.logger.warn(
+              `Skipping VEVENT ${event.uid} on connection ${conn.id}` +
+                `${code ? ` (${code})` : ''}: ${String(err)}`,
+            );
+          }
         }
       }
 
       cancelled = await this.cancelAbsent(tx, conn, parsed.events);
+      await this.closeHealed(tx, conn, parsed.events, conflictingUids, now);
 
       await tx
         .update(channelConnection)
@@ -135,9 +159,10 @@ export class IcalImportService {
         );
     });
 
-    if (imported > 0 || cancelled > 0) {
+    if (imported > 0 || cancelled > 0 || conflictingUids.length > 0) {
       this.logger.log(
-        `Synced connection ${conn.id}: ${imported} reconciled, ${cancelled} cancelled`,
+        `Synced connection ${conn.id}: ${imported} reconciled, ${cancelled} cancelled` +
+          `, ${conflictingUids.length} conflicted`,
       );
     }
     return {
@@ -146,6 +171,7 @@ export class IcalImportService {
       lastError: null,
       imported,
       cancelled,
+      conflicts: conflictingUids.length,
     };
   }
 
@@ -180,6 +206,118 @@ export class IcalImportService {
         targetWhere: sql`${booking.externalUid} is not null`,
         set: { checkIn: event.start, checkOut: event.end, status: 'confirmed' },
       });
+  }
+
+  /**
+   * File one refused VEVENT in the conflict inbox (#38, ADR-0027) - the seam
+   * ADR-0025 built this catch for. Idempotent by `(channel_connection_id,
+   * external_uid)`: re-polling a feed that still double-sells UPDATEs the one row
+   * rather than growing the inbox every 30 minutes (AC #2).
+   *
+   * The status rule on re-detection is the subtle part, and it is asymmetric on
+   * purpose (ADR-0027):
+   *   - `open`      → stays open. Only `last_seen_at` and the stay move.
+   *   - `dismissed` → STAYS dismissed. The owner judged this UID a non-issue; if
+   *     re-detection reopened it, every cron tick would undo that judgement and the
+   *     inbox would become noise the owner learns to ignore.
+   *   - `resolved`  → reopens. `resolved` is a measurement ("the constraint no
+   *     longer refuses this"), and this pull just measured the opposite - the nights
+   *     were freed and then re-taken, which is genuinely new information.
+   *
+   * Runs in its OWN savepoint: this is the code that exists so one bad VEVENT can't
+   * sink a cycle, so it must not become the thing that sinks one. If filing the
+   * conflict somehow fails, the outer transaction survives and the sync completes.
+   */
+  private async recordConflict(
+    tx: DbTx,
+    conn: ChannelConnection,
+    event: ImportedEvent,
+    now: Date,
+  ): Promise<void> {
+    try {
+      await tx.transaction(async (sp) => {
+        await sp
+          .insert(syncConflict)
+          .values({
+            tenantId: conn.tenantId,
+            channelConnectionId: conn.id,
+            unitId: conn.unitId,
+            externalUid: event.uid,
+            checkIn: event.start,
+            checkOut: event.end,
+            status: 'open',
+            firstDetectedAt: now,
+            lastSeenAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [
+              syncConflict.channelConnectionId,
+              syncConflict.externalUid,
+            ],
+            set: {
+              // The stay can move: an OTA may shift the double-sold dates between
+              // polls, and the inbox must describe the CURRENT clash.
+              checkIn: event.start,
+              checkOut: event.end,
+              lastSeenAt: now,
+              // `first_detected_at` is deliberately absent - "since when" is the
+              // one fact a re-detection must not overwrite.
+              status: sql`case when ${syncConflict.status} = 'resolved'
+                            then 'open'::sync_conflict_status
+                            else ${syncConflict.status} end`,
+              closedAt: sql`case when ${syncConflict.status} = 'resolved'
+                              then null else ${syncConflict.closedAt} end`,
+            },
+          });
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to record sync conflict for VEVENT ${event.uid} on connection ` +
+          `${conn.id}: ${String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Close every open conflict on this connection the world has since fixed - in one
+   * statement, because "fixed" has exactly one definition: **the feed still describes
+   * it and the constraint no longer refuses it, or the feed no longer describes it at
+   * all.** Both are the complement of `conflictingUids` (what still refused THIS
+   * pull), so both close together:
+   *   - the blocking booking was cancelled → the upsert succeeded this cycle
+   *   - the OTA withdrew its double-sold event → the UID is gone from the feed
+   *
+   * Guarded by `events.length >= 1`, the SAME rule as cancelAbsent and for the same
+   * reason: on a healthy-but-empty feed every UID looks absent, and mass-closing an
+   * owner's inbox on the strength of a feed that may have been truncated to zero is
+   * the same mistake as mass-cancelling their bookings.
+   *
+   * `dismissed` rows are untouched (the WHERE is `status = 'open'`): a judgement is
+   * not something a measurement gets to un-make.
+   */
+  private async closeHealed(
+    tx: DbTx,
+    conn: ChannelConnection,
+    events: ImportedEvent[],
+    conflictingUids: string[],
+    now: Date,
+  ): Promise<void> {
+    if (events.length === 0) return;
+    await tx
+      .update(syncConflict)
+      .set({ status: 'resolved', closedAt: now })
+      .where(
+        and(
+          eq(syncConflict.channelConnectionId, conn.id),
+          eq(syncConflict.tenantId, conn.tenantId),
+          eq(syncConflict.status, 'open'),
+          // notInArray with an empty list is a no-op filter in drizzle, which is
+          // exactly right here: nothing conflicted, so every open row healed.
+          conflictingUids.length > 0
+            ? notInArray(syncConflict.externalUid, conflictingUids)
+            : undefined,
+        ),
+      );
   }
 
   /**
@@ -239,6 +377,7 @@ export class IcalImportService {
       lastError: error,
       imported: 0,
       cancelled: 0,
+      conflicts: 0,
     };
   }
 }

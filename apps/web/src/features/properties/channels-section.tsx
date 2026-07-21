@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   channelSchema,
@@ -25,9 +26,10 @@ import { Input } from "@/components/ui/input";
  * OTA calendar. So this is one panel per Unit: its export .ics link to paste OUT
  * to the OTAs, plus the connections that pull their bookings IN.
  *
- * The IMPORT health/conflict view is a separate fleet-wide page (§4.6, a later
- * M4 issue); here we only connect, list status, disconnect, and hand over the
- * export URL.
+ * Here we connect, list status, disconnect, and hand over the export URL. Sync
+ * CONFLICTS get a count badge per connection (#38) but are acted on in the inbox
+ * (`/app/inbox`) - one conflict is about two bookings across two systems, which is
+ * a reconciliation task rather than a property-settings one.
  */
 export function ChannelsSection({ property }: { property: PropertyResponse }) {
   // Same query key as UnitsSection - TanStack Query dedupes, so this doesn't
@@ -217,6 +219,20 @@ function ConnectionRow({
           >
             {status.label}
           </span>
+          {/* Open sync conflicts (#38): nights this feed sold that Sambung already
+              had booked. Its own badge rather than folded into lastStatus, because
+              the feed is HEALTHY - it downloaded and parsed fine, and most of it
+              imported. Only what clashed is stuck, and that needs a human, not a
+              retry. Links to the inbox where they can act on it. */}
+          {conn.openConflicts > 0 && (
+            <Link
+              to="/app/inbox"
+              className="rounded bg-destructive/10 px-1.5 py-0.5 text-xs font-medium text-destructive hover:bg-destructive/20"
+            >
+              {conn.openConflicts} conflict
+              {conn.openConflicts === 1 ? "" : "s"}
+            </Link>
+          )}
         </div>
         {!readOnly && (
           <Button

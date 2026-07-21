@@ -165,6 +165,7 @@ export function channelConnectionResponse(
     lastSyncedAt: "2026-07-19T00:00:00.000Z",
     lastStatus: "ok",
     lastError: null,
+    openConflicts: 0,
     createdAt: "2026-07-19T00:00:00.000Z",
     ...overrides,
   };
