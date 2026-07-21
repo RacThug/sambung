@@ -98,7 +98,7 @@ export function PropertiesPage() {
                     <span className="text-success">● Ready to publish</span>
                   ) : (
                     <span className="text-warning">
-                      ○ Incomplete — needs a photo and a priced unit
+                      ○ Incomplete - needs a photo and a priced unit
                     </span>
                   )}
                 </p>

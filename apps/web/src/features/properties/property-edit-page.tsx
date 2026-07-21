@@ -66,8 +66,8 @@ export function PropertyEditPage() {
       ) : (
         !property.publishable && (
           <p className="mt-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
-            The public page is live, but incomplete - it needs at least one
-            photo and one unit with a price before it's worth sharing.
+            The public page is live, but incomplete - it needs at least one photo
+            and one unit with a price before it's worth sharing.
           </p>
         )
       )}
@@ -117,8 +117,7 @@ function PublicLink({
   if (archived) {
     return (
       <p className="mt-2 text-sm text-muted-foreground">
-        Public page offline while archived:{" "}
-        <span className="line-through">{url}</span>
+        Public page offline while archived: <span className="line-through">{url}</span>
       </p>
     );
   }
@@ -317,10 +316,7 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
       {/* Deposit % (api #10, ADR-0015): the share of a booking's total a guest
           pays online at checkout. 100 = pay in full; less takes a partial deposit
           now and settles the balance at the property. */}
-      <FormField
-        label="Deposit taken online (%)"
-        error={fieldErrors.depositPct}
-      >
+      <FormField label="Deposit taken online (%)" error={fieldErrors.depositPct}>
         {(field) => (
           <div>
             <input
@@ -381,8 +377,7 @@ function ArchiveZone({
         `/properties/${property.id}/${archived ? "unarchive" : "archive"}`,
         {},
       ),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["properties"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["properties"] }),
   });
 
   return (
@@ -441,9 +436,7 @@ function DangerZone({ property }: { property: PropertyResponse }) {
 
   return (
     <div className="mt-6 rounded-lg border border-destructive/20 bg-destructive/10 p-6">
-      <h2 className="text-lg font-semibold text-destructive">
-        Delete property
-      </h2>
+      <h2 className="text-lg font-semibold text-destructive">Delete property</h2>
       <p className="mt-1 text-sm text-destructive">
         Removes the property and its units. Only possible while nothing has ever
         been booked here - deleting it later would destroy the booking and
@@ -458,9 +451,7 @@ function DangerZone({ property }: { property: PropertyResponse }) {
         type="button"
         disabled={remove.isPending}
         onClick={() => {
-          if (
-            window.confirm(`Delete "${property.name}"? This cannot be undone.`)
-          ) {
+          if (window.confirm(`Delete "${property.name}"? This cannot be undone.`)) {
             remove.mutate();
           }
         }}
