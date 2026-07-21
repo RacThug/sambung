@@ -30,6 +30,14 @@ export default defineConfig({
   build: { manifest: true },
   server: {
     port: 5173,
+    // Fail loudly when 5173 is taken instead of silently moving to 5174. Vite's
+    // default is to relocate, which is friendly right up until something else is
+    // already serving on 5173 - a stray `pnpm dev` from another worktree, say.
+    // Then the URL everything hardcodes (docs/demo.md names localhost:5173 five
+    // times; the API allows exactly that origin for bucket CORS via WEB_ORIGIN)
+    // points at the WRONG app, and nothing in the log says so. A demo that
+    // refuses to start beats a demo that opens somebody else's dashboard.
+    strictPort: true,
     // Dev proxy: the SPA calls /api/* and Vite forwards to the NestJS API.
     // Keeps the FE→API boundary explicit and dodges CORS in dev.
     proxy: {
