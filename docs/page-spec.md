@@ -17,7 +17,7 @@ Public (no auth)                       Dashboard (auth guard: /app/*)
 ├── /login                             ├── /app/properties      list + create
 ├── /register                          ├── /app/properties/:id  edit (photos, units, channels)
 ├── /invite/:token     (M5)            ├── /app/channels        sync health + conflict inbox
-└── * 404                              └── /app/settings        tenant, staff (M5)
+└── * 404                              └── /app/settings        gallery cap, staff (M5)
 ```
 
 Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · **Data** (endpoints) · **Actions** (mutations) · **States** · **Edge notes**. Milestone tag in the heading.
@@ -116,9 +116,12 @@ Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · *
 - **Actions:** Sync now per connection (api #31) · conflict row → shows the OTA event vs the blocking booking → "open blocking booking" (§4.3, resolve = cancel one side; next sync auto-closes) or **Dismiss** (api #33).
 - **States:** all-green summary · connection `error` rows with `lastError` + last-synced age · open-conflict count **badged in the nav** · empty inbox ("no conflicts - calendars agree").
 
-### 4.7 Settings - `/app/settings` - **M3** (deposit) / **M5** (staff)
-- **Purpose:** tenant profile · per-property deposit % (payment setting, api #10) · staff invites (M5: api #6 - owner-only; staff hitting this route gets the 403 view).
-- **States:** owner vs staff variant (403 explains role, not existence).
+### 4.7 Settings - `/app/settings` - **Built** (gallery cap, #67) / **M5** (staff)
+- **Purpose:** the tenant-wide knobs. Today one: the **gallery cap** - how many photos each property may hold (#67, [ADR-0030](adr/0030-a-cap-is-a-preference-the-ceiling-is-the-guard.md)). Later: staff invites (M5: api #6). Per-property deposit % is **not** here - it lives on the property edit form (§4.5, api #10), because it is a per-property fact.
+- **Data:** api #38. **Actions:** save the cap → api #39.
+- **Copy carries the guarantee:** "Lowering this never deletes photos - a gallery already above the new limit stays as it is, and you simply can't add more until you remove some." That is the behaviour, not reassurance: the write blocks only growth.
+- **States:** owner sees the form; **staff sees the value read-only** with "only an account owner can change this" (the server enforces it - the write is 403 for staff, which explains the role, never the existence). Loading skeleton; field error on an out-of-bounds cap, rendered from the same shared schema the API validates with.
+- **Edge notes:** the property workbench's photo section reads the cap from here (one `["settings"]` cache key), so raising the cap unblocks "Add photos" without a reload. Until that query resolves, the workbench disables **Add photos** rather than guessing a limit.
 
 ---
 
@@ -136,6 +139,8 @@ Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · *
 | 27 | no page - machine consumer (payment provider) |
 | 28-31, 34 | §4.5 property edit (channels section) · §4.6 health |
 | 32-33 | §4.6 conflict inbox |
+| 36-37 | §4.6 inbox (paid-but-lapsed payments) |
+| 38-39 | §4.7 settings · §4.5 property edit reads #38 for the gallery cap |
 
 Two endpoints intentionally have no page (#27 webhook, #34 iCal export - machines). One endpoint (#17) is currently redundant with #18 for the unified view - keep it spec'd for a per-unit calendar widget, or drop it at M2 if unused. **If a future endpoint lands without a row here (or a page without endpoints), one of the two specs is lying - fix in the same PR.**
 

@@ -49,6 +49,16 @@ create extension if not exists citext;       -- case-insensitive email
 create table tenant (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
+  -- How many photos ONE property's gallery may hold, for this tenant (#67,
+  -- ADR-0030). A preference, not a quota: property count is unbounded, so this
+  -- bounds a request body and a gallery grid, never storage. The guard that
+  -- survives a tenant raising it is the CHECK below (PHOTO_GALLERY_CEILING in
+  -- @sambung/shared); bytes are bounded by the 5 MB per-object cap and the
+  -- orphan sweeper (ADR-0017).
+  --
+  -- A column, not a settings table: one knob does not earn a table, and it
+  -- inherits `tenant`'s existing tenant_isolation RLS policy for free.
+  gallery_cap smallint not null default 30 check (gallery_cap between 1 and 100),
   created_at  timestamptz not null default now()
 );
 

@@ -8,4 +8,11 @@ import { configure } from "@testing-library/react";
 // (chunk cached) passes. Give async queries headroom so the split is invisible to
 // tests. Production serves pre-built chunks over HTTP in milliseconds; this only
 // covers the test transformer's cold start.
+//
+// That headroom is real time, not slack: the transform is CPU-bound, so it grows
+// with whatever else is running. Which is why the root `test` script runs turbo
+// with `--concurrency=1` - letting jest (api) and vitest (web) oversubscribe the
+// same cores pushed exactly these first renders past this budget, and a suite
+// whose result depends on core count is not a suite. Serialising costs ~5s of
+// wall time and buys a deterministic answer.
 configure({ asyncUtilTimeout: 10_000 });

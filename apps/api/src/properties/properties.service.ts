@@ -19,6 +19,7 @@ import {
 import { propertyHasBookings } from '../common/db-error/conflicts';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
+import { SettingsService } from '../settings/settings.service';
 import { StorageService } from '../storage/storage.service';
 import {
   PropertiesRepository,
@@ -32,6 +33,7 @@ export class PropertiesService {
     private readonly tenant: TenantContext,
     private readonly storage: StorageService,
     private readonly db: TenantDbService,
+    private readonly settings: SettingsService,
   ) {}
 
   async list(): Promise<PropertyResponse[]> {
@@ -134,6 +136,33 @@ export class PropertiesService {
   ): Promise<PropertyResponse> {
     // Existence first: a foreign property must 404 regardless of the body.
     const existing = await this.getOwnedOrThrow(id);
+
+    // The tenant's gallery cap (#67, ADR-0030). The schema already bounded the
+    // array by the system CEILING; this is the tenant's own line inside it,
+    // which a static schema cannot know.
+    //
+    // The rule is "never GROW past the cap", not "never exceed it", and the
+    // difference is the whole feature. This is a whole-set PATCH, so a plain
+    // `keys.length > cap` would trap an over-cap gallery: lower the cap to 30
+    // with 40 photos live and every edit - including deleting one, which is the
+    // very thing that would fix it - arrives as more than 30 keys and is
+    // refused. Comparing against the gallery it is growing FROM lets reorders
+    // (equal length) and every shrink through.
+    //
+    // The rule is about COUNT, deliberately, and that has one consequence worth
+    // naming: over the cap, a same-length SWAP (drop one key, add one) passes.
+    // The owner of a 40-photo gallery under a cap of 30 can still replace a bad
+    // cover photo; what they cannot do is reach 41. Refusing swaps would mean an
+    // over-cap gallery is frozen rather than merely closed to growth - the same
+    // trap in a smaller room - and it would buy nothing, since the count is what
+    // the cap bounds. Bytes are not this check's job (ADR-0017).
+    const cap = await this.settings.galleryCap();
+    if (dto.keys.length > cap && dto.keys.length > existing.photos.length) {
+      throw new BadRequestException(
+        `Gallery is full - this tenant allows ${cap} photos per property`,
+      );
+    }
+
     const prefix = this.storage.photoKeyPrefix(this.tenant.tenantId, id);
     if (dto.keys.some((key) => !key.startsWith(prefix))) {
       throw new BadRequestException(

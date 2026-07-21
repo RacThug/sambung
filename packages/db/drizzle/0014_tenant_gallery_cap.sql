@@ -1,0 +1,24 @@
+-- The tenant's Gallery cap (#67, ADR-0030). #39 shipped ONE hard number for
+-- everyone - MAX_PHOTOS_PER_PROPERTY = 30 in @sambung/shared - and deferred
+-- making it tunable. This column is the tunable half.
+--
+-- It is a PREFERENCE, not a quota. The number never bounded storage: property
+-- count is unbounded, so a tenant could always park a thousand galleries of
+-- thirty. What it bounds is one request body and one gallery grid. The guard
+-- that survives a tenant raising this is PHOTO_GALLERY_CEILING (100), mirrored
+-- by the CHECK below; the guards that bound bytes are MAX_PHOTO_SIZE_BYTES and
+-- the orphan sweeper (ADR-0017).
+--
+-- On `tenant` rather than in a settings table for the same reason deposit_pct
+-- sits on `property`: one knob does not earn a table, and a column inherits the
+-- row's existing `tenant_isolation` RLS policy for free - no policy migration.
+--
+-- DEFAULT 30 backfills every existing row to exactly today's behaviour, so this
+-- migration changes nothing until an owner moves the slider. NOT NULL so the
+-- service reads a real number rather than a NULL that silently means 30.
+--
+-- Lowering the cap is deliberately harmless to data: the service refuses only
+-- requests that GROW a gallery past the cap, so an over-cap gallery stays
+-- readable, reorderable and shrinkable. A cap has never deleted a photo.
+ALTER TABLE "tenant" ADD COLUMN "gallery_cap" smallint DEFAULT 30 NOT NULL;--> statement-breakpoint
+ALTER TABLE "tenant" ADD CONSTRAINT "tenant_gallery_cap_range" CHECK ("tenant"."gallery_cap" between 1 and 100);

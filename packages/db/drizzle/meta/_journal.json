@@ -99,6 +99,13 @@
       "when": 1784612534029,
       "tag": "0013_property_time_zone",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784645958956,
+      "tag": "0014_tenant_gallery_cap",
+      "breakpoints": true
     }
   ]
 }

@@ -7,12 +7,15 @@ import {
 } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  DEFAULT_GALLERY_CAP,
+  PHOTO_GALLERY_CEILING,
   rupiahSchema,
   type AuthResponse,
   type ChannelConnectionResponse,
   type PropertyResponse,
   type PublicPropertyResponse,
   type PublicUnit,
+  type TenantSettingsResponse,
   type UnitResponse,
 } from "@sambung/shared";
 import { routeTree } from "./router";
@@ -30,10 +33,14 @@ window.scrollTo = () => {};
  * query varies per call (the availability quote fires once per visible month and
  * once per selection) without pinning every from/to combination; the handler
  * reads the URL to branch. Exact keys still win, so existing stubs are unchanged.
+ *
+ * A handler may return a Promise, so a test can hold one endpoint pending while
+ * the rest of the page resolves - which is how "this control stays disabled
+ * until the cap arrives" is tested without racing it.
  */
 export type FetchStubs = Record<
   string,
-  (init?: RequestInit, url?: string) => Response
+  (init?: RequestInit, url?: string) => Response | Promise<Response>
 >;
 
 export function stubFetch(stubs: FetchStubs) {
@@ -168,6 +175,17 @@ export function channelConnectionResponse(
     lastError: null,
     openConflicts: 0,
     createdAt: "2026-07-19T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** One TenantSettingsResponse factory, same reason as the others (#67). */
+export function tenantSettingsResponse(
+  overrides: Partial<TenantSettingsResponse> = {},
+): TenantSettingsResponse {
+  return {
+    galleryCap: DEFAULT_GALLERY_CAP,
+    galleryCeiling: PHOTO_GALLERY_CEILING,
     ...overrides,
   };
 }

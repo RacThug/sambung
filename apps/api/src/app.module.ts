@@ -16,6 +16,7 @@ import { BookingsModule } from './bookings/bookings.module';
 import { ChannelSyncModule } from './channel-sync/channel-sync.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PropertiesModule } from './properties/properties.module';
+import { SettingsModule } from './settings/settings.module';
 import { UnitsModule } from './units/units.module';
 
 @Module({
@@ -83,6 +84,7 @@ import { UnitsModule } from './units/units.module';
     BookingsModule,
     PaymentsModule,
     ChannelSyncModule,
+    SettingsModule,
   ],
   controllers: [AppController],
   providers: [
