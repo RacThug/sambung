@@ -133,6 +133,16 @@ export const property = pgTable(
     // PATCH /properties/:id (api #10) - unlike slug/archivedAt it IS in a request
     // schema, because it is a setting the owner tunes, not a transition.
     depositPct: smallint("deposit_pct").notNull().default(100),
+    // The Property's local clock (ADR-0028, #145). Its ONLY reader is the iCal
+    // import: a UTC-stamped VEVENT (`20260801T163000Z`) names no calendar date
+    // until a zone is named, so without this the parser took the UTC date and
+    // imported the block a night early. A stay itself stays timezone-free -
+    // check_in/check_out are `date` columns (invariant #4) - so this converts at
+    // the boundary and is never carried into the ledger.
+    //
+    // Editable via PATCH /properties/:id, like deposit_pct: a setting the owner
+    // tunes, not a transition.
+    timeZone: text("time_zone").notNull().default("Asia/Makassar"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -155,6 +165,20 @@ export const property = pgTable(
     // in @sambung/shared - the DB backstops a bypassed app check, like the price
     // bounds above.
     check("property_deposit_pct_range", sql`${t.depositPct} between 1 and 100`),
+    // A CLOSED set, not free IANA text, and not an FK to pg_timezone_names.
+    // Postgres CANNOT validate an arbitrary zone here: `AT TIME ZONE` is STABLE
+    // (the tz database changes under you), and a CHECK admits only IMMUTABLE
+    // expressions - so free text would leave the one column whose entire purpose
+    // is correctness as the only one with no DB backstop. A lookup table would
+    // restore the gate but make validity depend on the host's tz database
+    // version, so dev and the VPS could disagree about what is storable.
+    //
+    // Mirrors propertyTimeZoneSchema in @sambung/shared. Widening it - a property
+    // outside Indonesia - is a migration on purpose: that is a product decision.
+    check(
+      "property_time_zone_known",
+      sql`${t.timeZone} in ('Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura')`,
+    ),
   ],
 );
 

@@ -1,0 +1,25 @@
+-- The Property's local clock (#145, ADR-0028). An imported OTA calendar entry
+-- stamped in UTC (`DTSTART:20260801T163000Z`) names NO calendar date until a zone
+-- is named: 16:30Z is still 1 Aug in Java and already 2 Aug in Bali. The importer
+-- previously took the UTC date verbatim, so a timed VEVENT late in the UTC day
+-- blocked the wrong nights - and half-open ranges shifted BOTH edges, with the
+-- exclusion constraint then faithfully enforcing the wrong thing.
+--
+-- This column is that missing input. Its only reader is the iCal import parser;
+-- a stay itself stays timezone-free (check_in/check_out are `date`, invariant #4),
+-- so the zone converts at the boundary and never enters the ledger.
+--
+-- A CLOSED set of the three Indonesian zones (WIB/WITA/WIT), not free IANA text:
+-- Postgres cannot validate an arbitrary zone in a CHECK, because `AT TIME ZONE`
+-- is STABLE (the tz database changes under you) and CHECK admits only IMMUTABLE
+-- expressions. Free text would leave the one column whose entire purpose is
+-- correctness as the only one with no DB backstop - a typo'd 'Asia/Makasar' would
+-- sit in the row and throw later, inside a cron. Mirrors propertyTimeZoneSchema
+-- in @sambung/shared. Listing a property outside Indonesia is a migration, on
+-- purpose: that is a product-scope decision, not data entry.
+--
+-- DEFAULT backfills every existing row to WITA, which is correct - they are all
+-- Bali (the PRD's whole scope). NOT NULL so the edit page reads a real zone
+-- rather than a blank that silently means Makassar.
+ALTER TABLE "property" ADD COLUMN "time_zone" text DEFAULT 'Asia/Makassar' NOT NULL;--> statement-breakpoint
+ALTER TABLE "property" ADD CONSTRAINT "property_time_zone_known" CHECK ("property"."time_zone" in ('Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura'));

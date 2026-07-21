@@ -137,6 +137,43 @@ describe("property edit (§4.5 details tab)", () => {
     ).toBeInTheDocument();
   });
 
+  /**
+   * The zone is a fact about WHERE the property is (#145, ADR-0028), so it is
+   * rendered in the location group - after the coordinates, before Description -
+   * and NOT down with the payment settings, which is where it first landed.
+   *
+   * That placement is the whole reason the WITA default is honest rather than a
+   * guess: an owner sees it while stating where the villa is. So the ORDER is the
+   * decision, and pinning it here is what stops it quietly drifting back down the
+   * form, taking the justification for the default with it.
+   */
+  it("puts the time zone in the location group, not with the payment settings", async () => {
+    const row = property({ timeZone: "Asia/Jayapura" });
+    stubFetch({ [`GET /api/properties/${row.id}`]: () => json(row) });
+    renderAt(`/app/properties/${row.id}`);
+
+    const zone = await screen.findByLabelText(/time zone/i);
+    expect(zone).toHaveValue("Asia/Jayapura");
+
+    // Ordered against its neighbours rather than by index, so adding an
+    // unrelated field between them doesn't fail this for the wrong reason.
+    const longitude = screen.getByLabelText(/longitude/i);
+    const description = screen.getByLabelText(/description/i);
+    expect(longitude.compareDocumentPosition(zone)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(description.compareDocumentPosition(zone)).toBe(
+      Node.DOCUMENT_POSITION_PRECEDING,
+    );
+
+    // The copy leads with the place; the OTA feed is the consequence, not the
+    // framing - an owner filling in an address must recognise this as the same
+    // question, or they will skip it.
+    expect(
+      screen.getByText(/local clock where the property is/i),
+    ).toBeInTheDocument();
+  });
+
   it("previews the Verified badge live while typing a license number", async () => {
     const row = property({});
     stubFetch({

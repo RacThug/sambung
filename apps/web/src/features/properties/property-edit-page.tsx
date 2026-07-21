@@ -4,8 +4,10 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import {
   isArchived,
   isVerified,
+  propertyTimeZoneSchema,
   updatePropertyRequestSchema,
   type PropertyResponse,
+  type PropertyTimeZone,
   type UpdatePropertyRequest,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
@@ -147,6 +149,15 @@ function PublicLink({
   );
 }
 
+/** The three Indonesian zones, named the way an owner here would say them - the
+ * local abbreviation first, because "WITA" is what a Bali owner recognises, not
+ * "Asia/Makassar". */
+const TIME_ZONE_LABELS: Record<PropertyTimeZone, string> = {
+  "Asia/Jakarta": "WIB - Java, Sumatra (UTC+7)",
+  "Asia/Makassar": "WITA - Bali, Lombok, Sulawesi (UTC+8)",
+  "Asia/Jayapura": "WIT - Papua, Maluku (UTC+9)",
+};
+
 function DetailsForm({ property }: { property: PropertyResponse }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
@@ -157,6 +168,7 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
     description: property.description ?? "",
     licenseNo: property.licenseNo ?? "",
     depositPct: property.depositPct.toString(),
+    timeZone: property.timeZone,
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
@@ -173,7 +185,9 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
 
   function set(field: keyof typeof form) {
     return (
-      e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
+      e: React.ChangeEvent<
+        HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+      >,
     ) => setForm((f) => ({ ...f, [field]: e.target.value }));
   }
 
@@ -191,6 +205,7 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
       // Blank = leave the setting alone (it is not nullable); otherwise a number
       // the shared schema bounds to 1-100.
       depositPct: form.depositPct === "" ? undefined : Number(form.depositPct),
+      timeZone: form.timeZone,
     });
     if (!parsed.success) {
       setFieldErrors(issuesToFieldErrors(parsed.error.issues));
@@ -240,6 +255,38 @@ function DetailsForm({ property }: { property: PropertyResponse }) {
           error={fieldErrors.longitude}
         />
       </div>
+
+      {/* Deliberately HERE, in the location group, and not down with the payment
+          settings (#145, ADR-0028). A property's zone is a fact about WHERE it
+          is - the third answer to the same question the address and coordinates
+          above are asking - not a setting belonging to one integration. Placing
+          it there is what lets the WITA default mean "the owner saw this while
+          telling us where the villa is and accepted it" rather than "we guessed
+          Bali": the copy leads with the place and mentions OTA calendars second,
+          for the same reason. */}
+      <FormField label="Time zone" error={fieldErrors.timeZone}>
+        {(field) => (
+          <div>
+            <select
+              value={form.timeZone}
+              onChange={set("timeZone")}
+              className={inputClass}
+              {...field}
+            >
+              {propertyTimeZoneSchema.options.map((tz) => (
+                <option key={tz} value={tz}>
+                  {TIME_ZONE_LABELS[tz]}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The local clock where the property is. Imported OTA calendars are
+              read against it.
+            </p>
+          </div>
+        )}
+      </FormField>
+
       <FormField label="Description" error={fieldErrors.description}>
         {(field) => (
           <textarea

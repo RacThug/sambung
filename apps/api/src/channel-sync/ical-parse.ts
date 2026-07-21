@@ -22,6 +22,10 @@
  * Dates are half-open `[start, end)` (invariant #4): `DTEND` is exclusive in
  * iCalendar too, so it maps to `check_out` with zero arithmetic - the exact
  * inverse of the serializer.
+ *
+ * The parse takes the property's time zone (#145, ADR-0028) because a UTC-stamped
+ * value names no calendar date without one - see toIsoDate for which of the four
+ * value forms that actually affects (one of them).
  */
 
 /**
@@ -41,9 +45,15 @@ export interface ImportedEvent {
  * calendar (unterminated / not a VCALENDAR / empty) - the caller must treat it as
  * an unhealthy feed and change NOTHING. `ok: true` (even with zero events) means
  * a whole calendar parsed.
+ *
+ * `foreignTimeZones` is a DIAGNOSTIC, not a fault: the distinct `TZID` zones the
+ * feed named that are NOT this property's (see toIsoDate). It rides on the result
+ * envelope rather than on ImportedEvent deliberately - the trust boundary stays
+ * three strings - and it is what makes the one remaining unhandled case loud
+ * instead of silent. Normally empty, because no OTA we support emits TZID at all.
  */
 export type ParseResult =
-  | { ok: true; events: ImportedEvent[] }
+  | { ok: true; events: ImportedEvent[]; foreignTimeZones: string[] }
   | { ok: false; error: string };
 
 /** Unfold RFC 5545 §3.1 folded lines: a CRLF/CR/LF followed by a single space or
@@ -56,46 +66,151 @@ function unfold(body: string): string[] {
     .split(/\r\n|\r|\n/);
 }
 
-/** Split a content line into its property NAME (upper-cased; params stripped) and
- * raw VALUE. `DTSTART;VALUE=DATE:20260801` → `{ name: 'DTSTART', value: '20260801' }`. */
-function splitLine(line: string): { name: string; value: string } | null {
+/** Split a content line into its property NAME (upper-cased), its `TZID` param if
+ * present, and the raw VALUE. `DTSTART;VALUE=DATE:20260801` →
+ * `{ name: 'DTSTART', tzid: null, value: '20260801' }`.
+ *
+ * Every param but TZID is discarded (`VALUE=DATE` tells us nothing the value
+ * itself doesn't). TZID is kept for ONE purpose: to notice a feed naming a zone
+ * that isn't the property's - see toIsoDate. It never changes what we parse. */
+function splitLine(
+  line: string,
+): { name: string; tzid: string | null; value: string } | null {
   const colon = line.indexOf(':');
   if (colon === -1) return null;
   const left = line.slice(0, colon);
   const semi = left.indexOf(';');
   const name = (semi === -1 ? left : left.slice(0, semi)).trim().toUpperCase();
-  return { name, value: line.slice(colon + 1) };
+  // RFC 5545 §3.1 permits a QUOTED param value (`TZID="Asia/Makassar"`). Keeping
+  // the quotes would make the property's own zone compare as foreign, so the one
+  // diagnostic this design leans on would cry wolf on an ordinary feed.
+  const raw = semi === -1 ? null : (/;TZID=([^;:]+)/i.exec(left)?.[1] ?? null);
+  const tzid = raw
+    ?.trim()
+    .replace(/^"(.*)"$/, '$1')
+    .trim();
+  return { name, tzid: tzid || null, value: line.slice(colon + 1) };
 }
 
 /**
- * Extract a `YYYY-MM-DD` calendar date from an iCalendar DATE or DATE-TIME value
- * (`20260801` or `20260801T140000Z`). Returns null for anything that isn't a leading
- * `YYYYMMDD` so the caller can skip it.
- *
- * **The time is dropped, not converted - a known, accepted limitation (#145).** For
- * the all-day `VALUE=DATE` VEVENTs every OTA we support actually publishes, that is
- * exactly right: there is no time to convert, and half-open dates carry the whole
- * semantics. For a *timed* DTSTART it is a silent off-by-one near the day boundary -
- * `20260801T170000Z` is already 2 Aug in Bali (UTC+8), but yields `2026-08-01` here,
- * shifting the imported block one night early.
- *
- * Not fixed, deliberately (owner's call, 2026-07-21): "property-local" is undefined
- * in this schema - `property` has lat/lng but no timezone - so a correct fix needs a
- * per-property IANA timezone column, and `channelSchema` is a closed set of three
- * OTAs none of which emit timed availability. Revisit with #145 when a channel that
- * does is added; do NOT paper over it with a hardcoded UTC+8, which breaks the first
- * property listed in Java (WIB) or Papua (WIT).
+ * A property's local clock, resolved once per feed. `toLocalDate` turns an
+ * instant into the calendar date it falls on THERE - the one thing an iCalendar
+ * UTC value cannot tell us on its own.
  */
-function toIsoDate(value: string): string | null {
+interface ZoneContext {
+  timeZone: string;
+  toLocalDate(instant: Date): string;
+}
+
+/**
+ * Build the zone context, or null if the zone is unusable. Constructing the
+ * formatter once per feed (not per VEVENT) matters on a 500-event calendar, and
+ * doing it HERE is what keeps parseCalendar's "never throws" guarantee true: an
+ * invalid zone becomes an unhealthy parse - change nothing, say so loudly - rather
+ * than a RangeError thrown from inside a cron.
+ */
+function zoneContext(timeZone: string): ZoneContext | null {
+  let fmt: Intl.DateTimeFormat;
+  try {
+    // Explicit parts, not a locale's date format: 'en-CA' happens to render
+    // ISO-ish today, but a locale's output is not a contract. formatToParts is.
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+  } catch {
+    return null;
+  }
+  return {
+    timeZone,
+    toLocalDate(instant) {
+      const parts = fmt.formatToParts(instant);
+      const get = (type: string) =>
+        parts.find((p) => p.type === type)?.value ?? '';
+      // `year: 'numeric'` does NOT zero-pad, so an absurd year would emit
+      // `100-01-01`. The caller re-checks the shape; this makes the common case
+      // correct rather than merely rejected.
+      return `${get('year').padStart(4, '0')}-${get('month')}-${get('day')}`;
+    },
+  };
+}
+
+/**
+ * Extract the PROPERTY-LOCAL `YYYY-MM-DD` calendar date an iCalendar DATE or
+ * DATE-TIME value falls on (#145, ADR-0028). Returns null for anything that isn't
+ * a leading `YYYYMMDD`, so the caller can skip it.
+ *
+ * RFC 5545 §3.3.4-5 gives a value four shapes, and only ONE of them needs a zone:
+ *
+ * | Form    | Example                              | Local date is...          |
+ * |---------|--------------------------------------|---------------------------|
+ * | DATE    | `;VALUE=DATE:20260801`               | the date itself           |
+ * | floating| `20260801T163000`                    | the date part (floating   |
+ * |         |                                      | time IS observer-local)   |
+ * | TZID    | `;TZID=Asia/Makassar:20260801T163000`| the date part, when TZID  |
+ * |         |                                      | is the property's zone    |
+ * | **UTC** | `20260801T163000Z`                   | **needs the zone**        |
+ *
+ * So the first three keep their date part VERBATIM - not approximately right,
+ * right by construction - and only a `Z`-suffixed instant is converted. 16:30Z is
+ * still 1 Aug in Java and already 2 Aug in Bali; taking the UTC date (what this
+ * did before #145) imported the block a night early and shifted BOTH edges of the
+ * half-open range, with booking_no_overlap then enforcing the wrong nights.
+ *
+ * The one case left unhandled: a `TZID` naming a zone that is NOT the property's.
+ * Converting it would need the inverse direction - wall-time to instant - which
+ * Intl does not offer and where DST gaps and doubled hours live; a general
+ * implementation would trade this off-by-one for a subtler one, to serve a case
+ * (an OTA publishing a Bali villa's calendar stamped in another zone) more
+ * hypothetical than the bug being fixed. It is reported instead, via
+ * ParseResult.foreignTimeZones, so the assumption breaks LOUDLY.
+ */
+function toIsoDate(value: string, zone: ZoneContext): string | null {
   const m = /^\s*(\d{4})(\d{2})(\d{2})/.exec(value);
   if (!m) return null;
   const [, y, mo, d] = m;
-  // Reject impossible calendar values (month 00/13, day 00/32) rather than store
-  // them - the DB CHECKs would reject the write anyway, better to skip cleanly.
+  const year = Number(y);
   const month = Number(mo);
   const day = Number(d);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  return `${y}-${mo}-${d}`;
+
+  // Reject impossible calendar values (31 Feb, month 13) rather than store them -
+  // the DB would reject the write anyway, better to skip cleanly. Validated by
+  // ROUND-TRIP, not a range check: Date.UTC silently rolls 31 Feb into 3 Mar, so
+  // a range check would let an impossible date become a real one three nights
+  // away. ONE rule for every value form, so the UTC and VALUE=DATE paths cannot
+  // disagree about the same input.
+  //
+  // setUTCFullYear rather than the Date.UTC year argument, which maps 0-99 to
+  // 1900-1999 - a two-digit year would otherwise import nineteen centuries off.
+  const midnight = new Date(0);
+  midnight.setUTCFullYear(year, month - 1, day);
+  midnight.setUTCHours(0, 0, 0, 0);
+  if (
+    midnight.getUTCFullYear() !== year ||
+    midnight.getUTCMonth() !== month - 1 ||
+    midnight.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  // A `Z` suffix is the ONLY form that names an instant rather than a local date.
+  // Matched case-insensitively: RFC 5545 spells it uppercase, but this is the
+  // adversarial side, and a lowercase `z` falling through to the verbatim path
+  // would silently reinstate the exact off-by-one this function exists to remove.
+  const utc = /^\s*\d{8}T(\d{2})(\d{2})(\d{2})Z\s*$/i.exec(value);
+  if (!utc) return `${y}-${mo}-${d}`;
+
+  const [, hh, mi, ss] = utc;
+  // The impossible time components (25:00:00) the date regex cannot see.
+  if (Number(hh) > 23 || Number(mi) > 59 || Number(ss) > 60) return null;
+  midnight.setUTCHours(Number(hh), Number(mi), Number(ss), 0);
+
+  // This function promises a `YYYY-MM-DD`; an absurd year can still make Intl
+  // emit something else, so the contract is enforced here rather than assumed.
+  const local = zone.toLocalDate(midnight);
+  return /^\d{4}-\d{2}-\d{2}$/.test(local) ? local : null;
 }
 
 /** `YYYY-MM-DD` + 1 day, UTC-safe (Date.UTC normalises month/year rollover). Used
@@ -108,17 +223,23 @@ function addOneDay(iso: string): string {
 
 /** Build a validated ImportedEvent from a VEVENT's collected fields, or null if it
  * is undedupable (no UID) or has no valid half-open range. Never throws. */
-function toEvent(fields: Map<string, string>): ImportedEvent | null {
+function toEvent(
+  fields: Map<string, string>,
+  zone: ZoneContext,
+): ImportedEvent | null {
   const uid = fields.get('UID')?.trim();
   if (!uid) return null;
 
   const rawStart = fields.get('DTSTART');
   if (rawStart === undefined) return null;
-  const start = toIsoDate(rawStart);
+  const start = toIsoDate(rawStart, zone);
   if (!start) return null;
 
+  // DTEND is localized too: a UTC checkout instant crosses the day boundary on
+  // the same terms as the arrival, so converting only one edge would stretch or
+  // shrink the stay rather than move it.
   const rawEnd = fields.get('DTEND');
-  const end = rawEnd === undefined ? addOneDay(start) : toIsoDate(rawEnd);
+  const end = rawEnd === undefined ? addOneDay(start) : toIsoDate(rawEnd, zone);
   if (!end) return null;
 
   // Half-open, non-empty: a zero-length or inverted range is not a stay (it would
@@ -133,7 +254,16 @@ function toEvent(fields: Map<string, string>): ImportedEvent | null {
  * `{ ok: false }` value, an EXPECTED outcome the caller acts on (mark the
  * connection `error`, reconcile nothing), never an exception that crashes a cycle.
  */
-export function parseCalendar(body: string): ParseResult {
+export function parseCalendar(body: string, timeZone: string): ParseResult {
+  // REQUIRED, never defaulted: an optional zone would let a future caller
+  // silently reintroduce #145's off-by-one. The zone is not context the parser
+  // may decline to apply (ADR-0008's resolvers) - it is missing INPUT, because
+  // `20260801T163000Z` has no calendar date until a zone is named.
+  const zone = zoneContext(timeZone);
+  if (!zone) {
+    return { ok: false, error: `Unusable property time zone: ${timeZone}` };
+  }
+
   const lines = unfold(body);
 
   // The envelope gate (guarantee #1): a whole calendar opens with BEGIN:VCALENDAR
@@ -151,12 +281,13 @@ export function parseCalendar(body: string): ParseResult {
   }
 
   const events: ImportedEvent[] = [];
+  const foreign = new Set<string>();
   let current: Map<string, string> | null = null;
 
   for (const line of lines) {
     const parsed = splitLine(line);
     if (!parsed) continue;
-    const { name, value } = parsed;
+    const { name, tzid, value } = parsed;
     const upperValue = value.trim().toUpperCase();
 
     if (name === 'BEGIN' && upperValue === 'VEVENT') {
@@ -165,7 +296,7 @@ export function parseCalendar(body: string): ParseResult {
     }
     if (name === 'END' && upperValue === 'VEVENT') {
       if (current) {
-        const event = toEvent(current);
+        const event = toEvent(current, zone);
         if (event) events.push(event); // else: skip this VEVENT, keep the rest
       }
       current = null;
@@ -174,10 +305,15 @@ export function parseCalendar(body: string): ParseResult {
     // Only collect the three fields we trust, and only inside a VEVENT (so a
     // DTSTART in a VTIMEZONE or VALARM can never masquerade as a booking).
     if (current && (name === 'UID' || name === 'DTSTART' || name === 'DTEND')) {
+      // A TZID we don't share means this event's date part is local to SOMEWHERE
+      // ELSE, and we keep it verbatim anyway (see toIsoDate). Record it so the
+      // importer can say so - collected on the ENVELOPE, so ImportedEvent stays
+      // the same three trusted strings.
+      if (tzid && tzid !== zone.timeZone) foreign.add(tzid);
       // First occurrence wins - a well-formed VEVENT has one of each.
       if (!current.has(name)) current.set(name, value);
     }
   }
 
-  return { ok: true, events };
+  return { ok: true, events, foreignTimeZones: [...foreign] };
 }

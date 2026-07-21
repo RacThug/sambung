@@ -79,6 +79,7 @@ export function propertyResponse(
     description: null,
     licenseNo: null,
     depositPct: 100,
+    timeZone: "Asia/Makassar",
     photos: [],
     verified: false,
     publishable: false,

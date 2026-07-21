@@ -153,7 +153,9 @@ counts fill the field api-spec §7.2 reserved and #55 shipped without a source.
   Inherited from #56; a correct fix needs a per-property timezone column this schema
   does not have, and no OTA we support emits timed availability. Documented at the
   point of failure in `ical-parse.ts` so the next reader meets the limitation before
-  the bug.
+  the bug. **Update (2026-07-21): closed by [ADR-0028](0028-property-local-is-a-column-not-an-assumption.md)** - `property.time_zone`
+  (migration 0013) supplies the missing input, and the bug turned out to be a
+  quarter the size stated here: only UTC-stamped values were ever wrong.
 - api-spec §7.2 gains `openConflicts` (deferred since #55) and §7.3 gains `conflicts` on
   the "Sync now" summary; §7.5's response shape gains the derived `blockingBookings`
   and the inventory names. db-design §4.8's DDL sketch is superseded by decision 2.

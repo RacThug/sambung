@@ -29,6 +29,42 @@ export const DEFAULT_DEPOSIT_PCT = 100;
 export const depositPctSchema = z.number().int().min(1).max(100);
 
 /**
+ * The Property's local clock (ADR-0028, #145). A CLOSED set of the three
+ * Indonesian zones - WIB / WITA / WIT - mirrored by the `property_time_zone_known`
+ * DB CHECK, not free IANA text: `AT TIME ZONE` is STABLE, not IMMUTABLE, so
+ * Postgres cannot validate an arbitrary zone in a constraint, and a column whose
+ * whole purpose is correctness should not be the one column with no DB backstop.
+ * A typo'd `Asia/Makasar` would otherwise sit in the row and throw inside a cron.
+ *
+ * Listing a property outside Indonesia is a migration, deliberately: that is a
+ * product-scope change, not a data-entry choice.
+ *
+ * It is a fact about WHERE the property is - the same question `address` and
+ * `latitude`/`longitude` answer - and it is classified, placed, and worded that
+ * way throughout (the edit page renders it in the location group, not beside the
+ * payment settings). That is what lets the default mean "the owner saw this while
+ * saying where the villa is" rather than "we assumed Bali".
+ *
+ * Today exactly one reader USES it: turning a UTC-stamped OTA calendar entry into
+ * the calendar date a guest actually sleeps here (ical-parse.ts). A stay is stored
+ * as `date` columns and is timezone-free by construction (invariant #4), so the
+ * zone converts at the import boundary and never enters the ledger. If it ever
+ * gains a second reader whose failure is immediate and visible - a check-in cutoff,
+ * a reporting day boundary - the light-touch capture below should be revisited
+ * (see ADR-0028's Consequences).
+ *
+ * No exported DEFAULT constant: the default lives in the DB column, which is the
+ * only place that can enforce it, and a second copy here would be one more thing
+ * to keep in step for no caller's benefit.
+ */
+export const propertyTimeZoneSchema = z.enum([
+  "Asia/Jakarta", // WIB, UTC+7 - Java, Sumatra
+  "Asia/Makassar", // WITA, UTC+8 - Bali, Lombok, Sulawesi (the default)
+  "Asia/Jayapura", // WIT, UTC+9 - Papua, Maluku
+]);
+export type PropertyTimeZone = z.infer<typeof propertyTimeZoneSchema>;
+
+/**
  * The Deposit amount for a stay: `floor(total × pct / 100)` (ADR-0015). The
  * NUMBER-domain twin of the API's BigInt `depositAmountIdr` (apps/api payments),
  * so the web can preview what will be charged now. Exact - and equal to the
@@ -50,6 +86,14 @@ export const createPropertyRequestSchema = z.object({
   licenseNo: clearableText(120).optional(),
   /** Deposit % (api #10). Optional at create; the DB defaults it to 100. */
   depositPct: depositPctSchema.optional(),
+  /**
+   * The Property's local clock (#145). Optional at create; the DB defaults it to
+   * WITA (Bali). Like depositPct it IS in a request schema - a setting the owner
+   * tunes, not a transition - and it is deliberately not mandatory: a required
+   * select on the highest-abandonment screen in the product would be clicked
+   * through just as fast as a default, for a field most owners never need.
+   */
+  timeZone: propertyTimeZoneSchema.optional(),
 });
 export type CreatePropertyRequest = z.infer<typeof createPropertyRequestSchema>;
 
@@ -79,6 +123,14 @@ export const propertyResponseSchema = z.object({
    * never a blank that means "100".
    */
   depositPct: depositPctSchema,
+  /**
+   * The Property's local clock (ADR-0028, #145). Always present - the column is
+   * NOT NULL default WITA - so the edit page reads a real zone, never a blank
+   * that means Makassar. Owner-facing only: the PUBLIC payload does not carry it,
+   * because the funnel has no use for it and a public surface stays as narrow as
+   * it can be.
+   */
+  timeZone: propertyTimeZoneSchema,
   /** Gallery, in order: storage key + public URL per photo (#39). */
   photos: z.array(z.object({ key: z.string(), url: z.string() })),
   /** Derived: license present (FR-PROP-3). Never stored - see isVerified. */
