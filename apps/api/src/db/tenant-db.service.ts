@@ -36,9 +36,10 @@ interface ActiveTx {
 /**
  * The narrow slice of drizzle we deliberately reach into. Two facts, both
  * pinned by the escape test in tenant-db.spec: a transaction's `session` is the
- * object that issues statements, and `prepareQuery` is the single method every
- * query funnels through - at EXECUTION time, because the builders are lazy
- * thenables that call it when awaited, not when built.
+ * object that issues statements, and `prepareQuery` is the method every query
+ * the app issues funnels through - at EXECUTION time, because the builders are
+ * lazy thenables that call it when awaited, not when built. (The one exception,
+ * drizzle's explicit `.prepare()`, is a documented residual - see guardSession.)
  */
 interface IssuingSession {
   prepareQuery: (...args: unknown[]) => unknown;
@@ -46,7 +47,7 @@ interface IssuingSession {
 
 /**
  * Install the liveness guard where statements are ISSUED: the transaction's
- * session, which every query funnels through at execution time.
+ * session, which every query the app issues funnels through at execution time.
  *
  * Why here, not on the handle. The obvious guard wraps `tx` and checks liveness
  * on each call through it. That closes an un-awaited `tx.execute(...)`, but not
@@ -57,10 +58,20 @@ interface IssuingSession {
  * now owns the connection. Same blast radius as an un-awaited query, narrower
  * door - this was #75, the residual a handle proxy could not reach.
  *
- * prepareQuery is the single funnel: base execute() and count() both delegate to
- * it, and a select's _prepare() calls it when the thenable is awaited, not when
- * built. So one guard catches every shape (select/insert/update/delete/raw
- * execute/count), at the moment the statement would actually run.
+ * prepareQuery is the funnel for every query the app issues: base execute() and
+ * count() both delegate to it, and a select/insert/update/delete's _prepare()
+ * calls it when the thenable is AWAITED, not when built. So one guard catches
+ * every such shape at the moment the statement would actually run.
+ *
+ * One path bypasses it, and is left as a residual: drizzle's explicit
+ * `builder.prepare(name)` (reusable prepared statement) calls prepareQuery at
+ * BUILD time - guard passes while alive - and its later .execute()/.all() go
+ * straight to client.query, never re-touching prepareQuery. A statement prepared
+ * inside run() and executed after settle would escape, the same class as #75, a
+ * narrower door. It is unreachable (nothing here calls .prepare()), and closing
+ * it means wrapping every execution method on the prepared object - the
+ * invasive/brittle trade #75 declined for the recursive builder proxy. Read the
+ * guarantee as "every query this codebase issues", not "every statement".
  *
  * Safe to mutate in place because the session is per-transaction: a pool-backed
  * db.transaction mints a fresh session bound to the checked-out client, so this
@@ -85,8 +96,8 @@ function guardSession(tx: DbTx, active: ActiveTx): void {
           'another tenant.',
       );
     }
-    // Preserve `this` - prepareQuery reaches session-internal state (client,
-    // dialect) through it.
+    // Preserve `this` - prepareQuery reaches session-internal state (its client)
+    // through it.
     return issue.apply(session, args);
   };
 }
