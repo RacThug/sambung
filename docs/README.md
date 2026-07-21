@@ -12,6 +12,7 @@ subsystem it's working on before proposing changes.
 | [`api-spec.md`](./api-spec.md) | …adding or changing an endpoint | Every REST endpoint M0-M5: path, shapes, behavior, errors, conventions |
 | [`page-spec.md`](./page-spec.md) | …adding or changing a page/route | Every SPA page: purpose, route + URL state, endpoints consumed, states |
 | [`design-system.md`](./design-system.md) | …building or styling any UI | Brand (palette, type, wordmark), semantic tokens, the two-surface component doctrine (ADR-0007) |
+| [`demo.md`](./demo.md) | …showing the product to somebody | The five-minute scripted walkthrough (PRD §8 / G5): prerequisites, four acts with exact URLs and labels, encores, what is deliberately out of scope |
 
 ## How these relate
 

@@ -66,7 +66,7 @@ export function PropertyEditPage() {
       ) : (
         !property.publishable && (
           <p className="mt-2 rounded-md bg-warning/10 px-3 py-2 text-sm text-warning">
-            The public page is live, but incomplete — it needs at least one photo
+            The public page is live, but incomplete - it needs at least one photo
             and one unit with a price before it's worth sharing.
           </p>
         )

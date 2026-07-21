@@ -102,7 +102,7 @@ export function UnitsSection({ property }: { property: PropertyResponse }) {
       ) : (
         units?.length === 0 && (
           <p className="mt-3 text-sm text-muted-foreground">
-            No units yet — add the first one above to make this property
+            No units yet - add the first one above to make this property
             publishable.
           </p>
         )

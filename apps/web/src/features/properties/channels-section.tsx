@@ -52,7 +52,7 @@ export function ChannelsSection({ property }: { property: PropertyResponse }) {
         <p className="mt-4 text-sm text-muted-foreground">Loading channels…</p>
       ) : !units || units.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
-          Add a unit first — channels are connected per unit.
+          Add a unit first - channels are connected per unit.
         </p>
       ) : (
         <div className="mt-4 space-y-4">
@@ -125,7 +125,7 @@ function UnitChannels({
 
       {effectiveArchived ? (
         <p className="mt-3 text-sm text-muted-foreground">
-          This unit is archived — unarchive it to connect new channels.
+          This unit is archived - unarchive it to connect new channels.
         </p>
       ) : (
         <ConnectForm unitId={unit.id} connections={connections ?? []} />
