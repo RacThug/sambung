@@ -130,6 +130,8 @@ POST /webhooks/payment/:provider   → idempotent (payment_event dedupe) → con
 
 S3-compatible API as the contract, backend swapped by env config: **Garage** in docker compose for dev, **Cloudflare R2 free tier** in prod (10 GB, zero egress; activation needs a card on file, stays $0 — flagged per invariant #8; fallback: Garage on the VPS, identical code path). Uploads use **presigned PUT URLs**: the API validates content type, size, and tenant ownership at presign time, then the browser talks to storage directly — the API never proxies bytes and the SPA never sees credentials. (Issue #39; Garage replaced the retired MinIO CE per the ADR log.)
 
+Two of those presign-time validations are only as strong as the backend: content type and size are enforced *after* presigning by the **signed headers** `Content-Type` and `Content-Length`, which storage must refuse a mismatch on. Garage does; Cloudflare documents the first and is silent on the second. So a backend swap is verified by a probe against the actual bucket — `pnpm --filter api storage:doctor`, which also checks the two silent killers the test suite structurally cannot (bucket CORS, and whether `STORAGE_PUBLIC_BASE_URL` serves a photo anonymously). See [`r2-cutover.md`](./r2-cutover.md) and ADR-0029. Orphaned objects are reclaimed by a daily sweep against the gallery (#69, ADR-0017), which doubles as the backstop if a backend ignores signed content-length.
+
 ---
 
 ## 4. Frontend (Vite + React SPA)

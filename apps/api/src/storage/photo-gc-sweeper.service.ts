@@ -16,7 +16,7 @@ export interface PhotoGcResult {
 }
 
 /**
- * The orphaned-photo GC sweep (ADR-0016, #69, deferred from #39). Photo BYTES
+ * The orphaned-photo GC sweep (ADR-0017, #69, deferred from #39). Photo BYTES
  * live in object storage; the DB row stores only the keys (`property.photos`).
  * They drift apart - abandoned uploads, keys dropped from a gallery whose object
  * lingers, oversize objects a non-enforcing backend accepted - always leaving
@@ -49,7 +49,7 @@ export class PhotoGcSweeperService {
    * The testable core. `now` is the reference clock for the grace window: the
    * cron passes `new Date()`, a test passes a future instant to make a
    * just-uploaded object fall outside the window without faking its server-set
-   * mtime (ADR-0016 §3).
+   * mtime (ADR-0017 §3).
    *
    * `tenantIds` narrows the sweep to specific tenants; omitted (the cron path),
    * it sweeps every tenant. The narrowing exists so a caller can run a targeted
@@ -65,7 +65,7 @@ export class PhotoGcSweeperService {
     const referenced = await this.referencedKeys();
     const cutoff = now.getTime() - PHOTO_GC_GRACE_MS;
 
-    // Tenant-scoped listing is a SAFETY boundary, not an optimisation (ADR-0016
+    // Tenant-scoped listing is a SAFETY boundary, not an optimisation (ADR-0017
     // §2): we only ever list objects under a `<tenantId>/` prefix belonging to a
     // tenant THIS database knows. Objects outside any tenant prefix (Garage's
     // index.html) or under a foreign tenant (another dev/CI lane sharing the
