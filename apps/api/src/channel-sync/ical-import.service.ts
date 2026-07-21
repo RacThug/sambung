@@ -208,8 +208,14 @@ export class IcalImportService {
   /**
    * The property's local clock for this connection (#145, ADR-0028), via
    * `channel_connection -> unit -> property`. Null only if the unit or property
-   * is gone. Scoped by `tenant_id` alongside the ids, like every other statement
-   * on this RLS-bypassed connection.
+   * is gone.
+   *
+   * BOTH sides of the join are scoped by `tenant_id`, not just the unit. The
+   * composite FK `unit_property_tenant_fk` already makes a cross-tenant pair
+   * unrepresentable, so the property predicate is redundant today - but on this
+   * RLS-bypassed connection the explicit WHERE is the load-bearing layer, not a
+   * backstop, and "redundant because of a constraint elsewhere" is exactly the
+   * reasoning that rots. Every statement here is literally tenant-scoped.
    */
   private async resolveTimeZone(
     conn: ChannelConnection,
@@ -218,7 +224,13 @@ export class IcalImportService {
       .select({ timeZone: property.timeZone })
       .from(unit)
       .innerJoin(property, eq(unit.propertyId, property.id))
-      .where(and(eq(unit.id, conn.unitId), eq(unit.tenantId, conn.tenantId)))
+      .where(
+        and(
+          eq(unit.id, conn.unitId),
+          eq(unit.tenantId, conn.tenantId),
+          eq(property.tenantId, conn.tenantId),
+        ),
+      )
       .limit(1);
     return row?.timeZone ?? null;
   }

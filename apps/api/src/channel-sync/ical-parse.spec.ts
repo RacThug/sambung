@@ -286,6 +286,79 @@ describe('parseCalendar', () => {
     expect(res.error).toContain('time zone');
   });
 
+  // Date.UTC ROLLS OVER (31 Feb -> 3 Mar), so a UTC value must be validated by
+  // round-trip, not by a range check. Otherwise an impossible date silently
+  // becomes a real one three nights away - and, worse, the UTC and VALUE=DATE
+  // paths disagree about the same input. One calendar-validity rule, both forms.
+  it('skips an impossible calendar date rather than rolling it over', () => {
+    const rolled = wrap(
+      'BEGIN:VEVENT',
+      'UID:rollover',
+      'DTSTART:20260231T120000Z',
+      'DTEND:20260305T120000Z',
+      'END:VEVENT',
+      vevent({ uid: 'good' }),
+    );
+    expect(parse(rolled)).toMatchObject({ events: [{ uid: 'good' }] });
+
+    // The same impossible date as VALUE=DATE must be skipped identically.
+    const allDay = wrap(
+      vevent({ uid: 'bad', dtstart: '20260231', dtend: '20260305' }),
+      vevent({ uid: 'good' }),
+    );
+    expect(parse(allDay)).toMatchObject({ events: [{ uid: 'good' }] });
+  });
+
+  // Two ways a hostile feed can make Intl emit something that is not YYYY-MM-DD:
+  // `year: 'numeric'` does not zero-pad, and Date.UTC maps years 0-99 to 1900+.
+  it('never returns a malformed or century-shifted date for an absurd year', () => {
+    for (const dtstart of ['01000101T000000Z', '00500101T000000Z']) {
+      const res = parse(
+        wrap(
+          'BEGIN:VEVENT',
+          'UID:ancient',
+          `DTSTART:${dtstart}`,
+          'DTEND:20301231T000000Z',
+          'END:VEVENT',
+        ),
+      );
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      for (const e of res.events) {
+        expect(e.start).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        // 0050 must not silently become 1950 - that is a 1900-year import.
+        expect(e.start.slice(0, 4)).toBe(dtstart.slice(0, 4));
+      }
+    }
+  });
+
+  // RFC 5545 spells the UTC designator 'Z', but this is the adversarial side:
+  // a lowercase 'z' must not fall through to the unconverted path, which would
+  // silently reinstate the very off-by-one #145 exists to remove.
+  it('treats a lowercase z as the UTC designator', () => {
+    const ics = timed('20260801T163000z', '20260805T163000z');
+    expect(parse(ics, WITA)).toMatchObject({
+      events: [{ start: '2026-08-02' }],
+    });
+  });
+
+  // RFC 5545 §3.1 allows a quoted param value. Keeping the quotes would make the
+  // property's OWN zone read as foreign, so the one diagnostic the design leans
+  // on would cry wolf on a perfectly ordinary feed.
+  it('unquotes a TZID param before comparing it to the property zone', () => {
+    const ics = wrap(
+      'BEGIN:VEVENT',
+      'UID:quoted',
+      'DTSTART;TZID="Asia/Makassar":20260801T163000',
+      'DTEND;TZID="Asia/Makassar":20260804T163000',
+      'END:VEVENT',
+    );
+    expect(parse(ics, WITA)).toMatchObject({
+      events: [{ start: '2026-08-01', end: '2026-08-04' }],
+      foreignTimeZones: [],
+    });
+  });
+
   it('skips a UTC value whose time components are impossible', () => {
     const ics = wrap(
       'BEGIN:VEVENT',

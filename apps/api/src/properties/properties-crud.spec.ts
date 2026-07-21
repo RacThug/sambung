@@ -428,6 +428,78 @@ describe('Property CRUD', () => {
     });
   });
 
+  // The property's local clock (#145, ADR-0028): the missing input that lets the
+  // iCal import resolve a UTC-stamped OTA entry to the night a guest sleeps here.
+  // A CLOSED set, validated at BOTH the zod boundary (400) and the
+  // property_time_zone_known CHECK - the same two layers as deposit % above.
+  describe('time zone (iCal import setting)', () => {
+    it('defaults a new property to WITA (Bali)', async () => {
+      const created = await createProperty(tokenA, {
+        name: 'Zone Default Villa',
+      });
+      expect(created.timeZone).toBe('Asia/Makassar');
+    });
+
+    it('accepts a time zone at create', async () => {
+      const created = await createProperty(tokenA, {
+        name: 'Zone Create Villa',
+        timeZone: 'Asia/Jayapura',
+      });
+      expect(created.timeZone).toBe('Asia/Jayapura');
+    });
+
+    it('PATCHes the time zone and persists it', async () => {
+      const created = await createProperty(tokenA, { name: 'Zone Edit Villa' });
+      const res = await request(server())
+        .patch(`/api/properties/${created.id}`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .send({ timeZone: 'Asia/Jakarta' })
+        .expect(200);
+      expect(bodyOf<PropertyResponse>(res).timeZone).toBe('Asia/Jakarta');
+
+      const [row] = await dbs.db
+        .select()
+        .from(property)
+        .where(eq(property.id, created.id));
+      expect(row.timeZone).toBe('Asia/Jakarta');
+    });
+
+    // A plausible typo, a valid-but-unsupported IANA zone, and junk. The typo is
+    // the one that matters: it is what a hand-edited request would carry.
+    it.each(['Asia/Makasar', 'Europe/Berlin', 'UTC', ''])(
+      'rejects timeZone=%s with a 400',
+      async (bad) => {
+        const created = await createProperty(tokenA, {
+          name: `Zone Bad ${bad || 'empty'} Villa`,
+        });
+        await request(server())
+          .patch(`/api/properties/${created.id}`)
+          .set('Authorization', `Bearer ${tokenA}`)
+          .send({ timeZone: bad })
+          .expect(400);
+      },
+    );
+
+    it('the DB CHECK backstops a bypassed app check', async () => {
+      const err = await dbs.db
+        .insert(property)
+        .values({
+          tenantId: tenantAId,
+          name: 'Zone Bypass Villa',
+          slug: `zone-bypass-${randomUUID()}`,
+          timeZone: 'Asia/Makasar', // the typo, straight past zod
+        })
+        .then(
+          () => null,
+          (e: unknown) => e,
+        );
+      expect(err).toBeTruthy();
+      expect(
+        (err as { cause?: { constraint?: string } }).cause?.constraint,
+      ).toBe('property_time_zone_known');
+    });
+  });
+
   describe('DELETE /api/properties/:id', () => {
     it('deletes a property without bookings (204) and cascades its units', async () => {
       const created = await createProperty(tokenA, { name: 'Doomed Villa' });

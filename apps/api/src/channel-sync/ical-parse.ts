@@ -81,8 +81,15 @@ function splitLine(
   const left = line.slice(0, colon);
   const semi = left.indexOf(';');
   const name = (semi === -1 ? left : left.slice(0, semi)).trim().toUpperCase();
-  const tzid = semi === -1 ? null : (/;TZID=([^;:]+)/i.exec(left)?.[1] ?? null);
-  return { name, tzid: tzid?.trim() || null, value: line.slice(colon + 1) };
+  // RFC 5545 §3.1 permits a QUOTED param value (`TZID="Asia/Makassar"`). Keeping
+  // the quotes would make the property's own zone compare as foreign, so the one
+  // diagnostic this design leans on would cry wolf on an ordinary feed.
+  const raw = semi === -1 ? null : (/;TZID=([^;:]+)/i.exec(left)?.[1] ?? null);
+  const tzid = raw
+    ?.trim()
+    .replace(/^"(.*)"$/, '$1')
+    .trim();
+  return { name, tzid: tzid || null, value: line.slice(colon + 1) };
 }
 
 /**
@@ -122,7 +129,10 @@ function zoneContext(timeZone: string): ZoneContext | null {
       const parts = fmt.formatToParts(instant);
       const get = (type: string) =>
         parts.find((p) => p.type === type)?.value ?? '';
-      return `${get('year')}-${get('month')}-${get('day')}`;
+      // `year: 'numeric'` does NOT zero-pad, so an absurd year would emit
+      // `100-01-01`. The caller re-checks the shape; this makes the common case
+      // correct rather than merely rejected.
+      return `${get('year').padStart(4, '0')}-${get('month')}-${get('day')}`;
     },
   };
 }
@@ -161,26 +171,46 @@ function toIsoDate(value: string, zone: ZoneContext): string | null {
   const m = /^\s*(\d{4})(\d{2})(\d{2})/.exec(value);
   if (!m) return null;
   const [, y, mo, d] = m;
-  // Reject impossible calendar values (month 00/13, day 00/32) rather than store
-  // them - the DB CHECKs would reject the write anyway, better to skip cleanly.
+  const year = Number(y);
   const month = Number(mo);
   const day = Number(d);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
 
-  // A `Z` suffix is the ONLY form that names an instant rather than a local date.
-  const utc = /^\s*\d{8}T(\d{2})(\d{2})(\d{2})Z\s*$/.exec(value);
-  if (utc) {
-    const [, hh, mi, ss] = utc;
-    const instant = new Date(
-      Date.UTC(Number(y), month - 1, day, Number(hh), Number(mi), Number(ss)),
-    );
-    // Guard the impossible time components (25:00:00) the date regex can't see.
-    if (Number.isNaN(instant.getTime())) return null;
-    if (Number(hh) > 23 || Number(mi) > 59 || Number(ss) > 60) return null;
-    return zone.toLocalDate(instant);
+  // Reject impossible calendar values (31 Feb, month 13) rather than store them -
+  // the DB would reject the write anyway, better to skip cleanly. Validated by
+  // ROUND-TRIP, not a range check: Date.UTC silently rolls 31 Feb into 3 Mar, so
+  // a range check would let an impossible date become a real one three nights
+  // away. ONE rule for every value form, so the UTC and VALUE=DATE paths cannot
+  // disagree about the same input.
+  //
+  // setUTCFullYear rather than the Date.UTC year argument, which maps 0-99 to
+  // 1900-1999 - a two-digit year would otherwise import nineteen centuries off.
+  const midnight = new Date(0);
+  midnight.setUTCFullYear(year, month - 1, day);
+  midnight.setUTCHours(0, 0, 0, 0);
+  if (
+    midnight.getUTCFullYear() !== year ||
+    midnight.getUTCMonth() !== month - 1 ||
+    midnight.getUTCDate() !== day
+  ) {
+    return null;
   }
 
-  return `${y}-${mo}-${d}`;
+  // A `Z` suffix is the ONLY form that names an instant rather than a local date.
+  // Matched case-insensitively: RFC 5545 spells it uppercase, but this is the
+  // adversarial side, and a lowercase `z` falling through to the verbatim path
+  // would silently reinstate the exact off-by-one this function exists to remove.
+  const utc = /^\s*\d{8}T(\d{2})(\d{2})(\d{2})Z\s*$/i.exec(value);
+  if (!utc) return `${y}-${mo}-${d}`;
+
+  const [, hh, mi, ss] = utc;
+  // The impossible time components (25:00:00) the date regex cannot see.
+  if (Number(hh) > 23 || Number(mi) > 59 || Number(ss) > 60) return null;
+  midnight.setUTCHours(Number(hh), Number(mi), Number(ss), 0);
+
+  // This function promises a `YYYY-MM-DD`; an absurd year can still make Intl
+  // emit something else, so the contract is enforced here rather than assumed.
+  const local = zone.toLocalDate(midnight);
+  return /^\d{4}-\d{2}-\d{2}$/.test(local) ? local : null;
 }
 
 /** `YYYY-MM-DD` + 1 day, UTC-safe (Date.UTC normalises month/year rollover). Used

@@ -42,8 +42,11 @@ export const depositPctSchema = z.number().int().min(1).max(100);
  * What it is FOR: turning a UTC-stamped OTA calendar entry into the calendar date
  * a guest actually sleeps here (ical-parse.ts). Nothing else reads it - a stay is
  * stored as `date` columns and is timezone-free by construction (invariant #4).
+ *
+ * No exported DEFAULT constant: the default lives in the DB column, which is the
+ * only place that can enforce it, and a second copy here would be one more thing
+ * to keep in step for no caller's benefit.
  */
-export const DEFAULT_PROPERTY_TIME_ZONE = "Asia/Makassar";
 export const propertyTimeZoneSchema = z.enum([
   "Asia/Jakarta", // WIB, UTC+7 - Java, Sumatra
   "Asia/Makassar", // WITA, UTC+8 - Bali, Lombok, Sulawesi (the default)
