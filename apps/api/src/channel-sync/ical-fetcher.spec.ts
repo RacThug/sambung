@@ -151,4 +151,85 @@ describe('HttpIcalFetcher', () => {
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/too many redirects/i);
   });
+
+  // --- The STREAMING body path (readBounded's real branch) -------------------
+  //
+  // Everything above hands `body: null`, so readBounded takes its `.text()`
+  // fallback - which means the branch production ACTUALLY runs, the incremental
+  // `res.body.getReader()` read, had never executed in any test: the E2E suite
+  // swaps the whole adapter for FakeIcalFetcher, and these mocks skip it. Gap
+  // found while reviewing #38. A real ReadableStream closes it here rather than
+  // relying on someone remembering to point the app at a live feed by hand.
+
+  /** A Response-like whose body is a REAL ReadableStream, delivered in chunks so
+   * the reader loop genuinely iterates (a single chunk would pass even if the
+   * loop were broken). */
+  const asStreamingResponse = (chunks: string[]) => ({
+    ok: true,
+    status: 200,
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+        controller.close();
+      },
+    }),
+    text: () => Promise.reject(new Error('must not fall back to text()')),
+    headers: { get: () => null },
+  });
+
+  it('reads a multi-chunk streamed body whole', async () => {
+    const events = Array.from(
+      { length: 50 },
+      (_, i) =>
+        `BEGIN:VEVENT\r\nUID:evt-${i}\r\nDTSTART;VALUE=DATE:2026090${i % 10}\r\nEND:VEVENT\r\n`,
+    );
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        asStreamingResponse([
+          'BEGIN:VCALENDAR\r\n',
+          ...events,
+          'END:VCALENDAR\r\n',
+        ]),
+      );
+
+    const r = await fetcher.fetchFeed('https://airbnb.com/ical/x.ics');
+    expect(r.ok).toBe(true);
+    // Reassembled across chunk boundaries - including the terminator, which is
+    // what the parser's truncation gate depends on (ADR-0025).
+    expect(r.body).toContain('BEGIN:VCALENDAR');
+    expect(r.body).toContain('UID:evt-49');
+    expect(r.body?.trimEnd().endsWith('END:VCALENDAR')).toBe(true);
+  });
+
+  it('probes a streamed body without draining it all', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        asStreamingResponse(['BEGIN:VCAL', 'ENDAR\r\n', 'END:VCALENDAR\r\n']),
+      );
+    // The header itself is split across two chunks: a probe that sniffed only the
+    // first chunk would wrongly report "not an iCalendar feed".
+    expect(await fetcher.probe('https://airbnb.com/ical/x.ics')).toEqual({
+      ok: true,
+      error: null,
+    });
+  });
+
+  it('stops at the size cap rather than reading an endless feed', async () => {
+    // 6 MB in 1 MB chunks, past the 5 MB MAX_FEED_BYTES cap. A hostile or broken
+    // feed must not be able to exhaust memory; the truncated result then fails
+    // the terminated-VCALENDAR gate, which is the safe outcome (ADR-0025).
+    const oneMb = 'x'.repeat(1024 * 1024);
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        asStreamingResponse(Array.from({ length: 6 }, () => oneMb)),
+      );
+
+    const r = await fetcher.fetchFeed('https://airbnb.com/ical/huge.ics');
+    expect(r.ok).toBe(true);
+    expect(r.body!.length).toBeLessThan(6 * 1024 * 1024);
+  });
 });
