@@ -6,19 +6,22 @@ import { createDb, type DbTx } from '@sambung/db';
 import { TenantContext } from '../common/tenant-context.service';
 
 /**
- * The open transaction, plus whether it is still open.
+ * The open transaction, its tenant, and whether it is still live.
  *
- * `alive` guards against a stale handle. Async work started inside `run` keeps
- * the ALS store after the transaction settles and its connection returns to
- * the pool, so a late query would otherwise execute on a recycled connection -
- * inside whatever transaction now owns it, under that tenant's GUC. Silent
- * cross-tenant contamination.
+ * `alive` is the whole guard. Async work started inside `run` keeps the ALS
+ * store after the transaction settles and its connection returns to the pool,
+ * so a late statement would otherwise execute on a recycled connection - inside
+ * whatever transaction now owns it, under that tenant's GUC. Silent cross-tenant
+ * contamination. It flips false the instant the callback returns (see `run`),
+ * and the guard rejects any statement issued after that.
  *
- * `guarded` is what callers actually get. Checking `alive` only when `run` is
- * entered is not enough: a call that enters while the transaction is alive and
- * then awaits anything lands its statements arbitrarily later, after the
- * connection has moved on. The check has to happen when a statement is issued,
- * which is what the proxy does.
+ * The guard lives where statements are ISSUED - the session's prepareQuery (see
+ * `guardSession`) - not on the handle. Guarding the handle is not enough:
+ * drizzle's builders are lazy thenables, so a query BUILT through the handle
+ * while alive and AWAITED after `run` returns still executes after settle, and
+ * the handle is never called again to catch it (#75). The check has to fire
+ * where the SQL is actually issued, which every builder reaches through the one
+ * session, at await time.
  *
  * `tenantId` is the tenant this transaction's GUC was set to. A joined call
  * inherits that GUC whether or not it is still the right one, so joining
@@ -27,45 +30,95 @@ import { TenantContext } from '../common/tenant-context.service';
 interface ActiveTx {
   readonly tx: DbTx;
   readonly tenantId: string;
-  guarded: DbTx;
   alive: boolean;
 }
 
 /**
- * Wrap a transaction so that every call made through this handle asserts the
- * transaction is still open.
- *
- * Scope, precisely - it guards CALLS THROUGH THE HANDLE, nothing wider. A
- * query *built* here and executed later still escapes: drizzle's builders are
- * lazy thenables holding the raw session, so `const q = tx.select().from(x)`
- * inside the callback and `await q` after it returns lands on whichever
- * transaction now owns the connection. Narrower door than an un-awaited query,
- * same blast radius. Tracked as #75; unreachable today.
- *
- * Do not read this as enforcing "work started inside run() must be awaited
- * before it returns" in general. Claiming that was the bug in the first
- * attempt at this guard, which checked liveness only when `run` was entered.
+ * The narrow slice of drizzle we deliberately reach into. Two facts, both
+ * pinned by the escape test in tenant-db.spec: a transaction's `session` is the
+ * object that issues statements, and `prepareQuery` is the method every query
+ * the app issues funnels through - at EXECUTION time, because the builders are
+ * lazy thenables that call it when awaited, not when built. (The one exception,
+ * drizzle's explicit `.prepare()`, is a documented residual - see guardSession.)
  */
-function guardTx(tx: DbTx, active: ActiveTx): DbTx {
-  return new Proxy(tx, {
-    get(target, prop) {
-      // Read without the proxy as receiver: drizzle's internals use private
-      // fields, which throw if accessed through a proxy receiver.
-      const value: unknown = Reflect.get(target, prop);
-      if (typeof value !== 'function') return value;
-      return (...args: unknown[]): unknown => {
-        if (!active.alive) {
-          throw new Error(
-            'TenantDbService: statement issued after its transaction settled. ' +
-              'Work started inside run() must be awaited before the callback ' +
-              'returns - otherwise the query lands on a pooled connection that ' +
-              'has moved on to another transaction, and another tenant.',
-          );
-        }
-        return (value as (...a: unknown[]) => unknown).apply(target, args);
-      };
-    },
-  });
+interface IssuingSession {
+  prepareQuery: (...args: unknown[]) => unknown;
+}
+
+/**
+ * Install the liveness guard where statements are ISSUED: the transaction's
+ * session, which every query the app issues funnels through at execution time.
+ *
+ * Why here, not on the handle. The obvious guard wraps `tx` and checks liveness
+ * on each call through it. That closes an un-awaited `tx.execute(...)`, but not
+ * a query built through the handle and executed later: the builders are lazy
+ * thenables holding the raw session, so `tx.select().from(x)` inside the
+ * callback (guard passes - built while alive) and `await` after `run` returns
+ * (no guard - the handle is never called again) lands on whichever transaction
+ * now owns the connection. Same blast radius as an un-awaited query, narrower
+ * door - this was #75, the residual a handle proxy could not reach.
+ *
+ * prepareQuery is the funnel for every query the app issues: base execute() and
+ * count() both delegate to it, and a select/insert/update/delete's _prepare()
+ * calls it when the thenable is AWAITED, not when built. So one guard catches
+ * every such shape at the moment the statement would actually run.
+ *
+ * One path bypasses it, and is left as a residual: drizzle's explicit
+ * `builder.prepare(name)` (reusable prepared statement) calls prepareQuery at
+ * BUILD time - guard passes while alive - and its later .execute()/.all() go
+ * straight to client.query, never re-touching prepareQuery. A statement prepared
+ * inside run() and executed after settle would escape, the same class as #75, a
+ * narrower door. It is unreachable (nothing here calls .prepare()), and closing
+ * it means wrapping every execution method on the prepared object - the
+ * invasive/brittle trade #75 declined for the recursive builder proxy. Read the
+ * guarantee as "every query this codebase issues", not "every statement".
+ *
+ * Safe to mutate in place because the session is per-transaction: a pool-backed
+ * db.transaction mints a fresh session bound to the checked-out client, so this
+ * guard dies with its transaction and never touches the next one on the recycled
+ * connection.
+ *
+ * The one exception it allows is drizzle's own COMMIT/ROLLBACK - see
+ * isTransactionControl. The escape test is the tripwire for the two internals
+ * this leans on: if a drizzle upgrade ever routes execution around prepareQuery,
+ * that test goes red rather than the isolation silently reopening.
+ */
+function guardSession(tx: DbTx, active: ActiveTx): void {
+  const session = (tx as unknown as { session: IssuingSession }).session;
+  const issue: (...args: unknown[]) => unknown = session.prepareQuery;
+  session.prepareQuery = (...args: unknown[]): unknown => {
+    if (!active.alive && !isTransactionControl(args[0])) {
+      throw new Error(
+        'TenantDbService: statement issued after its transaction settled. ' +
+          'Work started inside run() - including a query BUILT here and awaited ' +
+          'later - must complete before the callback returns, or it lands on a ' +
+          'pooled connection that has moved on to another transaction, and ' +
+          'another tenant.',
+      );
+    }
+    // Preserve `this` - prepareQuery reaches session-internal state (its client)
+    // through it.
+    return issue.apply(session, args);
+  };
+}
+
+/**
+ * `alive` flips false the instant the callback returns (see `run`), so it is
+ * already false when drizzle closes the transaction by issuing COMMIT or
+ * ROLLBACK through this same session (node-postgres session.transaction). Those
+ * two must still pass - and rejecting the ROLLBACK would even mask the caller's
+ * original error. They are transaction control, not tenant data, so allowing
+ * them after settle cannot leak a row: every caller read/write
+ * (select/insert/update/delete/raw execute) is still rejected. `run` uses flat
+ * joins, never savepoints, so COMMIT and ROLLBACK are the only two drizzle emits
+ * after the callback; a nested `tx.transaction(...)` would add savepoint verbs
+ * here.
+ */
+function isTransactionControl(query: unknown): boolean {
+  const text = (query as { sql?: unknown } | null)?.sql;
+  if (typeof text !== 'string') return false;
+  const normalized = text.trim().toLowerCase();
+  return normalized === 'commit' || normalized === 'rollback';
 }
 
 // Tenant-scoped database access (boss fight #5, app layer). Every callback
@@ -157,20 +210,28 @@ export class TenantDbService implements OnModuleDestroy {
             'One unit of work belongs to one tenant.',
         );
       }
-      // Already inside a live transaction that set the GUC - reuse both.
-      return fn(joined.guarded);
+      // Already inside a live transaction that set the GUC - reuse it. The
+      // session behind this handle is guarded, so a query deferred out of the
+      // nested call is caught by the outer transaction's liveness flag too.
+      return fn(joined.tx);
     }
     return this.conn.db.transaction(async (tx) => {
-      const active = { tx, tenantId, alive: true } as ActiveTx;
-      active.guarded = guardTx(tx, active);
+      const active: ActiveTx = { tx, tenantId, alive: true };
+      // Guard the session before the first statement, so every statement this
+      // transaction issues - including the set_config below - runs through it.
+      guardSession(tx, active);
       await tx.execute(
         sql`select set_config('app.tenant_id', ${tenantId}, true)`,
       );
       try {
-        return await this.activeTx.run(active, () => fn(active.guarded));
+        return await this.activeTx.run(active, () => fn(tx));
       } finally {
-        // Runs before drizzle issues COMMIT/ROLLBACK, so nothing can reach the
-        // connection between the callback returning and the transaction closing.
+        // Flip liveness the instant the callback returns - synchronously, before
+        // drizzle issues COMMIT. A statement deferred out of the callback then
+        // finds a settled transaction and is rejected, even if it fires during
+        // the commit round-trip. drizzle's own COMMIT/ROLLBACK, which run through
+        // this same guarded session afterwards, still pass: they are transaction
+        // control, allow-listed in guardSession.
         active.alive = false;
       }
     });

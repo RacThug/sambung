@@ -188,6 +188,44 @@ describe('TenantDbService.run — transaction seam', () => {
     expect(result.error).toMatch(/after its transaction settled/);
   });
 
+  it('refuses a query BUILT inside run and awaited after it settles', async () => {
+    // #75: the residual the handle proxy could not reach. Drizzle's builders are
+    // lazy thenables - tx.select().from() issues no SQL until awaited. Built
+    // while the transaction is alive (a handle-level guard passes it), awaited
+    // after it settles, it would otherwise execute on a recycled connection
+    // under another tenant's GUC. The issue-site guard must fire when it runs.
+    let deferred!: Promise<unknown>;
+    await asTenant(() =>
+      db.run((tx) => {
+        deferred = tx.select().from(property); // built alive, deliberately not awaited
+        return Promise.resolve();
+      }),
+    );
+
+    // A real caller `await`s the deferred query; that converts drizzle's
+    // synchronous prepareQuery throw (its thenable's .then calls execute()
+    // eagerly) into a rejection. Capture it the same way rather than through
+    // expect().rejects, which does not adopt a thenable that throws from .then.
+    let caught: Error | undefined;
+    try {
+      await deferred;
+    } catch (error) {
+      caught = error as Error;
+    }
+    expect(caught?.message).toMatch(/after its transaction settled/);
+  });
+
+  it('allows a query built and awaited inside the same run', async () => {
+    // The guard must not break normal use: a lazy builder awaited while the
+    // transaction is alive issues through the same prepareQuery, alive still true.
+    const rows = await asTenant(() =>
+      db.run(async (tx) =>
+        tx.select({ id: property.id }).from(property).limit(1),
+      ),
+    );
+    expect(Array.isArray(rows)).toBe(true);
+  });
+
   it('throws when there is no principal', async () => {
     // Not belt-and-braces: with no GUC, RLS returns nothing on a cold
     // connection and errors 22P02 on a warm one (#74). Two different failures
