@@ -9,6 +9,7 @@
 import { z } from "zod";
 
 import { PHOTO_GALLERY_CEILING } from "./photo";
+import { strictObject } from "./strict";
 
 /**
  * How many photos one Property's Gallery may hold, for this tenant. A
@@ -35,12 +36,14 @@ export const tenantSettingsResponseSchema = z.object({
 });
 export type TenantSettingsResponse = z.infer<typeof tenantSettingsResponseSchema>;
 
-/** Partial by design: one field today, more when #57 lands Team settings. */
-export const updateTenantSettingsRequestSchema = z
-  .object({
-    galleryCap: galleryCapSchema,
-  })
-  .partial();
+/**
+ * Partial by design: one field today, more when #57 lands Team settings. Strict
+ * (ADR-0031), so `PATCH /settings {galleryCapp: 60}` is a 400 naming the key
+ * rather than a 200 that silently changed nothing - the exact bug #150 fixed.
+ */
+export const updateTenantSettingsRequestSchema = strictObject({
+  galleryCap: galleryCapSchema,
+}).partial();
 export type UpdateTenantSettingsRequest = z.infer<
   typeof updateTenantSettingsRequestSchema
 >;

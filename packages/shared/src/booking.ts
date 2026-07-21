@@ -17,6 +17,7 @@ import {
   countNights,
 } from "./availability";
 import { rupiahSchema } from "./money";
+import { strictObject } from "./strict";
 
 /** booking.status - pinned to the `booking_status` pgEnum by a test (§8.6). */
 export const bookingStatusSchema = z.enum([
@@ -136,21 +137,20 @@ const guestPhoneSchema = z
  * under MAX_SAFE_INTEGER - inherited here because the write prices through the
  * same `quoteTotalIdr`.
  */
-export const createBookingRequestSchema = z
-  .object({
-    unitId: z.string().uuid(),
-    checkIn: z.string().date(),
-    checkOut: z.string().date(),
-    guestName: z.string().trim().min(1).max(120),
-    guestPhone: e164PhoneSchema,
-    guestEmail: z.string().trim().toLowerCase().email().max(254).optional(),
-    /**
-     * Party size. The upper bound here is sanity only (a typo can't exceed
-     * int4); the REAL ceiling is the Unit's `max_guests`, which depends on the
-     * chosen Unit and so can only be enforced server-side (a 409 `max_guests`).
-     */
-    guestCount: z.number().int().min(1).max(64),
-  })
+export const createBookingRequestSchema = strictObject({
+  unitId: z.string().uuid(),
+  checkIn: z.string().date(),
+  checkOut: z.string().date(),
+  guestName: z.string().trim().min(1).max(120),
+  guestPhone: e164PhoneSchema,
+  guestEmail: z.string().trim().toLowerCase().email().max(254).optional(),
+  /**
+   * Party size. The upper bound here is sanity only (a typo can't exceed
+   * int4); the REAL ceiling is the Unit's `max_guests`, which depends on the
+   * chosen Unit and so can only be enforced server-side (a 409 `max_guests`).
+   */
+  guestCount: z.number().int().min(1).max(64),
+})
   .refine((b) => b.checkIn < b.checkOut, {
     message: "checkIn must be before checkOut",
     path: ["checkOut"],
@@ -201,12 +201,12 @@ const stayDatesShape = {
   checkOut: z.string().date(),
 };
 
-const manualBlockBodySchema = z.object({
+const manualBlockBodySchema = strictObject({
   source: z.literal("manual_block"),
   ...stayDatesShape,
 });
 
-const walkInBodySchema = z.object({
+const walkInBodySchema = strictObject({
   source: z.literal("direct"),
   ...stayDatesShape,
   guestName: z.string().trim().min(1).max(120),

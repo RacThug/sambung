@@ -134,6 +134,19 @@ describe('Tenant settings', () => {
     expect(bodyOf<TenantSettingsResponse>(res).galleryCap).toBe(22);
   });
 
+  // #150 / ADR-0031: a misspelled field is a caller bug, not a silent success.
+  // Before strict schemas this returned 200 having changed nothing - success and
+  // typo were indistinguishable. This is the exact repro from the issue.
+  it("rejects a typo'd PATCH key (400) and leaves the stored value alone", async () => {
+    const { accessToken } = await registerTenant('Settings Typo');
+    await patchSettings(accessToken, { galleryCap: 33 }).expect(200);
+
+    await patchSettings(accessToken, { galleryCapp: 60 }).expect(400);
+
+    const read = await getSettings(accessToken).expect(200);
+    expect(bodyOf<TenantSettingsResponse>(read).galleryCap).toBe(33);
+  });
+
   describe('the role gate', () => {
     it('lets staff READ the settings - the property workbench needs the cap', async () => {
       const { accessToken, email } = await registerTenant('Settings StaffRead');
