@@ -4,7 +4,9 @@ import {
   booking,
   channelConnection,
   pgError,
+  property,
   syncConflict,
+  unit,
   type BookingSource,
   type ChannelConnection,
   type DbTx,
@@ -100,11 +102,35 @@ export class IcalImportService {
       return this.markError(conn, fetched.error ?? 'Feed is unreachable');
     }
 
-    // (2) Parse. A truncated/non-calendar body is UNHEALTHY: mark error, write
-    //     nothing (guarantee #3 - never reconcile a doubtful feed).
-    const parsed = parseCalendar(fetched.body);
+    // (2) Parse, in the PROPERTY's local clock (#145, ADR-0028) - a UTC-stamped
+    //     VEVENT names no calendar date without one. Resolved HERE, once, rather
+    //     than threaded in from the cron and "Sync now" separately: two callers
+    //     each looking up the same fact is exactly the drift that gives a read a
+    //     chance to disagree with a write.
+    const timeZone = await this.resolveTimeZone(conn);
+    if (timeZone === null) {
+      // The connection outlived its unit/property. Its own FK cascade makes this
+      // unreachable; if it ever happens, refusing to guess a zone is the safe end.
+      return this.markError(conn, 'Unit or property no longer exists');
+    }
+
+    // A truncated/non-calendar body is UNHEALTHY: mark error, write nothing
+    // (guarantee #3 - never reconcile a doubtful feed).
+    const parsed = parseCalendar(fetched.body, timeZone);
     if (!parsed.ok) {
       return this.markError(conn, parsed.error);
+    }
+
+    // A feed naming a zone that is not this property's keeps its date part
+    // verbatim (toIsoDate), which is right only while the two agree. No OTA we
+    // support emits TZID at all, so this is silent in normal operation and speaks
+    // ONLY when that assumption has broken - the tripwire #145 asked for.
+    if (parsed.foreignTimeZones.length > 0) {
+      this.logger.warn(
+        `Feed for connection ${conn.id} names time zone(s) ` +
+          `${parsed.foreignTimeZones.join(', ')} but its property is ${timeZone}; ` +
+          `dates were taken verbatim and may be off by a day (#145)`,
+      );
     }
 
     // (3) Healthy: reconcile in one transaction.
@@ -177,6 +203,24 @@ export class IcalImportService {
       cancelled,
       conflicts,
     };
+  }
+
+  /**
+   * The property's local clock for this connection (#145, ADR-0028), via
+   * `channel_connection -> unit -> property`. Null only if the unit or property
+   * is gone. Scoped by `tenant_id` alongside the ids, like every other statement
+   * on this RLS-bypassed connection.
+   */
+  private async resolveTimeZone(
+    conn: ChannelConnection,
+  ): Promise<string | null> {
+    const [row] = await this.dbs.db
+      .select({ timeZone: property.timeZone })
+      .from(unit)
+      .innerJoin(property, eq(unit.propertyId, property.id))
+      .where(and(eq(unit.id, conn.unitId), eq(unit.tenantId, conn.tenantId)))
+      .limit(1);
+    return row?.timeZone ?? null;
   }
 
   /**

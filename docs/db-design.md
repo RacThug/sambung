@@ -74,6 +74,13 @@ create table property (
   description text,
   license_no  text,        -- NIB / KBLI 55193 → drives the "Verified" badge
   photos      text[] not null default '{}',  -- ordered storage keys; bytes live in S3-compatible storage (#39)
+  -- The property's local clock (#145, ADR-0028). Read by ONE thing: the iCal
+  -- import, resolving a UTC-stamped OTA entry to the night a guest sleeps here.
+  -- A closed set, not free IANA text - `AT TIME ZONE` is STABLE, so Postgres
+  -- cannot validate an arbitrary zone in a CHECK, and this is the one column
+  -- whose entire purpose is correctness. Widening it is a migration, on purpose.
+  time_zone   text not null default 'Asia/Makassar'
+    check (time_zone in ('Asia/Jakarta', 'Asia/Makassar', 'Asia/Jayapura')),
   created_at  timestamptz not null default now()
 );
 

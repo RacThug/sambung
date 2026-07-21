@@ -85,7 +85,12 @@ describe('iCal import (#56)', () => {
   async function connectUnit(
     token = tokenA,
     channel = 'airbnb',
-  ): Promise<{ unitId: string; connId: string; feedUrl: string }> {
+  ): Promise<{
+    unitId: string;
+    propertyId: string;
+    connId: string;
+    feedUrl: string;
+  }> {
     const unit = await createUnit(token);
     const feedUrl = `https://airbnb.com/ical/${randomUUID()}.ics`;
     const conn = bodyOf<ChannelConnectionResponse>(
@@ -95,7 +100,12 @@ describe('iCal import (#56)', () => {
         .send({ channel, importIcalUrl: feedUrl })
         .expect(201),
     );
-    return { unitId: unit.id, connId: conn.id, feedUrl };
+    return {
+      unitId: unit.id,
+      propertyId: unit.propertyId,
+      connId: conn.id,
+      feedUrl,
+    };
   }
 
   /** A valid iCalendar body with the given busy spans, built by the export
@@ -509,5 +519,94 @@ describe('iCal import (#56)', () => {
       .where(eq(booking.id, bBooking.id));
     expect(after.status).toBe('confirmed');
     expect(after.channelConnectionId).toBeNull();
+  });
+
+  // --- Property-local dates (#145, ADR-0028) -------------------------------
+
+  /** A raw ICS body with a UTC-stamped VEVENT. Hand-built, not via buildCalendar:
+   * the serializer only ever emits all-day `VALUE=DATE`, which is precisely the
+   * form that needs no zone. */
+  const utcFeed = (uid: string, startUtc: string, endUtc: string): string =>
+    [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Test OTA//EN',
+      'BEGIN:VEVENT',
+      `UID:${uid}`,
+      `DTSTART:${startUtc}`,
+      `DTEND:${endUtc}`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n') + '\r\n';
+
+  const setZone = (propertyId: string, timeZone: string) =>
+    request(server())
+      .patch(`/api/properties/${propertyId}`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ timeZone })
+      .expect(200);
+
+  it('imports a UTC-stamped VEVENT on the night it falls in the property zone', async () => {
+    const { connId, propertyId, feedUrl } = await connectUnit();
+
+    // 16:30Z on 1 Aug is 00:30 on 2 Aug in Bali (WITA, the default) - so the
+    // guest sleeps here on the 2nd. Taking the UTC date, as the parser did
+    // before #145, would have blocked the 1st: one night early, both edges.
+    fake.setFeed(
+      feedUrl,
+      utcFeed('tz-1', '20260801T163000Z', '20260804T163000Z'),
+    );
+    await syncNow(connId).expect(200);
+
+    const [row] = await importedBookings(connId);
+    expect(row).toMatchObject({
+      checkIn: '2026-08-02',
+      checkOut: '2026-08-05',
+    });
+
+    // Now say the property is actually in Java (WIB, UTC+7), where the same
+    // instant is still 23:30 on the 1st, and re-pull the IDENTICAL feed. The
+    // dates must move - proving the column is genuinely read, not decoration -
+    // and the row must update IN PLACE (same UID, idempotent by external_uid).
+    await setZone(propertyId, 'Asia/Jakarta');
+    await syncNow(connId).expect(200);
+
+    const rows = await importedBookings(connId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: row.id,
+      checkIn: '2026-08-01',
+      checkOut: '2026-08-04',
+    });
+  });
+
+  it('leaves an all-day VEVENT on the same nights whatever the zone', async () => {
+    const { connId, propertyId, feedUrl } = await connectUnit();
+    const start = daysFromToday(200);
+    const end = daysFromToday(203);
+
+    fake.setFeed(feedUrl, feedWith([{ uid: 'allday-1', start, end }]));
+    await syncNow(connId).expect(200);
+    expect((await importedBookings(connId))[0]).toMatchObject({
+      checkIn: start,
+      checkOut: end,
+    });
+
+    // VALUE=DATE carries no time to convert, so a zone change must be a no-op.
+    await setZone(propertyId, 'Asia/Jayapura');
+    await syncNow(connId).expect(200);
+    expect((await importedBookings(connId))[0]).toMatchObject({
+      checkIn: start,
+      checkOut: end,
+    });
+  });
+
+  it('rejects an unknown time zone at the boundary, so the column stays valid', async () => {
+    const { propertyId } = await connectUnit();
+    await request(server())
+      .patch(`/api/properties/${propertyId}`)
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({ timeZone: 'Mars/Olympus_Mons' })
+      .expect(400);
   });
 });

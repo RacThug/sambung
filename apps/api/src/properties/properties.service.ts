@@ -7,6 +7,7 @@ import {
 import {
   isPublishable,
   isVerified,
+  propertyTimeZoneSchema,
   slugCandidates,
   type CreatePropertyRequest,
   type PresignPhotoRequest,
@@ -234,6 +235,11 @@ export class PropertiesService {
     const { pricedUnitCount, createdAt, photos, archivedAt, ...columns } = row;
     return {
       ...columns,
+      // The column is `text` guarded by property_time_zone_known, so narrowing to
+      // the closed set here is the same boundary parse channels.service does. A
+      // value outside it means the CHECK was bypassed - a bug, so 500 loudly
+      // rather than widen the contract to absorb it.
+      timeZone: propertyTimeZoneSchema.parse(columns.timeZone),
       photos: photos.map((key) => ({
         key,
         url: this.storage.publicUrl(key),

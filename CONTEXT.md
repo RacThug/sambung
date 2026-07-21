@@ -190,6 +190,15 @@ nothing, so a broken download can never mass-cancel real stays. A Healthy feed w
 cancels nothing - "empty" and "cut off" are indistinguishable, so Sambung refuses to guess.
 _Avoid_: valid, good, successful
 
+**Property-local date**:
+The calendar date a moment in time falls on *where the Property physically is* - the night a Guest
+actually sleeps there. A Channel may stamp a calendar entry with an instant rather than a date, and an
+instant names no date on its own: the same moment is one night in Java and the next in Bali. So a Property
+carries its own clock, and Sambung reads imported entries against that rather than against UTC or the
+server's. A Stay itself has no clock - it is dates all the way down; the Property's zone is only ever used
+to *arrive* at those dates.
+_Avoid_: timezone (for the date itself), local time, UTC date, server date
+
 **Sync conflict**:
 A Booking a Channel sold on nights Sambung already holds - a real double-sell out in the
 world, which Sambung refuses to mirror rather than put two Guests at one door. It is a
