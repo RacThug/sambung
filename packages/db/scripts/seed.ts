@@ -11,7 +11,13 @@ import "./load-env";
 import { count, eq } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { closeDb, db } from "../src/index";
-import { demoDates } from "./demo-dates";
+import {
+  DEMO_FREE_NIGHTS,
+  DEMO_UNIT_MIN_STAY,
+  demoDates,
+  type DemoStay,
+  type DemoUnitKey,
+} from "./demo-dates";
 import { uploadSeedPhotos } from "./seed-photos";
 import {
   appUser,
@@ -54,10 +60,35 @@ const DEMO_PASSWORD_HASH =
   "$2b$12$l/JDRuTK3RV2ZPO5tKDPrOJ7DvutHzlXTbFqTUgwFrO4GI1HPts.y";
 
 // Sample stays are anchored to TODAY, not to fixed calendar dates - see
-// ./demo-dates.ts for why (short version: the picker hides the past, so a stay
-// seeded behind the presenter is invisible, not just stale). Only the DATES
-// move with time; the stable demo surface (ids, slugs, logins) stays fixed.
+// ./demo-dates.ts for why (short version: the picker hides the past and the
+// dashboard opens on this month, so a stay seeded behind the presenter or a
+// fortnight ahead of them is invisible, not just stale). Only the DATES move
+// with time; the stable demo surface (ids, slugs, logins) stays fixed.
 const D = demoDates(new Date());
+
+/** Nightly rate per unit, integer rupiah (invariant #6). */
+const PRICE: Record<DemoUnitKey, bigint> = {
+  wholeVilla: 3_500_000n,
+  gardenRoom: 1_200_000n,
+  surfLoft: 950_000n,
+  riverSuite: 2_100_000n,
+};
+
+/** Nights in a half-open stay. Both ends are midnight-anchored, so this is exact. */
+const nights = ({ checkIn, checkOut }: DemoStay): bigint =>
+  BigInt(
+    (Date.parse(`${checkOut}T00:00:00Z`) - Date.parse(`${checkIn}T00:00:00Z`)) /
+      86_400_000,
+  );
+
+/**
+ * A stay's total, DERIVED rather than written down. The stays now move with the
+ * calendar, and a hand-typed total silently stops matching nights x rate the
+ * first time one changes length - the demo would show a price the product's own
+ * quote endpoint disagrees with.
+ */
+const total = (stay: DemoStay, unit: DemoUnitKey): bigint =>
+  nights(stay) * PRICE[unit];
 
 async function main() {
   await db.transaction(async (tx) => {
@@ -134,42 +165,45 @@ async function main() {
     ]);
 
     // --- units (4) ---
+    // `minStay` comes from DEMO_UNIT_MIN_STAY rather than a literal, so the
+    // test that asserts "every seeded stay is at least its unit's minimum"
+    // checks the number this row actually gets (#60).
     await tx.insert(unit).values([
       {
         id: U_VILLA,
         propertyId: P_SEMINYAK,
         tenantId: T1,
         name: "Whole Villa",
-        basePriceIdr: 3_500_000n,
+        basePriceIdr: PRICE.wholeVilla,
         maxGuests: 4,
-        minStay: 2,
+        minStay: DEMO_UNIT_MIN_STAY.wholeVilla,
       },
       {
         id: U_GARDEN,
         propertyId: P_SEMINYAK,
         tenantId: T1,
         name: "Garden Room",
-        basePriceIdr: 1_200_000n,
+        basePriceIdr: PRICE.gardenRoom,
         maxGuests: 2,
-        minStay: 1,
+        minStay: DEMO_UNIT_MIN_STAY.gardenRoom,
       },
       {
         id: U_SURF,
         propertyId: P_CANGGU,
         tenantId: T1,
         name: "Surf Loft",
-        basePriceIdr: 950_000n,
+        basePriceIdr: PRICE.surfLoft,
         maxGuests: 2,
-        minStay: 1,
+        minStay: DEMO_UNIT_MIN_STAY.surfLoft,
       },
       {
         id: U_RIVER,
         propertyId: P_UBUD,
         tenantId: T2,
         name: "Riverside Suite",
-        basePriceIdr: 2_100_000n,
+        basePriceIdr: PRICE.riverSuite,
         maxGuests: 2,
-        minStay: 2,
+        minStay: DEMO_UNIT_MIN_STAY.riverSuite,
       },
     ]);
 
@@ -202,7 +236,7 @@ async function main() {
         guestPhone: "+62 812-0000-0001",
         guestEmail: "wayan@example.com",
         guestCount: 3,
-        totalPriceIdr: 14_000_000n,
+        totalPriceIdr: total(D.villaDirect, "wholeVilla"),
       })
       .returning({ id: booking.id });
 
@@ -229,7 +263,7 @@ async function main() {
         guestName: "Komang S.",
         guestPhone: "+62 812-0000-0002",
         guestCount: 2,
-        totalPriceIdr: 3_600_000n,
+        totalPriceIdr: total(D.gardenHold, "gardenRoom"),
         holdExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
       },
       // Surf Loft: a manual maintenance block.
@@ -253,7 +287,7 @@ async function main() {
         guestName: "Asian traveler",
         guestPhone: "+86 138-0000-0003",
         guestCount: 2,
-        totalPriceIdr: 6_300_000n,
+        totalPriceIdr: total(D.riverDirect, "riverSuite"),
       },
     ]);
 
@@ -262,7 +296,7 @@ async function main() {
       bookingId: directVilla.id,
       provider: "midtrans",
       providerRef: "SEED-ORDER-0001",
-      amountIdr: 14_000_000n,
+      amountIdr: total(D.villaDirect, "wholeVilla"),
       status: "paid",
     });
 
@@ -337,17 +371,34 @@ async function main() {
   // they move with the calendar. Print them so a presenter can check the state
   // they are about to talk over, and so "all in the future" is visible, not
   // claimed.
+  const freeUntil = new Date(
+    Date.parse(`${D.firstFreeNight}T00:00:00Z`) + DEMO_FREE_NIGHTS * 86_400_000,
+  )
+    .toISOString()
+    .slice(0, 10);
   console.log(
     [
-      "Demo window (all future, half-open):",
-      `  first bookable night   ${D.firstFreeNight}  (Whole Villa is free from here)`,
+      "Demo window (all future, half-open, all within a week):",
       `  Wayan D., paid direct  ${D.villaDirect.checkIn} -> ${D.villaDirect.checkOut}  (Whole Villa)`,
       `  refused Airbnb import  ${D.refusedImport.checkIn} -> ${D.refusedImport.checkOut}  (the inbox conflict)`,
       `  Komang S., live hold   ${D.gardenHold.checkIn} -> ${D.gardenHold.checkOut}  (Garden Room, 15 min)`,
-      `  imported from Airbnb   ${D.villaImported.checkIn} -> ${D.villaImported.checkOut}  (Whole Villa)`,
       `  maintenance block      ${D.surfBlock.checkIn} -> ${D.surfBlock.checkOut}  (Surf Loft)`,
+      `  imported from Airbnb   ${D.villaImported.checkIn} -> ${D.villaImported.checkOut}  (Whole Villa)`,
+      `  bookable gap           ${D.firstFreeNight} -> ${freeUntil}  (Whole Villa, ${DEMO_FREE_NIGHTS} nights = its min stay)`,
     ].join("\n"),
   );
+  // The dashboard opens on the current MONTH, and nothing can put a future stay
+  // into a month with no future days left. Say so when it applies, rather than
+  // letting the presenter meet an empty first screen.
+  const today = new Date();
+  const daysLeftInMonth =
+    new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate() -
+    today.getDate();
+  if (daysLeftInMonth < 6) {
+    console.log(
+      `NOTE: only ${daysLeftInMonth} day(s) left in this month, so some seeded stays fall into next month.\n      /app/calendar opens on this month - click the next-month arrow to see them all.`,
+    );
+  }
 }
 
 main()
