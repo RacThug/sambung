@@ -44,7 +44,7 @@ Demo window (all future, half-open, all within a week):
   Komang S., live hold   2026-07-23 -> 2026-07-25  (Garden Room, 15 min)
   maintenance block      2026-07-24 -> 2026-07-27  (Surf Loft)
   imported from Airbnb   2026-07-27 -> 2026-07-29  (Whole Villa)
-  bookable gap           2026-07-25 -> 2026-07-27  (Whole Villa, 2 nights = its min stay)
+  bookable gap           2026-07-25 -> 2026-07-27  (Whole Villa, 2 nights = its min stay; picker demo only)
 ```
 
 Those dates move with the calendar: they are anchored to *today*, never to fixed dates, so the
@@ -170,9 +170,16 @@ talking and clicking: the machine is never the thing you are waiting for. Budget
     > second time. The confirmation email fires exactly once either way."
 
 **No sandbox key?** Stop after step 9: the hold is real and the dates are already held. Say so,
-then record the same stay from the owner side instead: on `/app/calendar`, click the first
-empty day of the unit's row, choose **Walk-in**, and **Add walk-in**. That booking is born
-`confirmed` and Act 3 works unchanged.
+then record the same stay from the owner side instead: on `/app/calendar`, find the **Cliff
+Suite** row, click an empty day on it, choose **Walk-in**, and **Add walk-in**. That booking is
+born `confirmed` and Act 3 works unchanged.
+
+**Book on the Cliff Suite, not the Whole Villa.** If you improvise an extra booking, keep it on
+the property you just created. The seed leaves a bookable two-night gap on the Whole Villa, and
+taking it puts a second booking under the conflict Act 4 is about - so *"here is the booking in
+the way"* becomes a list of two, and the beat needs explaining instead of landing. The gap is
+there for the picker (it greys nights on both sides of your selection), not for a booking you
+are about to talk over.
 
 ---
 
@@ -212,12 +219,18 @@ empty day of the unit's row, choose **Walk-in**, and **Add walk-in**. That booki
     a public https `.ics` URL (a Google Calendar "secret address in iCal format" works as an
     OTA stand-in), and **Connect**.
 
-    Two different refusals live here, and it is worth being precise about which is which. A
-    non-`https` URL never reaches the network at all: zod rejects it at the boundary with
-    *"must be an https URL"*. An https URL always **connects** - the smoke fetch only decides
-    the badge - so an unreachable feed, or one pointing at a private or loopback address, lands
-    as a **Sync error** with `lastError` reading *"Feed host is not allowed"*. That second one
-    is the SSRF guard refusing to *fetch*, not the endpoint refusing to *save*.
+    Three different refusals live here, and it is worth being precise about which is which:
+
+    | What you paste | What happens |
+    |---|---|
+    | `http://…` (not https) | Refused at the boundary by zod: **400**, *"must be an https URL"*. It never reaches the network. |
+    | `https://…` that is down or does not resolve | **Connects**, badge **Sync error**, `lastError` *"Feed is unreachable"*. |
+    | `https://127.0.0.1/…` or `https://192.168.0.9/…` | **Connects**, badge **Sync error**, `lastError` *"Feed host is not allowed"*. |
+
+    Only the first is the endpoint refusing to *save*. The other two saved fine: the smoke fetch
+    reports back and the badge carries the news, and in the third case what refused was the SSRF
+    guard declining to *fetch* a private address. So a `localhost` feed can be connected here.
+    It simply never syncs.
 
     > "The import runs every 30 minutes, or on demand. Each event gets its own savepoint, so
     > one bad event skips instead of killing the cycle, and a truncated feed is detected and

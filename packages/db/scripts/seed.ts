@@ -384,7 +384,14 @@ async function main() {
       `  Komang S., live hold   ${D.gardenHold.checkIn} -> ${D.gardenHold.checkOut}  (Garden Room, 15 min)`,
       `  maintenance block      ${D.surfBlock.checkIn} -> ${D.surfBlock.checkOut}  (Surf Loft)`,
       `  imported from Airbnb   ${D.villaImported.checkIn} -> ${D.villaImported.checkOut}  (Whole Villa)`,
-      `  bookable gap           ${D.firstFreeNight} -> ${freeUntil}  (Whole Villa, ${DEMO_FREE_NIGHTS} nights = its min stay)`,
+      // "picker demo only" is not decoration. The gap IS bookable, but the
+      // refused import necessarily reaches into it - it has to overlap
+      // villaDirect PARTIALLY, so it cannot end where villaDirect ends - and a
+      // booking made here therefore becomes a SECOND row under the inbox
+      // conflict's "already booked here", turning Act 4's "here is the booking
+      // in the way" into a list. Use the gap to show the picker greying nights
+      // on both sides; book on the property the demo creates.
+      `  bookable gap           ${D.firstFreeNight} -> ${freeUntil}  (Whole Villa, ${DEMO_FREE_NIGHTS} nights = its min stay; picker demo only)`,
     ].join("\n"),
   );
   // The dashboard opens on the current MONTH, and nothing can put a future stay
