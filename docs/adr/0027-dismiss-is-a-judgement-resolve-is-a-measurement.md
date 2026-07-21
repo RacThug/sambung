@@ -1,7 +1,10 @@
 # ADR-0027: Dismiss is a judgement, resolve is a measurement
 
 - **Date**: 2026-07-21
-- **Status**: Accepted
+- **Status**: Accepted. Decisions 2 (no `raw_vevent`) and 4 (no `resolve` endpoint)
+  depart from #38's written spec and were **explicitly signed off by the owner on
+  2026-07-21**, after both independent reviewers flagged that documenting a deviation
+  is not the same as having it approved.
 - **Issue**: #38 (M4, channel-sync, boss fight #3 - the conflict inbox)
 - **Builds on**: ADR-0025 (a healthy feed reconciles; the per-VEVENT savepoint this
   slots into), ADR-0022 (an inbox marks, it does not mutate the ledger), ADR-0002
@@ -144,6 +147,13 @@ counts fill the field api-spec §7.2 reserved and #55 shipped without a source.
   todo about a feed, and disconnecting the feed retires the todo.
 - `sync_conflict_status` is the sixth shared enum mirroring a pgEnum, pinned by a test
   in `apps/api` per api-spec §8.6.
+- #38's AC #5 (`DATE-TIME` VEVENTs normalized to property-local dates) is **not met**,
+  and is knowingly left open as **#145**. `toIsoDate` drops the time rather than
+  converting it, so a timed DTSTART near the day boundary imports one night early.
+  Inherited from #56; a correct fix needs a per-property timezone column this schema
+  does not have, and no OTA we support emits timed availability. Documented at the
+  point of failure in `ical-parse.ts` so the next reader meets the limitation before
+  the bug.
 - api-spec §7.2 gains `openConflicts` (deferred since #55) and §7.3 gains `conflicts` on
   the "Sync now" summary; §7.5's response shape gains the derived `blockingBookings`
   and the inventory names. db-design §4.8's DDL sketch is superseded by decision 2.
