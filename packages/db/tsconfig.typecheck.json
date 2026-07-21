@@ -1,0 +1,16 @@
+{
+  // `tsconfig.json` is the BUILD config: `src` only, because that is all that
+  // ships in `dist`. Typechecking wants a wider net - `scripts/` (seed, reset,
+  // role setup, the demo date model) and `test/` were previously checked by
+  // nobody: tsx and vitest both strip types rather than verify them, so a type
+  // error in the seed only surfaced as a runtime crash during a demo.
+  //
+  // Separate file rather than widening `include`, because `tsconfig.json` sets
+  // `rootDir: src` for the emit, and a wider include there would either fight
+  // that or dump `scripts/` into `dist/`.
+  "extends": "../config/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src", "scripts", "test"]
+}
