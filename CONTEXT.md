@@ -281,3 +281,24 @@ The two directions of one calendar. Import pulls a Channel's blocks *into* Sambu
 half); Export publishes Sambung's confirmed stays *out* as an .ics a Channel reads. Neither carries a
 Guest's name or a price - a Channel needs only which nights are busy.
 _Avoid_: sync (for one direction - Sync is the whole pass), feed (for the act)
+
+### Delivery
+
+**The Edge**:
+Caddy, the single process a public request meets first: it terminates TLS, serves the SPA, proxies `/api`
+to the API, and splits link-preview Crawlers off to the OG Stub. One origin, which is why the refresh
+cookie stays first-party. It is configuration, not code - `deploy/Caddyfile` - so it is verified by being
+run and probed rather than by being read (ADR-0035).
+_Avoid_: proxy, gateway, load balancer, nginx, ingress
+
+**Crawler**:
+A link-preview fetcher (WhatsApp, `facebookexternalhit`, Twitterbot, Telegram, `line-poker`) that reads raw
+HTML and never runs a line of JavaScript. Narrowly distinct from a *search* crawler like Googlebot, which
+renders and must get the real SPA - serving that one a stub would be cloaking.
+_Avoid_: bot, spider, scraper (all three blur the search/preview line that decides what gets served)
+
+**OG Stub**:
+The static, escaped HTML document the API serves a Crawler in place of the SPA: the same Open Graph values
+the rendered page shows, derived once by `buildPropertyOgTags`, plus a refresh bounce for the stray human.
+It is a stand-in for a page, never a page - it has no content of its own.
+_Avoid_: landing page, preview page, prerender, SSR (nothing is server-rendered here; the values are looked up)

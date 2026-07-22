@@ -43,6 +43,35 @@ services:
       - sambung_garage_meta:/var/lib/garage/meta
       - sambung_garage_data:/var/lib/garage/data
 
+  # The reverse proxy, OPT-IN (`--profile edge`). Not part of `docker compose
+  # up -d`: day-to-day dev talks to Vite on 5173 and Nest on 3000 directly, and
+  # this only exists so `deploy/Caddyfile` can be RUN rather than read (#60,
+  # ADR-0035). The Caddyfile is BIND-MOUNTED, not copied - a copy would drift
+  # from the file that actually ships, which is the failure ADR-0019 exists to
+  # prevent.
+  #
+  #   pnpm --filter @sambung/web build          # file_server needs a real dist
+  #   docker compose --profile edge up -d
+  #   pnpm --filter api og:doctor               # measures what it actually does
+  #
+  # SAMBUNG_API uses host.docker.internal because the API runs on the HOST here,
+  # not in compose. In production both are containers and the default
+  # (localhost:3000) is right, which is why it stays the default.
+  edge:
+    image: caddy:2-alpine
+    container_name: sambung-edge
+    profiles: ["edge"]
+    restart: unless-stopped
+    environment:
+      SAMBUNG_API: host.docker.internal:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./apps/web/dist:/srv/sambung/web:ro
+
 volumes:
   sambung_pgdata:
   sambung_garage_meta:
