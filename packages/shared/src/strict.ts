@@ -17,19 +17,32 @@
  *   forward-compatibility; strictness inbound is boundary validation. Opposite
  *   rules for opposite directions, on purpose.
  *
- * - **The provider webhook is the one inbound exception**, and it lives in
- *   apps/api, not here: `MidtransGateway.verifyAndParse` plucks a handful of
- *   fields from a large provider payload, so strict would reject every real
- *   webhook. It has no shared schema and no validation pipe - out of scope by
- *   construction, not by omission.
+ * - **Inbound parsing that does NOT live here is out of this convention's
+ *   reach**, and deliberately so. `MidtransGateway.verifyAndParse` plucks a
+ *   handful of fields from a large provider payload, so strict would reject
+ *   every real webhook; the iCal feed is read by a hand-rolled parser, not a
+ *   zod object. Both live in apps/api with no shared schema and no validation
+ *   pipe. Route handlers that take no body at all (the verb-subresources -
+ *   archive, cancel, dismiss, handle, pay) read nothing, so there is no schema
+ *   to make strict; a stray key sent to those is still ignored.
+ *
+ * - **A public query schema must declare `lang`.** api-spec §1 documents
+ *   `?lang=en|id|zh` as legal on public endpoints, so a strict query schema that
+ *   omits it would turn a documented-legal param into a 400
+ *   (`availabilityQuerySchema` declares it).
  *
  * `strictObject` returns a `ZodObject`, so it composes with everything the
  * request schemas need - `.partial()` (strict is preserved, and an omitted field
  * stays omitted rather than snapping to its `.default()`), `.refine()` chains,
  * and use as a `discriminatedUnion` member - all verified to still reject unknown
  * keys. Use it wherever a body or query is defined; use plain `z.object` for a
- * response. A request schema that reaches for `z.object` stands out to a reviewer
- * and fails the enumeration test in `test/strict.test.ts`.
+ * response. A request schema that reaches for `z.object` fails the enumeration
+ * test in `test/strict.test.ts` - provided it follows the `*RequestSchema` /
+ * `*QuerySchema` naming that test discovers by, which is what makes the naming
+ * convention load-bearing rather than cosmetic.
+ *
+ * Not exported from the package barrel: this is a schema-authoring tool for this
+ * package, not part of the FE-BE contract.
  */
 import { z } from "zod";
 

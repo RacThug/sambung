@@ -37,9 +37,8 @@ export const tenantSettingsResponseSchema = z.object({
 export type TenantSettingsResponse = z.infer<typeof tenantSettingsResponseSchema>;
 
 /**
- * Partial by design: one field today, more when #57 lands Team settings. Strict
- * (ADR-0031), so `PATCH /settings {galleryCapp: 60}` is a 400 naming the key
- * rather than a 200 that silently changed nothing - the exact bug #150 fixed.
+ * Partial by design: one field today, more when #57 lands Team settings.
+ * Strict (ADR-0031): `{galleryCapp: 60}` is a 400, not a silent no-op.
  */
 export const updateTenantSettingsRequestSchema = strictObject({
   galleryCap: galleryCapSchema,

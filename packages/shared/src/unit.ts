@@ -74,9 +74,8 @@ export type CreateUnitRequest = z.infer<typeof createUnitRequestSchema>;
  * stored value. Proven in unit.test.ts, because it's the kind of thing a zod
  * upgrade could quietly change.
  *
- * Strict is inherited from the strict base through `.partial()` (ADR-0031), and
- * it composes cleanly with that short-circuit: an unknown key is rejected while
- * an omitted-but-defaulted field still stays omitted.
+ * Strict (ADR-0031) is inherited through `.partial()` and composes with that
+ * short-circuit: an unknown key is rejected, an omitted default still omitted.
  */
 export const updateUnitRequestSchema = createUnitRequestSchema.partial();
 export type UpdateUnitRequest = z.infer<typeof updateUnitRequestSchema>;

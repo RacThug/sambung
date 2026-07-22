@@ -1,26 +1,43 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import * as shared from "../src";
-import { strictObject, tenantDtoSchema } from "../src";
+import { tenantDtoSchema } from "../src/auth";
+import { strictObject } from "../src/strict";
 
 /**
  * The drift guard for ADR-0031 / #150: every INBOUND request schema in this
  * package rejects unknown keys, so a misspelled field is a 400, not a 200 that
  * silently changed nothing.
  *
- * It DISCOVERS the schemas by naming convention (`*RequestSchema` / `*QuerySchema`)
- * rather than listing them, so a new request schema that reaches for `z.object`
- * instead of `strictObject` fails here without anyone remembering to register it -
- * this is what makes the convention uniform rather than per-endpoint.
+ * It DISCOVERS schemas from the barrel by naming convention rather than listing
+ * them, so a new request schema built with `z.object` instead of `strictObject`
+ * fails here without anyone registering it. Two honest limits on that claim:
+ *
+ * - Discovery is only as good as the NAME. `RequestSchema` / `QuerySchema` are
+ *   the inbound suffixes; a schema ending in neither is invisible to it, so keep
+ *   the convention. Note `BodySchema` is deliberately NOT one of them - in this
+ *   package it names a RESPONSE body (`conflictBodySchema`, the 409 shape of
+ *   ADR-0012), which must stay lenient.
+ * - A discriminated union's members are module-private, so discovery reaches
+ *   only the union. Probing one branch would leave the others unproven, so
+ *   BRANCH_SEEDS routes a probe down every branch.
+ *
+ * Inbound schemas that live OUTSIDE this package are out of its reach: the one
+ * today, `apiCreateBookingRequestSchema`, inherits strict by wrapping the shared
+ * schema and is pinned by its own test in apps/api.
  */
 const UNKNOWN_KEY = "__unknownKey__";
 
-// The only shared request schema that is a discriminated union: an unknown-key
-// probe must carry a discriminator, or it fails to route before the strict
-// member is ever reached (invalid_union_discriminator instead of the
-// unrecognized_keys we are proving). Every other request schema routes on {}.
-const DISCRIMINATOR_SEED: Record<string, Record<string, unknown>> = {
-  createOwnerBookingRequestSchema: { source: "manual_block" },
+/**
+ * Seeds that route a probe down every branch a schema can take. Only a
+ * discriminated union needs them: an unseeded probe fails to route
+ * (invalid_union_discriminator) before any strict member is reached.
+ */
+const BRANCH_SEEDS: Record<string, Array<Record<string, unknown>>> = {
+  createOwnerBookingRequestSchema: [
+    { source: "manual_block" },
+    { source: "direct" },
+  ],
 };
 
 const requestSchemaNames = Object.keys(shared)
@@ -34,20 +51,31 @@ describe("strict request schemas (ADR-0031)", () => {
     expect(requestSchemaNames.length).toBeGreaterThanOrEqual(15);
   });
 
-  it.each(requestSchemaNames)("%s rejects an unknown key", (name) => {
-    const schema = (shared as Record<string, unknown>)[name] as z.ZodTypeAny;
-    const seed = DISCRIMINATOR_SEED[name] ?? {};
-
-    const result = schema.safeParse({ ...seed, [UNKNOWN_KEY]: true });
-
-    expect(result.success).toBe(false);
-    // The object-level unrecognized_keys issue is present even alongside missing
-    // required fields: zod accumulates all issues during the object parse.
-    const codes = result.success
-      ? []
-      : result.error.issues.map((issue) => issue.code);
-    expect(codes).toContain("unrecognized_keys");
+  it("every branch seed names a schema that still exists", () => {
+    // A rename would otherwise orphan the seed and quietly stop probing a branch.
+    expect(requestSchemaNames).toEqual(
+      expect.arrayContaining(Object.keys(BRANCH_SEEDS)),
+    );
   });
+
+  it.each(requestSchemaNames)(
+    "%s rejects an unknown key on every branch",
+    (name) => {
+      const schema = (shared as Record<string, unknown>)[name] as z.ZodTypeAny;
+
+      for (const seed of BRANCH_SEEDS[name] ?? [{}]) {
+        const result = schema.safeParse({ ...seed, [UNKNOWN_KEY]: true });
+
+        expect(result.success).toBe(false);
+        // The object-level unrecognized_keys issue is present even alongside
+        // missing required fields: zod accumulates every issue in one parse.
+        const codes = result.success
+          ? []
+          : result.error.issues.map((issue) => issue.code);
+        expect(codes).toContain("unrecognized_keys");
+      }
+    },
+  );
 
   it("a response schema stays LENIENT - strips unknown keys, never rejects", () => {
     // The asymmetry is the point (ADR-0031): a strict response would break an

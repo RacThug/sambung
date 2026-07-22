@@ -101,9 +101,7 @@ export type CreatePropertyRequest = z.infer<typeof createPropertyRequestSchema>;
 
 /**
  * PATCH body: every field optional; `name`, when present, cannot be null.
- * Strict is inherited from the strict base through `.partial()` (ADR-0031): a
- * misspelled field is a 400, not a silent no-op, and an omitted one still stays
- * omitted rather than snapping to a default.
+ * Strict is inherited from the base through `.partial()` (ADR-0031).
  */
 export const updatePropertyRequestSchema = createPropertyRequestSchema.partial();
 export type UpdatePropertyRequest = z.infer<typeof updatePropertyRequestSchema>;
