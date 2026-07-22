@@ -294,8 +294,10 @@ than discovered by a guest at the door.
 - **A real OTA subscribing to the export feed.** Needs a public https origin and their poll
   cycle. Step 14 shows the feed an OTA would read.
 - **Link-preview verification** (Facebook Sharing Debugger, a real WhatsApp or LINE share).
-  Needs the deployed public URL, and those crawlers cache hard. It is a demo-day checklist item,
-  tracked on [#60](https://github.com/RacThug/sambung/issues/60).
+  The mechanical half is measurable here - `pnpm --filter api og:doctor` runs the real Caddy
+  config and checks the whole chain. Asking the actual crawlers needs a public origin, which a
+  free Cloudflare quick tunnel provides without a deploy. Both are in
+  [`docs/og-verification.md`](og-verification.md).
 - **Live email delivery.** Unconfigured, the mailer renders the confirmation email to the log
   rather than sending it. Set `RESEND_API_KEY` and `MAIL_FROM` to send for real.
 
