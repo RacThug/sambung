@@ -22,9 +22,14 @@
  *   handful of fields from a large provider payload, so strict would reject
  *   every real webhook; the iCal feed is read by a hand-rolled parser, not a
  *   zod object. Both live in apps/api with no shared schema and no validation
- *   pipe. Route handlers that take no body at all (the verb-subresources -
- *   archive, cancel, dismiss, handle, pay) read nothing, so there is no schema
- *   to make strict; a stray key sent to those is still ignored.
+ *   pipe.
+ *
+ * - **A route that takes no body says so, with a schema like any other**
+ *   (`noBodyRequestSchema`, below). The verb-subresources - archive, cancel,
+ *   dismiss, handle, pay, sync, refresh, logout - used to declare nothing at
+ *   all, which meant a stray key was silently ignored: the same
+ *   indistinguishable-from-success failure this whole convention exists to
+ *   remove, on the routes that had no schema to fix (#152).
  *
  * - **A public query schema must declare `lang`.** api-spec §1 documents
  *   `?lang=en|id|zh` as legal on public endpoints, so a strict query schema that
@@ -51,3 +56,20 @@ export function strictObject<T extends z.ZodRawShape>(
 ): z.ZodObject<T, "strict"> {
   return z.object(shape).strict();
 }
+
+/**
+ * The body of a request that takes no arguments (#152) - the verb-subresource
+ * POSTs (`archive`, `unarchive`, `cancel`, `dismiss`, `handle`, `pay`, `sync`)
+ * plus `auth/refresh` and `auth/logout`. "This endpoint reads nothing" is a
+ * contract fact, so it is declared here rather than assumed by omission.
+ *
+ * Accepts an absent body (Express parses that to `{}`) and rejects every key,
+ * so `POST /bookings/:id/cancel {"refund":"full"}` is a 400 naming `refund`
+ * instead of a 200 that cheerfully ignored it. Enforced by `@NoBody()` in
+ * apps/api, and - being a `*RequestSchema` - proven strict by the enumeration
+ * test in `test/strict.test.ts` like every other inbound schema.
+ *
+ * Exported from the barrel (unlike `strictObject` itself) because the API
+ * validates against it.
+ */
+export const noBodyRequestSchema = strictObject({});

@@ -34,6 +34,9 @@ export * from "./public-property";
 export * from "./settings";
 export * from "./slug";
 export * from "./staff";
+// Named, not `export *`: `strictObject` is a schema-authoring tool for this
+// package and stays internal - only the no-body contract is part of the wire.
+export { noBodyRequestSchema } from "./strict";
 export * from "./sync-conflict";
 export * from "./unit";
 

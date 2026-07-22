@@ -15,6 +15,7 @@ import {
   type SyncConflict,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { NoBody } from '../common/decorators/no-body.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { SyncConflictsService } from './sync-conflicts.service';
 
@@ -48,6 +49,7 @@ export class SyncConflictsController {
   // Unknown / cross-tenant id → 404. There is NO matching `resolve` route (§7.5).
   @Post(':id/dismiss')
   @HttpCode(200)
+  @NoBody()
   dismiss(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<DismissSyncConflictResponse> {

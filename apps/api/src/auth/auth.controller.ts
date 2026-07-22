@@ -18,6 +18,7 @@ import {
   type RegisterRequest,
 } from '@sambung/shared';
 import { CurrentPrincipal } from '../common/decorators/current-principal.decorator';
+import { NoBody } from '../common/decorators/no-body.decorator';
 import type { UserPrincipal } from '../common/tenant-context.service';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { ThrottleSensitive } from '../common/throttle/throttle.decorator';
@@ -63,6 +64,7 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(200)
+  @NoBody()
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
@@ -75,6 +77,7 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(204)
+  @NoBody()
   logout(@Res({ passthrough: true }) res: Response): void {
     clearRefreshCookie(res);
   }

@@ -18,6 +18,7 @@ import {
   type UpdateUnitRequest,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { NoBody } from '../common/decorators/no-body.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { UnitsService } from './units.service';
 
@@ -74,6 +75,7 @@ export class UnitsController {
 
   @Delete(':id')
   @HttpCode(204)
+  @NoBody()
   remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.units.remove(id);
   }
@@ -83,12 +85,14 @@ export class UnitsController {
   // the updated resource; idempotent.
   @Post(':id/archive')
   @HttpCode(200)
+  @NoBody()
   archive(@Param('id', ParseUUIDPipe) id: string): Promise<UnitResponse> {
     return this.units.archive(id);
   }
 
   @Post(':id/unarchive')
   @HttpCode(200)
+  @NoBody()
   unarchive(@Param('id', ParseUUIDPipe) id: string): Promise<UnitResponse> {
     return this.units.unarchive(id);
   }

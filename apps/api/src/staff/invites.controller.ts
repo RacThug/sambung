@@ -25,6 +25,7 @@ import {
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { setRefreshCookie } from '../auth/refresh-cookie';
 import { Roles } from '../common/decorators/roles.decorator';
+import { NoBody } from '../common/decorators/no-body.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { RolesGuard } from '../common/roles.guard';
 import { ThrottleSensitive } from '../common/throttle/throttle.decorator';
@@ -67,6 +68,7 @@ export class InvitesController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('owner')
   @HttpCode(204)
+  @NoBody()
   revoke(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.invites.revoke(id);
   }

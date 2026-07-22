@@ -12,6 +12,7 @@ import type {
   MarkPaymentHandledResponse,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { NoBody } from '../common/decorators/no-body.decorator';
 import { PaymentInboxService } from './payment-inbox.service';
 
 /**
@@ -42,6 +43,7 @@ export class PaymentInboxController {
   // Unknown / cross-tenant / non-inbox id → 404.
   @Post(':id/handle')
   @HttpCode(200)
+  @NoBody()
   handle(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<MarkPaymentHandledResponse> {
