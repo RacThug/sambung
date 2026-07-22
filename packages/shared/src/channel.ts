@@ -11,6 +11,8 @@
  */
 import { z } from "zod";
 
+import { strictObject } from "./strict";
+
 /**
  * The OTA a connection points at. A closed set: the owner picks from these three
  * (api-spec §7.1), and the exclusion constraint on `(unit_id, channel)` treats it
@@ -61,7 +63,7 @@ export const importIcalUrlSchema = z
 
 /** Body of `POST /units/:id/channels` (api-spec §7.1). The unit id is in the
  * PATH; the tenant is the caller's own (owner RLS connection). */
-export const createChannelConnectionRequestSchema = z.object({
+export const createChannelConnectionRequestSchema = strictObject({
   channel: channelSchema,
   importIcalUrl: importIcalUrlSchema,
 });

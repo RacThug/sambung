@@ -17,6 +17,7 @@ import { z } from "zod";
 import { bookingSourceSchema, bookingStatusSchema } from "./booking";
 import { MAX_AVAILABILITY_NIGHTS, countNights } from "./availability";
 import { rupiahSchema } from "./money";
+import { strictObject } from "./strict";
 
 /**
  * A query param that may be absent, single (`?status=confirmed`), or repeated
@@ -42,15 +43,14 @@ const repeatable = <T extends z.ZodTypeAny>(inner: T) =>
  * stays a neutral "list bookings" (no status filter = every status, which a
  * reservations MANAGEMENT list wants - owners search for cancelled bookings too).
  */
-export const listBookingsQuerySchema = z
-  .object({
-    from: z.string().date().optional(),
-    to: z.string().date().optional(),
-    propertyId: z.string().uuid().optional(),
-    unitId: z.string().uuid().optional(),
-    status: repeatable(bookingStatusSchema).optional(),
-    source: repeatable(bookingSourceSchema).optional(),
-  })
+export const listBookingsQuerySchema = strictObject({
+  from: z.string().date().optional(),
+  to: z.string().date().optional(),
+  propertyId: z.string().uuid().optional(),
+  unitId: z.string().uuid().optional(),
+  status: repeatable(bookingStatusSchema).optional(),
+  source: repeatable(bookingSourceSchema).optional(),
+})
   .refine((q) => (q.from === undefined) === (q.to === undefined), {
     message: "from and to must be supplied together",
     path: ["to"],

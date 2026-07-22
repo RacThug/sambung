@@ -5,6 +5,8 @@
  */
 import { z } from "zod";
 
+import { strictObject } from "./strict";
+
 /**
  * Optional text field, clearable via PATCH: absent = leave alone, null = clear.
  * Empty/whitespace strings normalize to null so a cleared form input and an
@@ -76,7 +78,7 @@ export function depositAmountIdr(totalIdr: number, pct: number): number {
   return Math.floor((totalIdr * pct) / 100);
 }
 
-export const createPropertyRequestSchema = z.object({
+export const createPropertyRequestSchema = strictObject({
   name: z.string().trim().min(2).max(160),
   address: clearableText(400).optional(),
   latitude: z.number().min(-90).max(90).nullable().optional(),
@@ -97,7 +99,10 @@ export const createPropertyRequestSchema = z.object({
 });
 export type CreatePropertyRequest = z.infer<typeof createPropertyRequestSchema>;
 
-/** PATCH body: every field optional; `name`, when present, cannot be null. */
+/**
+ * PATCH body: every field optional; `name`, when present, cannot be null.
+ * Strict is inherited from the base through `.partial()` (ADR-0031).
+ */
 export const updatePropertyRequestSchema = createPropertyRequestSchema.partial();
 export type UpdatePropertyRequest = z.infer<typeof updatePropertyRequestSchema>;
 

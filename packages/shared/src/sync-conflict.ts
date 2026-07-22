@@ -12,6 +12,7 @@
 import { z } from "zod";
 import { bookingSourceSchema, bookingStatusSchema } from "./booking";
 import { channelSchema } from "./channel";
+import { strictObject } from "./strict";
 
 /**
  * Where a conflict is in its life - pinned to the `sync_conflict_status` pgEnum by a
@@ -88,7 +89,7 @@ export type SyncConflict = z.infer<typeof syncConflictSchema>;
  * `propertyId` narrows a multi-property owner to one workbench. Coerced from the
  * query string, so both sides can hand it straight to the URL.
  */
-export const listSyncConflictsQuerySchema = z.object({
+export const listSyncConflictsQuerySchema = strictObject({
   status: syncConflictStatusSchema.default("open"),
   propertyId: z.string().uuid().optional(),
 });

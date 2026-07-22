@@ -8,6 +8,8 @@
  */
 import { z } from "zod";
 
+import { strictObject } from "./strict";
+
 /** Upload whitelist - enforced at presign time AND signed into the URL. */
 export const photoContentTypeSchema = z.enum([
   "image/jpeg",
@@ -39,7 +41,7 @@ export const PHOTO_GALLERY_CEILING = 100;
 /** What a new tenant's cap starts at - mirrored by the column default. */
 export const DEFAULT_GALLERY_CAP = 30;
 
-export const presignPhotoRequestSchema = z.object({
+export const presignPhotoRequestSchema = strictObject({
   contentType: photoContentTypeSchema,
   size: z.number().int().positive().max(MAX_PHOTO_SIZE_BYTES),
 });
@@ -65,7 +67,7 @@ export type PresignPhotoResponse = z.infer<typeof presignPhotoResponseSchema>;
  * where "never grow past the cap" can also see the gallery it is growing from
  * (ADR-0030).
  */
-export const updatePhotosRequestSchema = z.object({
+export const updatePhotosRequestSchema = strictObject({
   keys: z
     .array(z.string().min(1).max(200).regex(/^[A-Za-z0-9/._-]+$/))
     .max(PHOTO_GALLERY_CEILING)

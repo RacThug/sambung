@@ -10,6 +10,7 @@
  */
 import { z } from "zod";
 import { rupiahSchema } from "./money";
+import { strictObject } from "./strict";
 
 /**
  * The ceiling on a nightly rate. NOT a JS-representability bound like
@@ -27,7 +28,7 @@ import { rupiahSchema } from "./money";
  */
 export const MAX_NIGHTLY_RATE_IDR = 1_000_000_000;
 
-export const createUnitRequestSchema = z.object({
+export const createUnitRequestSchema = strictObject({
   /**
    * Unique within the property, enforced by `unit_property_name_uniq` - zod
    * can't check it, since it needs the other rows.
@@ -72,6 +73,9 @@ export type CreateUnitRequest = z.infer<typeof createUnitRequestSchema>;
  * stays absent rather than snapping back to 2 and silently overwriting the
  * stored value. Proven in unit.test.ts, because it's the kind of thing a zod
  * upgrade could quietly change.
+ *
+ * Strict (ADR-0031) is inherited through `.partial()` and composes with that
+ * short-circuit: an unknown key is rejected, an omitted default still omitted.
  */
 export const updateUnitRequestSchema = createUnitRequestSchema.partial();
 export type UpdateUnitRequest = z.infer<typeof updateUnitRequestSchema>;

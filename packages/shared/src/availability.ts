@@ -14,6 +14,7 @@
  */
 import { z } from "zod";
 import { rupiahSchema } from "./money";
+import { strictObject } from "./strict";
 
 /**
  * The longest window the quote will price, in nights (api-spec §5.1). A guard
@@ -112,14 +113,13 @@ export function coalesceRanges(ranges: BlockedRange[]): BlockedRange[] {
  * check: the quote is a pure, stateless function of (unit, from, to); the picker
  * disables past dates in the UI.
  */
-export const availabilityQuerySchema = z
-  .object({
-    from: z.string().date(),
-    to: z.string().date(),
-    // Accepted for the public-endpoint i18n convention (api-spec §1) but unused
-    // here: the response is language-neutral slugs + data, and the SPA localizes.
-    lang: z.enum(["en", "id", "zh"]).optional(),
-  })
+export const availabilityQuerySchema = strictObject({
+  from: z.string().date(),
+  to: z.string().date(),
+  // Accepted for the public-endpoint i18n convention (api-spec §1) but unused
+  // here: the response is language-neutral slugs + data, and the SPA localizes.
+  lang: z.enum(["en", "id", "zh"]).optional(),
+})
   .refine((q) => q.from < q.to, {
     message: "from must be before to",
     path: ["to"],

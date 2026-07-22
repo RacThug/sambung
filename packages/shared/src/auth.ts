@@ -3,18 +3,20 @@
  */
 import { z } from "zod";
 
+import { strictObject } from "./strict";
+
 export const userRoleSchema = z.enum(["owner", "staff"]);
 export type UserRole = z.infer<typeof userRoleSchema>;
 
 /** Signup: creates a tenant + its owner user. */
-export const registerRequestSchema = z.object({
+export const registerRequestSchema = strictObject({
   tenantName: z.string().trim().min(2).max(120),
   email: z.string().trim().email().max(254),
   password: z.string().min(8).max(200),
 });
 export type RegisterRequest = z.infer<typeof registerRequestSchema>;
 
-export const loginRequestSchema = z.object({
+export const loginRequestSchema = strictObject({
   email: z.string().trim().email().max(254),
   password: z.string().min(1).max(200),
 });
