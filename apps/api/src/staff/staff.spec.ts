@@ -8,6 +8,7 @@ import request from 'supertest';
 import {
   appUser,
   booking,
+  membership,
   property,
   staffInvite,
   tenant,
@@ -416,12 +417,10 @@ describe('Staff invites and property-scoped RBAC', () => {
         .expect(201);
     });
 
-    it('refuses to invite an address that already has an account ANYWHERE', async () => {
-      // Found in review. `app_user_email_key` is GLOBAL, so an invitee who
-      // already has an account under another tenant hits it at accept - and the
-      // pre-check only looked inside the inviting tenant, so the invite was
-      // created and EMAILED before anyone could find out. That is a permanent
-      // dead end: every retry of a link that can never work.
+    it('INVITES an address that already has an account at another tenant (#154)', async () => {
+      // The #154 fix, and the exact inverse of what M5 shipped. `app_user.email`
+      // is still global, but an account is no longer welded to one Tenant - so
+      // an existing account elsewhere is a person to seat, not a dead end.
       const other = await registerTenant('Invite Foreign Account');
       const owner = await registerTenant('Invite Global Email');
       const { propertyId } = await seedProperty(
@@ -430,10 +429,31 @@ describe('Staff invites and property-scoped RBAC', () => {
       );
       const before = sent.length;
 
-      const res = await request(server())
+      await request(server())
         .post('/api/auth/invites')
         .set(auth(owner.accessToken))
         .send({ email: other.email, propertyIds: [propertyId] })
+        .expect(201);
+      // The email IS sent now - the whole point is that this link can work.
+      expect(sent.length).toBe(before + 1);
+      const invites = await dbs.db
+        .select({ id: staffInvite.id })
+        .from(staffInvite)
+        .where(eq(staffInvite.tenantId, owner.tenant.id));
+      expect(invites).toHaveLength(1);
+    });
+
+    it('still refuses an address already on THIS team', async () => {
+      // The one refusal that survives #154, and the honest one: they are already
+      // here. Asked of `membership`, not of `app_user`.
+      const owner = await registerTenant('Invite Own Member');
+      const { propertyId } = await seedProperty(owner.tenant.id, 'Villa Own');
+      const before = sent.length;
+
+      const res = await request(server())
+        .post('/api/auth/invites')
+        .set(auth(owner.accessToken))
+        .send({ email: owner.email, propertyIds: [propertyId] })
         .expect(409);
       expect(bodyOf<ConflictBody>(res)).toMatchObject({ code: 'email_taken' });
       // Nothing was created, and - the part that matters - nothing was sent.
@@ -827,7 +847,7 @@ describe('Staff invites and property-scoped RBAC', () => {
       expect(visible.map((p) => p.id)).toEqual([second.propertyId]);
     });
 
-    it('removes a staff account, and the session stops working', async () => {
+    it('removes the SEAT, not the human, and the session stops working', async () => {
       const owner = await registerTenant('Roster Remove');
       const seeded = await seedProperty(owner.tenant.id, 'Removal Villa');
       const staff = await inviteAndAccept(owner.accessToken, [
@@ -840,7 +860,7 @@ describe('Staff invites and property-scoped RBAC', () => {
         .expect(204);
 
       // The access token is still cryptographically valid until it expires, and
-      // that is the honest limit of a stateless token: the user is gone, so every
+      // that is the honest limit of a stateless token: the seat is gone, so every
       // scoped read now finds nothing, and no refresh can mint another.
       const properties = bodyOf<PropertyResponse[]>(
         await request(server())
@@ -849,10 +869,33 @@ describe('Staff invites and property-scoped RBAC', () => {
           .expect(200),
       );
       expect(properties).toEqual([]);
+
+      // The ACCOUNT survives (#154) - one owner must not be able to delete a
+      // login that another owner's team may also depend on. Its assignments went
+      // with the seat, via the composite FK.
+      const account = await dbs.db
+        .select({ id: appUser.id })
+        .from(appUser)
+        .where(eq(appUser.id, staff.userId));
+      expect(account).toHaveLength(1);
+      const seats = await dbs.db
+        .select({ tenantId: membership.tenantId })
+        .from(membership)
+        .where(eq(membership.appUserId, staff.userId));
+      expect(seats).toEqual([]);
+      const grants = await dbs.db
+        .select({ propertyId: userProperty.propertyId })
+        .from(userProperty)
+        .where(eq(userProperty.appUserId, staff.userId));
+      expect(grants).toEqual([]);
+
+      // 403, not 401: the password was CORRECT, so "invalid credentials" would
+      // send them to reset a password that works. Reachable only after a correct
+      // password, so it is no existence oracle.
       await request(server())
         .post('/api/auth/login')
         .send({ email: staff.email, password: PASSWORD })
-        .expect(401);
+        .expect(403);
     });
 
     it("cannot remove itself, another owner, or another tenant's staff", async () => {
@@ -876,12 +919,15 @@ describe('Staff invites and property-scoped RBAC', () => {
       const [coOwner] = await dbs.db
         .insert(appUser)
         .values({
-          tenantId: a.tenant.id,
           email: `co-owner+${randomUUID()}@test.dev`,
           passwordHash: 'x',
-          role: 'owner',
         })
         .returning({ id: appUser.id });
+      await dbs.db.insert(membership).values({
+        appUserId: coOwner.id,
+        tenantId: a.tenant.id,
+        role: 'owner',
+      });
       await request(server())
         .delete(`/api/staff/${coOwner.id}`)
         .set(auth(a.accessToken))
@@ -932,6 +978,220 @@ describe('Staff invites and property-scoped RBAC', () => {
       );
       expect(staffList.staff).toEqual([]);
       expect(inviteList.invites).toEqual([]);
+    });
+  });
+
+  // --- #154: one person, two villa owners ------------------------------------
+
+  describe('one account, two tenants (#154)', () => {
+    /** Invite `email` into `ownerToken`'s tenant and return the raw token. */
+    async function inviteToken(
+      ownerToken: string,
+      email: string,
+      propertyIds: string[],
+    ): Promise<string> {
+      const before = sent.length;
+      await request(server())
+        .post('/api/auth/invites')
+        .set(auth(ownerToken))
+        .send({ email, propertyIds })
+        .expect(201);
+      return tokenFromLastEmail(before);
+    }
+
+    it('seats an existing account at a second tenant, and both seats work', async () => {
+      // The scenario the issue is named after: a property manager working for
+      // two villa owners, with one email address.
+      const first = await registerTenant('Manager Tenant One');
+      const firstProp = await seedProperty(first.tenant.id, 'Villa One');
+      const manager = await inviteAndAccept(first.accessToken, [
+        firstProp.propertyId,
+      ]);
+
+      const second = await registerTenant('Manager Tenant Two');
+      const secondProp = await seedProperty(second.tenant.id, 'Villa Two');
+      const token = await inviteToken(second.accessToken, manager.email, [
+        secondProp.propertyId,
+      ]);
+
+      // The page must know which password to ask for BEFORE asking.
+      const preview = bodyOf<InvitePreviewResponse>(
+        await request(server())
+          .get(`/api/auth/invites/token/${token}`)
+          .expect(200),
+      );
+      expect(preview.mode).toBe('signin');
+
+      const accepted = bodyOf<AuthResponse>(
+        await request(server())
+          .post('/api/auth/invites/accept')
+          .send({ token, password: PASSWORD })
+          .expect(200),
+      );
+      // One account - the same id, not a second row for the same address.
+      expect(accepted.user.id).toBe(manager.userId);
+      expect(accepted.tenant.id).toBe(second.tenant.id);
+      expect(accepted.memberships.map((m) => m.tenantId).sort()).toEqual(
+        [first.tenant.id, second.tenant.id].sort(),
+      );
+
+      // And the scope follows the ACTIVE seat, not the person: this session sees
+      // tenant two's property and nothing of tenant one's.
+      const inSecond = bodyOf<PropertyResponse[]>(
+        await request(server())
+          .get('/api/properties')
+          .set(auth(accepted.accessToken))
+          .expect(200),
+      );
+      expect(inSecond.map((p) => p.id)).toEqual([secondProp.propertyId]);
+
+      // Switch back, and the same account sees tenant one's property instead.
+      const switched = bodyOf<AuthResponse>(
+        await request(server())
+          .post('/api/auth/session')
+          .set(auth(accepted.accessToken))
+          .send({ tenantId: first.tenant.id })
+          .expect(200),
+      );
+      expect(switched.tenant.id).toBe(first.tenant.id);
+      const inFirst = bodyOf<PropertyResponse[]>(
+        await request(server())
+          .get('/api/properties')
+          .set(auth(switched.accessToken))
+          .expect(200),
+      );
+      expect(inFirst.map((p) => p.id)).toEqual([firstProp.propertyId]);
+    });
+
+    it('refuses the second seat when the existing password is wrong, and does NOT spend the invite', async () => {
+      const first = await registerTenant('Wrong Password One');
+      const firstProp = await seedProperty(first.tenant.id, 'WP Villa One');
+      const manager = await inviteAndAccept(first.accessToken, [
+        firstProp.propertyId,
+      ]);
+
+      const second = await registerTenant('Wrong Password Two');
+      const secondProp = await seedProperty(second.tenant.id, 'WP Villa Two');
+      const token = await inviteToken(second.accessToken, manager.email, [
+        secondProp.propertyId,
+      ]);
+
+      // The invite token proves control of the mailbox; it does not prove
+      // control of the ACCOUNT, and attaching a seat to someone else's login
+      // needs both.
+      await request(server())
+        .post('/api/auth/invites/accept')
+        .send({ token, password: 'not-the-password' })
+        .expect(401);
+
+      // Unspent: a mistyped password must be retryable, or one slip burns a link
+      // that exists in exactly one email.
+      const retried = bodyOf<AuthResponse>(
+        await request(server())
+          .post('/api/auth/invites/accept')
+          .send({ token, password: PASSWORD })
+          .expect(200),
+      );
+      expect(retried.tenant.id).toBe(second.tenant.id);
+    });
+
+    it('says `create` for an address with no account', async () => {
+      const owner = await registerTenant('Create Mode');
+      const { propertyId } = await seedProperty(owner.tenant.id, 'CM Villa');
+      const token = await inviteToken(
+        owner.accessToken,
+        `newcomer+${randomUUID()}@test.dev`,
+        [propertyId],
+      );
+      const preview = bodyOf<InvitePreviewResponse>(
+        await request(server())
+          .get(`/api/auth/invites/token/${token}`)
+          .expect(200),
+      );
+      expect(preview.mode).toBe('create');
+    });
+
+    it('one owner removing a seat leaves the other tenant untouched', async () => {
+      const first = await registerTenant('Two Seats One');
+      const firstProp = await seedProperty(first.tenant.id, 'TS Villa One');
+      const manager = await inviteAndAccept(first.accessToken, [
+        firstProp.propertyId,
+      ]);
+
+      const second = await registerTenant('Two Seats Two');
+      const secondProp = await seedProperty(second.tenant.id, 'TS Villa Two');
+      const token = await inviteToken(second.accessToken, manager.email, [
+        secondProp.propertyId,
+      ]);
+      await request(server())
+        .post('/api/auth/invites/accept')
+        .send({ token, password: PASSWORD })
+        .expect(200);
+
+      // Tenant one dismisses them. Tenant two never agreed to that.
+      await request(server())
+        .delete(`/api/staff/${manager.userId}`)
+        .set(auth(first.accessToken))
+        .expect(204);
+
+      const login = bodyOf<AuthResponse>(
+        await request(server())
+          .post('/api/auth/login')
+          .send({ email: manager.email, password: PASSWORD })
+          .expect(200),
+      );
+      expect(login.memberships.map((m) => m.tenantId)).toEqual([
+        second.tenant.id,
+      ]);
+      const visible = bodyOf<PropertyResponse[]>(
+        await request(server())
+          .get('/api/properties')
+          .set(auth(login.accessToken))
+          .expect(200),
+      );
+      expect(visible.map((p) => p.id)).toEqual([secondProp.propertyId]);
+
+      // ...and the seat that was removed cannot be re-entered by naming it.
+      await request(server())
+        .post('/api/auth/session')
+        .set(auth(login.accessToken))
+        .send({ tenantId: first.tenant.id })
+        .expect(404);
+    });
+
+    it('a staff member of two tenants appears on each roster once', async () => {
+      const first = await registerTenant('Roster Split One');
+      const firstProp = await seedProperty(first.tenant.id, 'RS Villa One');
+      const manager = await inviteAndAccept(first.accessToken, [
+        firstProp.propertyId,
+      ]);
+
+      const second = await registerTenant('Roster Split Two');
+      const secondProp = await seedProperty(second.tenant.id, 'RS Villa Two');
+      const token = await inviteToken(second.accessToken, manager.email, [
+        secondProp.propertyId,
+      ]);
+      await request(server())
+        .post('/api/auth/invites/accept')
+        .send({ token, password: PASSWORD })
+        .expect(200);
+
+      // Each owner sees their own team, with their own Assignments - never the
+      // other tenant's grant leaking through a shared account row.
+      for (const [owner, expected] of [
+        [first, firstProp.propertyId],
+        [second, secondProp.propertyId],
+      ] as const) {
+        const roster = bodyOf<ListStaffResponse>(
+          await request(server())
+            .get('/api/staff')
+            .set(auth(owner.accessToken))
+            .expect(200),
+        );
+        const row = roster.staff.filter((s) => s.id === manager.userId);
+        expect(row).toHaveLength(1);
+        expect(row[0].properties.map((p) => p.id)).toEqual([expected]);
+      }
     });
   });
 });

@@ -2,13 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import {
   appUser,
+  membership,
   property,
   staffInvite,
   staffInviteProperty,
   tenant,
   userProperty,
   type AppUser,
-  type Tenant,
 } from '@sambung/db';
 import { DbService } from '../db/db.service';
 import type { InviteView } from './invite-liveness';
@@ -69,30 +69,48 @@ export class InviteAcceptRepository {
   }
 
   /**
-   * Does ANY tenant already have an account for this address?
+   * The account for this address, anywhere in Sambung, or undefined.
    *
    * `app_user_email_key` is global (see the schema comment on `app_user.email`),
-   * so this is the question that decides whether an invite can ever be accepted -
-   * and it cannot be asked under RLS, which by design shows only our own users.
-   * Found in review: without it, inviting someone who already had an account
-   * elsewhere created and EMAILED a link that answered 409 on every attempt,
-   * forever, with nothing to tell either party why.
+   * so this cannot be asked under RLS - which by design shows only our own
+   * tenant's users. Before #154 the answer was a refusal: an existing account
+   * anywhere meant the invite could never be accepted. Now it is a FORK. An
+   * existing account gets a membership added to it, once the caller proves they
+   * hold it, so this returns the hash rather than a boolean.
    *
-   * Asking it globally leaks nothing new. `POST /auth/register` already answers
-   * "does this address have an account?" to anyone at all, unauthenticated; this
-   * merely spares an owner from sending an invite that cannot work.
+   * Asking globally leaks nothing new: `POST /auth/register` already answers
+   * "does this address have an account?" to anyone at all, unauthenticated.
    */
-  async emailHasAccountAnywhere(email: string): Promise<boolean> {
+  async findAccountByEmail(
+    email: string,
+  ): Promise<{ id: string; passwordHash: string } | undefined> {
+    const [row] = await this.dbs.db
+      .select({ id: appUser.id, passwordHash: appUser.passwordHash })
+      .from(appUser)
+      .where(eq(appUser.email, email))
+      .limit(1);
+    return row;
+  }
+
+  /** Is this address already a member of THIS tenant? The invite-time refusal. */
+  async isMemberOfTenant(email: string, tenantId: string): Promise<boolean> {
     const rows = await this.dbs.db
       .select({ id: appUser.id })
       .from(appUser)
-      .where(eq(appUser.email, email))
+      .innerJoin(membership, eq(membership.appUserId, appUser.id))
+      .where(and(eq(appUser.email, email), eq(membership.tenantId, tenantId)))
       .limit(1);
     return rows.length > 0;
   }
 
   /**
-   * Accept: spend the invite, create the staff user, copy the Assignments across.
+   * Accept: spend the invite, seat the user, copy the Assignments across.
+   *
+   * `account` is the #154 fork, and it is decided by the caller because the
+   * `existing` branch requires a password check that must happen OUTSIDE this
+   * transaction (bcrypt under a row lock is how a hot path becomes a queue -
+   * ADR-0033). Either way what lands is one `membership` row: creating an
+   * identity is the part that is optional now, not the seat.
    *
    * ONE transaction, and the ORDER is the concurrency control. The guarded
    * UPDATE goes first, so two simultaneous accepts of the same token contend on
@@ -116,8 +134,10 @@ export class InviteAcceptRepository {
    */
   async accept(input: {
     inviteId: string;
-    passwordHash: string;
-  }): Promise<{ user: AppUser; tenant: Tenant } | undefined> {
+    account:
+      | { kind: 'create'; passwordHash: string }
+      | { kind: 'existing'; userId: string };
+  }): Promise<{ user: AppUser; tenantId: string } | undefined> {
     return this.dbs.db.transaction(async (tx) => {
       const [spent] = await tx
         .update(staffInvite)
@@ -137,38 +157,61 @@ export class InviteAcceptRepository {
         });
       if (!spent) return undefined;
 
-      const [newUser] = await tx
-        .insert(appUser)
+      const user =
+        input.account.kind === 'create'
+          ? (
+              await tx
+                .insert(appUser)
+                .values({
+                  email: spent.email,
+                  passwordHash: input.account.passwordHash,
+                })
+                .returning()
+            )[0]
+          : (
+              await tx
+                .select()
+                .from(appUser)
+                .where(eq(appUser.id, input.account.userId))
+                .limit(1)
+            )[0];
+      /* istanbul ignore next - the caller resolved this id moments ago. */
+      if (!user) return undefined;
+
+      // The seat. `DO NOTHING` rather than a pre-check: the only way this row can
+      // already exist is a membership created between the invite and its accept,
+      // and the safe outcome is to leave whatever role is already there alone -
+      // an owner accepting a staff invite to their own tenant must not be
+      // demoted by it. Inserting a seat that exists is not an error worth a 409.
+      await tx
+        .insert(membership)
         .values({
+          appUserId: user.id,
           tenantId: spent.tenantId,
-          email: spent.email,
-          passwordHash: input.passwordHash,
           role: 'staff',
         })
-        .returning();
+        .onConflictDoNothing();
 
       // The Assignments, copied from the invite. A single INSERT ... SELECT
       // rather than a read-then-insert: the set is whatever the invite grants at
       // this instant, and there is no version of it in application memory to
       // disagree with the row. `tenant_id` comes from the invite's own rows, so
       // the composite FKs have nothing to reject.
-      await tx.insert(userProperty).select(
-        tx
-          .select({
-            appUserId: sql`${newUser.id}::uuid`.as('app_user_id'),
-            propertyId: staffInviteProperty.propertyId,
-            tenantId: staffInviteProperty.tenantId,
-          })
-          .from(staffInviteProperty)
-          .where(eq(staffInviteProperty.inviteId, spent.id)),
-      );
+      await tx
+        .insert(userProperty)
+        .select(
+          tx
+            .select({
+              appUserId: sql`${user.id}::uuid`.as('app_user_id'),
+              propertyId: staffInviteProperty.propertyId,
+              tenantId: staffInviteProperty.tenantId,
+            })
+            .from(staffInviteProperty)
+            .where(eq(staffInviteProperty.inviteId, spent.id)),
+        )
+        .onConflictDoNothing();
 
-      const [tenantRow] = await tx
-        .select()
-        .from(tenant)
-        .where(eq(tenant.id, spent.tenantId))
-        .limit(1);
-      return { user: newUser, tenant: tenantRow };
+      return { user, tenantId: spent.tenantId };
     });
   }
 }

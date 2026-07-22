@@ -12,6 +12,7 @@ const preview = {
   tenantName: "Bali Breeze Villas",
   propertyNames: ["Seminyak Beach Villa", "Ubud Cottage"],
   expiresAt: "2026-07-29T00:00:00.000Z",
+  mode: "create" as const,
 };
 
 afterEach(() => {
@@ -109,6 +110,55 @@ describe("accept invite page (§3.4, #57)", () => {
     expect(
       await screen.findByText(/isn't valid\. Check the link in your email/),
     ).toBeInTheDocument();
+  });
+
+  // #154: the same page, for someone who already has a Sambung account.
+  describe("an address that already has an account (#154)", () => {
+    const returning = { ...preview, mode: "signin" as const };
+
+    it("asks for the EXISTING password, not a new one", async () => {
+      stubFetch({ [PREVIEW_URL]: () => json(returning) });
+      renderAt(`/invite/${TOKEN}`);
+
+      // Telling a returning user to "choose a password" and then refusing the
+      // one they pick is the confusion `mode` exists to prevent.
+      expect(
+        await screen.findByText(/You already have a Sambung account/),
+      ).toBeInTheDocument();
+      const field = screen.getByLabelText("Your Sambung password");
+      expect(field).toHaveAttribute("autocomplete", "current-password");
+      expect(
+        screen.getByRole("button", { name: "Join workspace" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Create account" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("explains a 401 as the wrong account password", async () => {
+      stubFetch({
+        [PREVIEW_URL]: () => json(returning),
+        "POST /api/auth/invites/accept": () =>
+          json(
+            { statusCode: 401, error: "Unauthorized", message: "Invalid credentials" },
+            401,
+          ),
+      });
+      renderAt(`/invite/${TOKEN}`);
+
+      fireEvent.change(await screen.findByLabelText("Your Sambung password"), {
+        target: { value: "wrongpassword1" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Join workspace" }));
+
+      expect(
+        await screen.findByText(/doesn't match your Sambung account/),
+      ).toBeInTheDocument();
+      // The invite is not spent by a typo, so the form stays usable.
+      expect(
+        screen.getByRole("button", { name: "Join workspace" }),
+      ).toBeEnabled();
+    });
   });
 
   it("shows no language switcher - it is an operator page, like the dashboard", async () => {

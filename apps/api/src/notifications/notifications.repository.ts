@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { and, eq, sql } from 'drizzle-orm';
-import { appUser, booking, payment, property, unit } from '@sambung/db';
+import {
+  appUser,
+  booking,
+  membership,
+  payment,
+  property,
+  unit,
+} from '@sambung/db';
 import { DbService } from '../db/db.service';
 import type { ConfirmationEmailData } from './confirmation-email';
 
@@ -51,11 +58,18 @@ export class NotificationsRepository {
 
     if (!row) return null;
 
+    // Owners of THIS tenant, read through `membership` (#154): the same account
+    // may own another tenant entirely, so "is an owner" is only ever a fact
+    // about a seat, never about a person.
     const owners = await this.dbs.db
       .select({ email: appUser.email })
       .from(appUser)
+      .innerJoin(membership, eq(membership.appUserId, appUser.id))
       .where(
-        and(eq(appUser.tenantId, row.tenantId), eq(appUser.role, 'owner')),
+        and(
+          eq(membership.tenantId, row.tenantId),
+          eq(membership.role, 'owner'),
+        ),
       );
 
     return {

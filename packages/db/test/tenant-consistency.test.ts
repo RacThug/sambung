@@ -5,6 +5,7 @@ import {
   appUser,
   booking,
   channelConnection,
+  membership,
   property,
   staffInvite,
   staffInviteProperty,
@@ -125,13 +126,14 @@ describe("tenant-consistency composite FKs", () => {
   it("rejects assigning a staff member a property in another tenant", async () => {
     const [staff] = await db
       .insert(appUser)
-      .values({
-        tenantId: tenantB, // the staff member belongs to B
-        email: `fk-staff-${tenantB}@test.dev`,
-        passwordHash: "x",
-        role: "staff",
-      })
+      .values({ email: `fk-staff-${tenantB}@test.dev`, passwordHash: "x" })
       .returning({ id: appUser.id });
+    // The seat, at B (#154): since 0016 the left half of the composite FK points
+    // at `membership`, so "belongs to B" is a row here rather than a column on
+    // the account.
+    await db
+      .insert(membership)
+      .values({ appUserId: staff.id, tenantId: tenantB, role: "staff" });
     await expectDbError(
       db.insert(userProperty).values({
         appUserId: staff.id,
@@ -146,13 +148,11 @@ describe("tenant-consistency composite FKs", () => {
   it("rejects an invite granting a property in another tenant", async () => {
     const [owner] = await db
       .insert(appUser)
-      .values({
-        tenantId: tenantB,
-        email: `fk-owner-${tenantB}@test.dev`,
-        passwordHash: "x",
-        role: "owner",
-      })
+      .values({ email: `fk-owner-${tenantB}@test.dev`, passwordHash: "x" })
       .returning({ id: appUser.id });
+    await db
+      .insert(membership)
+      .values({ appUserId: owner.id, tenantId: tenantB, role: "owner" });
     const [invite] = await db
       .insert(staffInvite)
       .values({

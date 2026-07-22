@@ -199,21 +199,35 @@ export function tenantSettingsResponse(
  * and a tenant it has no opinion about.
  */
 export function authResponse(
-  overrides: { user?: Partial<AuthResponse["user"]> } = {},
+  overrides: {
+    user?: Partial<AuthResponse["user"]>;
+    memberships?: AuthResponse["memberships"];
+  } = {},
 ): AuthResponse {
+  const user = {
+    id: "11111111-1111-1111-1111-111111111111",
+    email: "owner@test.dev",
+    role: "owner" as const,
+    tenantId: "22222222-2222-2222-2222-222222222222",
+    ...overrides.user,
+  };
   return {
     accessToken: "test-token",
-    user: {
-      id: "11111111-1111-1111-1111-111111111111",
-      email: "owner@test.dev",
-      role: "owner",
-      tenantId: "22222222-2222-2222-2222-222222222222",
-      ...overrides.user,
-    },
+    user,
     tenant: {
       id: "22222222-2222-2222-2222-222222222222",
       name: "Test Tenant",
     },
+    // ONE seat by default (#154), so the switcher stays a plain label unless a
+    // test says otherwise - which is what the overwhelming majority of accounts
+    // look like, and what every pre-#154 test assumed without saying so.
+    memberships: overrides.memberships ?? [
+      {
+        tenantId: "22222222-2222-2222-2222-222222222222",
+        tenantName: "Test Tenant",
+        role: user.role,
+      },
+    ],
   };
 }
 

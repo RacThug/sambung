@@ -91,30 +91,38 @@ Notifications (FR-NOTIF-1/2) have **no endpoints**: email fires on the `confirme
 
 Shared types: `packages/shared/src/auth.ts` (`registerRequestSchema`, `loginRequestSchema`, `authResponseSchema`, `meResponseSchema`).
 
+> **Identity vs belonging** (#154, [ADR-0034](adr/0034-one-identity-many-memberships.md)). A **User** is one login (email + password, globally unique). A **Membership** is that user's place at one Tenant, and it carries the role. So `user.role` and `user.tenantId` in every response below describe the **active membership**, not the person: the same account can be an owner at one Tenant and staff at another.
+
 ### 3.1 `POST /auth/register` → 201
-Creates a **tenant + its owner user atomically**, starts a session.
+Creates a **tenant, its owner's account, and the membership joining them atomically**, starts a session.
 Body: `{ tenantName (2-120), email (≤254), password (8-200) }`.
-Response: `AuthResponse = { accessToken, user: { id, email, role, tenantId }, tenant: { id, name } }` + refresh cookie. Password hash never appears in any response.
-Errors: `400` zod; `409` `code: "email_taken"` (§8.2, ADR-0012) - including the **concurrent-signup race**: two simultaneous registers with one email → exactly one 201, one 409 (the citext UNIQUE is the guard; the pre-check is UX). Both layers throw the same factory, so the bodies are byte-identical. Test-proven.
+Response: `AuthResponse = { accessToken, user: { id, email, role, tenantId }, tenant: { id, name }, memberships: [{ tenantId, tenantName, role }] }` + refresh cookie. Password hash never appears in any response.
+Errors: `400` zod; `409` `code: "email_taken"` (§8.2, ADR-0012) - including the **concurrent-signup race**: two simultaneous registers with one email → exactly one 201, one 409 (the citext UNIQUE is the guard; the pre-check is UX). Both layers throw the same factory, so the bodies are byte-identical. Test-proven. Still a refusal after #154: register is unauthenticated, so it cannot know the caller holds that account. "Create another workspace" would be an authenticated verb, and does not exist.
 
 ### 3.2 `POST /auth/login` → 200
-Body: `{ email, password }`. Same `AuthResponse` + cookie.
+Body: `{ email, password }`. Same `AuthResponse` + cookie, for the **default** membership (owners first, then oldest) with the full `memberships` list beside it.
 `401` for wrong email **and** wrong password - identical message, no account-existence oracle.
+`403` when the password was **correct** but the account holds no memberships (every seat removed). Not an oracle - only a correct password reaches it - and "invalid credentials" would send them to reset a password that works.
 
 ### 3.3 `POST /auth/refresh` → 200
 No body - reads the `refresh_token` cookie (only sent to `/api/auth/*`). Returns fresh `AuthResponse`, re-sets the cookie. `401` when missing/invalid/expired, or the user no longer exists.
+The refresh token carries `tenantId` (#154) so a refresh lands back in the membership the session was in. Optional in the payload, so pre-#154 cookies keep working; a tenant that is no longer a membership falls back to the default rather than ending the session.
 
 ### 3.4 `POST /auth/logout` → 204
 Clears the cookie. Always succeeds. (Access token simply ages out ≤15 min; v1 keeps no denylist - documented trade-off.)
 
 ### 3.5 `GET /auth/me` → 200 (auth)
-`MeResponse = { user, tenant }`. `401` without/with a garbage token.
+`MeResponse = { user, tenant, memberships }`. `401` without/with a garbage token, or when the token names a membership that no longer exists.
+
+### 3.5a `POST /auth/session` → 200 (auth) - **Built** (#154, [ADR-0034](adr/0034-one-identity-many-memberships.md))
+Act in a different Tenant. Body: `{ tenantId }`. Returns a fresh `AuthResponse` and re-sets the refresh cookie.
+`404` for a tenant the caller holds no membership at - never a `403`, because "no" and "there is no such tenant" must be one answer or this enumerates the tenants of Sambung one uuid at a time. Not `@ThrottleSensitive`: the caller already holds a valid token, so there is no secret here to guess.
 
 ### 3.6 Staff invites + property-scoped RBAC - **Built** (#57, [ADR-0032](adr/0032-a-staff-scope-is-a-second-axis-in-rls.md) / [ADR-0033](adr/0033-an-invite-is-a-hashed-single-use-grant.md))
 
-**Invites.** `POST /auth/invites` (owner-only: `email` + `propertyIds[]`) mints a 256-bit token, stores its **sha256**, and emails the link - the raw token is never returned by any endpoint. `GET /auth/invites` lists the live ones; `DELETE /auth/invites/:id` withdraws one (idempotent, 404-over-403). `GET /auth/invites/token/:token` (unauthenticated) previews who invited you and to what; `POST /auth/invites/accept` (unauthenticated, `@ThrottleSensitive`) takes `token` + `password`, creates the staff user, copies the grants into `user_property`, and starts a session exactly as login does (access token in the body, refresh cookie set). An **unknown** token → `404` (no existence oracle); a **known but spent** one → `409 invite_not_acceptable {reason: expired|accepted|revoked}`. A second live invite for one email → `409 invite_already_pending` (app pre-check + `staff_invite_live_email_uniq`, indistinguishable per §5.3). A failed send **rolls the invite back** and answers `503` - the token lives only in that email, and a pending-but-unreachable invite would block every retry.
+**Invites.** `POST /auth/invites` (owner-only: `email` + `propertyIds[]`) mints a 256-bit token, stores its **sha256**, and emails the link - the raw token is never returned by any endpoint. `409 email_taken` iff that address already holds a membership at **this** Tenant; an account at another Tenant is invited normally (#154 - it used to be refused globally). `GET /auth/invites` lists the live ones; `DELETE /auth/invites/:id` withdraws one (idempotent, 404-over-403). `GET /auth/invites/token/:token` (unauthenticated) previews who invited you and to what, plus `mode: "create" | "signin"` - whether that address needs a password SET or VERIFIED. `POST /auth/invites/accept` (unauthenticated, `@ThrottleSensitive`) takes `token` + `password`, creates the account **only when there isn't one**, adds the membership, copies the grants into `user_property`, and starts a session exactly as login does (access token in the body, refresh cookie set). In `signin` mode a wrong password is a `401` and **does not spend the invite**: the token proves control of the mailbox, the password proves control of the account, and adding a seat to an existing login needs both. An **unknown** token → `404` (no existence oracle); a **known but spent** one → `409 invite_not_acceptable {reason: expired|accepted|revoked}`. A second live invite for one email → `409 invite_already_pending` (app pre-check + `staff_invite_live_email_uniq`, indistinguishable per §5.3). A failed send **rolls the invite back** and answers `503` - the token lives only in that email, and a pending-but-unreachable invite would block every retry.
 
-**The team.** `GET /staff` (with assignments), `PATCH /staff/:id {propertyIds}` (a WHOLE-SET write, min 1 - shortening the list is how access is removed), `DELETE /staff/:id`. All `@Roles('owner')`. `DELETE` carries `role = 'staff'` in its WHERE, so another owner's id is a **404**, not a 403 that would confirm one exists; removing **yourself** is a `403` with a reason.
+**The team.** `GET /staff` (with assignments), `PATCH /staff/:id {propertyIds}` (a WHOLE-SET write, min 1 - shortening the list is how access is removed), `DELETE /staff/:id`. All `@Roles('owner')`. `DELETE` removes the **membership**, not the account (#154 - one owner must not delete a login another owner's team depends on); the Assignments cascade off it. It carries `role = 'staff'` in its WHERE, so another owner's id is a **404**, not a 403 that would confirm one exists; removing **yourself** is a `403` with a reason.
 
 **Scoping.** A staff member sees only assigned Properties - in every list AND by direct id - and that is enforced by **RLS**, not by any handler: `TenantDbService` sets `app.property_scope` + `app.staff_user_id` beside `app.tenant_id`, and the policies gain one term ([ADR-0032](adr/0032-a-staff-scope-is-a-second-axis-in-rls.md)). So an unassigned property is a **404** (it isn't there), while an owner-only *verb* is a **403** naming the role. The role guard runs before any lookup, so a 403 is returned for every id a staff member names and cannot be used as an oracle. Owner-only verbs are those that change the SHAPE of the tenant: `POST /properties`, `DELETE /properties/:id`, archive/unarchive, `PATCH /settings`, and everything under §3.6.
 

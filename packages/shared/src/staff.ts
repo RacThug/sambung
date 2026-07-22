@@ -74,6 +74,20 @@ export const listInvitesResponseSchema = z.object({
 export type ListInvitesResponse = z.infer<typeof listInvitesResponseSchema>;
 
 /**
+ * Which password the accept page must ask for (#154, ADR-0034).
+ *
+ * `create` - this address has no Sambung account; choose one.
+ * `signin`  - it already has one (perhaps at another Tenant); enter THAT password.
+ *
+ * The page cannot guess: asking a returning user to "choose a password" and then
+ * refusing the one they typed is the confusing failure this field removes. Only
+ * the holder of a live invite for that address ever sees it, and
+ * `POST /auth/register` already answers the same question to anyone at all.
+ */
+export const inviteAcceptModeSchema = z.enum(["create", "signin"]);
+export type InviteAcceptMode = z.infer<typeof inviteAcceptModeSchema>;
+
+/**
  * What `/invite/:token` renders BEFORE asking for a password: who invited you,
  * and to what. No id, and no property ids - a page reached with an unauthenticated
  * token gets names to recognise, not identifiers to act on.
@@ -83,13 +97,20 @@ export const invitePreviewResponseSchema = z.object({
   tenantName: z.string(),
   propertyNames: z.array(z.string()),
   expiresAt: z.string().datetime(),
+  mode: inviteAcceptModeSchema,
 });
 export type InvitePreviewResponse = z.infer<typeof invitePreviewResponseSchema>;
 
 /**
  * Accept. The email is NOT in the body - it is whatever the invite says, so a
- * holder cannot redirect a seat to a different address. Password rules mirror
- * register's, because this creates exactly the same kind of account.
+ * holder cannot redirect a seat to a different address.
+ *
+ * One field for two meanings, matching the two modes above: for a new address it
+ * SETS the password (register's rules, which is why the minimum stays 8), and
+ * for an existing account it PROVES the caller is the account holder before a
+ * membership is added to it (#154). The invite token proves control of the
+ * mailbox; the password proves control of the account, and adding a seat to
+ * someone else's account requires both.
  */
 export const acceptInviteRequestSchema = strictObject({
   token: inviteTokenSchema,

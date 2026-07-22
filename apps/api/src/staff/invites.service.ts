@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
   ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import bcrypt from 'bcryptjs';
@@ -76,15 +77,18 @@ export class InvitesService {
       throw new NotFoundException('Property not found');
     }
 
-    // GLOBAL, not tenant-scoped, because `app_user_email_key` is global. Asking
-    // only about our own tenant (as this did) let an invite be created and
-    // EMAILED to someone who already had an account elsewhere - and it then
-    // answered 409 on every attempt to accept, forever, with nothing to tell
-    // either party why. Found in review; the test names the shape.
+    // TENANT-SCOPED again as of #154, and this is the whole point of that issue.
     //
-    // The same 409 either way (§5.3): the pre-check and the constraint at accept
-    // are indistinguishable, this one merely arrives before the email does.
-    if (await this.accepts.emailHasAccountAnywhere(dto.email)) {
+    // The question this asks has changed: it used to be "does this address have
+    // an account ANYWHERE?", because `app_user_email_key` is global and an
+    // existing account elsewhere made the invite permanently unacceptable. With
+    // memberships that is no longer true - an existing account gets a second
+    // seat - so the only remaining refusal is the honest one: they are already
+    // on YOUR team. Asked on the owner connection, since `membership` is what
+    // decides it and the account itself may live outside our RLS view.
+    //
+    // The same 409 either way (§5.3), and it still arrives before the email does.
+    if (await this.accepts.isMemberOfTenant(dto.email, principal.tenantId)) {
       throw emailTaken();
     }
 
@@ -182,21 +186,38 @@ export class InvitesService {
     if (!invite) throw new NotFoundException('Invite not found');
     const reason = refusalReason(invite);
     if (reason) throw inviteNotAcceptable(reason);
+    const account = await this.accepts.findAccountByEmail(invite.email);
     return {
       email: invite.email,
       tenantName: invite.tenantName,
       propertyNames: invite.propertyNames,
       expiresAt: invite.expiresAt.toISOString(),
+      // Which password the page must ask for (#154). Told only to the holder of
+      // a live invite for that exact address, and `POST /auth/register` answers
+      // the same question to anyone unauthenticated.
+      mode: account ? 'signin' : 'create',
     };
   }
 
   /**
-   * Spend an invite: create the staff account and start its session.
+   * Spend an invite: seat the invitee and start their session.
    *
-   * Note the order - resolve, hash, THEN spend. The bcrypt cost sits outside the
-   * transaction on purpose: holding a row lock for ~300 ms of CPU is how a hot
-   * path becomes a queue. Two racing accepts are still safe, because the guarded
-   * UPDATE inside `accept` (not this read) is what arbitrates.
+   * Two shapes since #154, decided by whether the invited address already has a
+   * Sambung account:
+   *
+   *   no account  - `password` SETS one, and an identity is created (the M5 path).
+   *   an account  - `password` PROVES the caller holds it, and a membership is
+   *                 added to the account that already exists.
+   *
+   * The invite token proves control of the MAILBOX; the password proves control
+   * of the ACCOUNT. Adding a seat to someone's existing login demands both, or
+   * anyone who could read one email could attach that account to a tenant of
+   * their choosing.
+   *
+   * Note the order - resolve, hash/compare, THEN spend. The bcrypt cost sits
+   * outside the transaction on purpose: holding a row lock for ~300 ms of CPU is
+   * how a hot path becomes a queue. Two racing accepts are still safe, because
+   * the guarded UPDATE inside `accept` (not these reads) is what arbitrates.
    */
   async accept(
     dto: AcceptInviteRequest,
@@ -206,10 +227,27 @@ export class InvitesService {
     );
     if (!invite) throw new NotFoundException('Invite not found');
 
-    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    const existing = await this.accepts.findAccountByEmail(invite.email);
+    let account:
+      | { kind: 'create'; passwordHash: string }
+      | { kind: 'existing'; userId: string };
+    if (existing) {
+      if (!(await bcrypt.compare(dto.password, existing.passwordHash))) {
+        // The same message login gives. The invite is NOT spent - a mistyped
+        // password must be retryable, and nothing about the tenant has changed.
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      account = { kind: 'existing', userId: existing.id };
+    } else {
+      account = {
+        kind: 'create',
+        passwordHash: await bcrypt.hash(dto.password, BCRYPT_ROUNDS),
+      };
+    }
+
     const created = await this.accepts.accept({
       inviteId: invite.id,
-      passwordHash,
+      account,
     });
     if (!created) {
       // The UPDATE matched nothing, so the invite was not live when it counted.
@@ -225,9 +263,12 @@ export class InvitesService {
       throw inviteNotAcceptable((fresh && refusalReason(fresh)) ?? 'expired');
     }
     this.logger.log(
-      `Invite ${invite.id} accepted - staff user ${created.user.id} created for tenant ${created.tenant.id}`,
+      `Invite ${invite.id} accepted - user ${created.user.id} seated at tenant ${created.tenantId} (${account.kind === 'create' ? 'new account' : 'existing account'})`,
     );
-    return this.auth.startSessionForVerifiedUser(created.user, created.tenant);
+    return this.auth.startSessionForVerifiedUser(
+      created.user,
+      created.tenantId,
+    );
   }
 
   private webBaseUrl(): string {

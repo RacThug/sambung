@@ -101,27 +101,55 @@ export const tenant = pgTable(
   ],
 );
 
-export const appUser = pgTable(
-  "app_user",
+/**
+ * One human's login, and nothing else (#154, ADR-0034).
+ *
+ * This table is deliberately TENANT-FREE. It answers "who is signing in?", not
+ * "who are they here?" - the second question is `membership`, and separating
+ * them is what lets one property manager work for two villa owners.
+ */
+export const appUser = pgTable("app_user", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  // GLOBALLY unique, and that is now a property of the IDENTITY rather than a
+  // limitation on it: login is `email + password` with no tenant in the request,
+  // so two rows sharing an address would make "which account is this?"
+  // unanswerable. Before #154 this also meant one person could belong to only
+  // one Tenant; memberships remove that consequence while keeping the guarantee.
+  email: citext("email").notNull().unique("app_user_email_key"),
+  passwordHash: text("password_hash").notNull(),
+  createdAt: timestamptz("created_at").notNull().defaultNow(),
+});
+
+/**
+ * A User's place at one Tenant, and the role they hold there (#154, ADR-0034).
+ *
+ * Owner and Staff are what a Membership IS, not kinds of person: the same human
+ * can own one Tenant and be staff at another. `role` therefore lives here, and
+ * `scopeFor` in TenantDbService reads it from the principal the active
+ * membership minted.
+ *
+ * The composite PK is the natural key - a User is a member of a Tenant once or
+ * not at all - and it is the FK target that `user_property` and
+ * `staff_invite.created_by` now point at, one step stronger than the
+ * `app_user (id, tenant_id)` unique it replaces: an Assignment is unrepresentable
+ * unless the User is already a member of that Tenant.
+ */
+export const membership = pgTable(
+  "membership",
   {
-    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    appUserId: uuid("app_user_id")
+      .notNull()
+      .references(() => appUser.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
     tenantId: uuid("tenant_id")
       .notNull()
       .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
-    // GLOBALLY unique, not per-tenant: login is `email + password` with no
-    // tenant in the request, so two rows sharing an address would make "which
-    // account is this?" unanswerable. The consequence is real and deliberate -
-    // one person cannot be staff at two Tenants with one address (#57).
-    email: citext("email").notNull().unique("app_user_email_key"),
-    passwordHash: text("password_hash").notNull(),
     role: userRole("role").notNull().default("staff"),
     createdAt: timestamptz("created_at").notNull().defaultNow(),
   },
-  (t) => [
-    // Composite-FK target for user_property_app_user_tenant_fk and
-    // staff_invite_created_by_tenant_fk (#57, the #40 pattern one table over).
-    unique("app_user_id_tenant_uniq").on(t.id, t.tenantId),
-  ],
+  (t) => [primaryKey({ columns: [t.appUserId, t.tenantId] })],
 );
 
 // ---- Inventory ------------------------------------------------------------------
@@ -253,10 +281,15 @@ export const userProperty = pgTable(
     primaryKey({ columns: [t.appUserId, t.propertyId] }),
     // The two halves of "a staff member may only be assigned Properties of
     // their OWN Tenant" - unrepresentable, not an app-code obligation (#40).
+    //
+    // The left half points at `membership`, not `app_user` (#154, ADR-0034), and
+    // that is stronger than the `app_user (id, tenant_id)` unique it replaces: an
+    // Assignment now requires the User to already be a MEMBER of that Tenant, and
+    // ending the membership cascades the Assignments away with it.
     foreignKey({
       name: "user_property_app_user_tenant_fk",
       columns: [t.appUserId, t.tenantId],
-      foreignColumns: [appUser.id, appUser.tenantId],
+      foreignColumns: [membership.appUserId, membership.tenantId],
     }).onDelete("cascade"),
     foreignKey({
       name: "user_property_property_tenant_fk",
@@ -308,11 +341,13 @@ export const staffInvite = pgTable(
     unique("staff_invite_token_hash_key").on(t.tokenHash),
     // Composite-FK target for staff_invite_property.
     unique("staff_invite_id_tenant_uniq").on(t.id, t.tenantId),
-    // The inviter belongs to the Tenant they invite into.
+    // The inviter belongs to the Tenant they invite into - via `membership`
+    // since #154 (ADR-0034), which says exactly that and says it about the
+    // relationship rather than about the person.
     foreignKey({
       name: "staff_invite_created_by_tenant_fk",
       columns: [t.createdBy, t.tenantId],
-      foreignColumns: [appUser.id, appUser.tenantId],
+      foreignColumns: [membership.appUserId, membership.tenantId],
     }).onDelete("cascade"),
     // At most ONE live invite per (tenant, email). Partial, because accepted and
     // revoked invites are history and must be allowed to pile up - re-inviting
@@ -682,6 +717,7 @@ export const paymentEvent = pgTable(
 // ---- Row types ------------------------------------------------------------------
 export type Tenant = typeof tenant.$inferSelect;
 export type AppUser = typeof appUser.$inferSelect;
+export type Membership = typeof membership.$inferSelect;
 export type UserProperty = typeof userProperty.$inferSelect;
 export type StaffInvite = typeof staffInvite.$inferSelect;
 export type Property = typeof property.$inferSelect;

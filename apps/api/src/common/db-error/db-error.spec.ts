@@ -7,7 +7,14 @@ import {
 import { Test } from '@nestjs/testing';
 import { firstValueFrom, of, throwError } from 'rxjs';
 import { eq } from 'drizzle-orm';
-import { appUser, booking, property, tenant, unit } from '@sambung/db';
+import {
+  appUser,
+  booking,
+  membership,
+  property,
+  tenant,
+  unit,
+} from '@sambung/db';
 import { AppModule } from '../../app.module';
 import { DbService } from '../../db/db.service';
 import { DbErrorInterceptor } from './db-error.interceptor';
@@ -49,12 +56,7 @@ describe('DbError mapping', () => {
   /** A real 23505 on app_user_email_key - the one constraint that is mapped. */
   const duplicateEmail = () =>
     violate(() =>
-      dbs.db.insert(appUser).values({
-        tenantId,
-        email: taken,
-        passwordHash: 'x',
-        role: 'owner',
-      }),
+      dbs.db.insert(appUser).values({ email: taken, passwordHash: 'x' }),
     );
 
   beforeAll(async () => {
@@ -70,12 +72,13 @@ describe('DbError mapping', () => {
       .values({ name: 'DbError Map Test' })
       .returning({ id: tenant.id });
     tenantId = t.id;
-    await dbs.db.insert(appUser).values({
-      tenantId,
-      email: taken,
-      passwordHash: 'x',
-      role: 'owner',
-    });
+    const [takenUser] = await dbs.db
+      .insert(appUser)
+      .values({ email: taken, passwordHash: 'x' })
+      .returning({ id: appUser.id });
+    await dbs.db
+      .insert(membership)
+      .values({ appUserId: takenUser.id, tenantId, role: 'owner' });
     const [p] = await dbs.db
       .insert(property)
       .values({ tenantId, name: 'DbError Villa', slug: testSlug() })

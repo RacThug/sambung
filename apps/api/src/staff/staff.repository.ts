@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   appUser,
+  membership,
   property,
   staffInvite,
   staffInviteProperty,
@@ -252,9 +253,22 @@ export class StaffRepository {
           propertyName: property.name,
         })
         .from(appUser)
-        .leftJoin(userProperty, eq(userProperty.appUserId, appUser.id))
+        // The roster is `membership`, not `app_user` (#154): the account is a
+        // person who may work elsewhere too, and it is the seat at THIS tenant
+        // that makes them staff here. The join is an INNER one for that reason -
+        // an account with no membership here is not on this team.
+        .innerJoin(membership, eq(membership.appUserId, appUser.id))
+        .leftJoin(
+          userProperty,
+          and(
+            eq(userProperty.appUserId, appUser.id),
+            eq(userProperty.tenantId, tenantId),
+          ),
+        )
         .leftJoin(property, eq(property.id, userProperty.propertyId))
-        .where(and(eq(appUser.tenantId, tenantId), eq(appUser.role, 'staff')))
+        .where(
+          and(eq(membership.tenantId, tenantId), eq(membership.role, 'staff')),
+        )
         .orderBy(asc(appUser.email), asc(property.name)),
     );
     return group(rows);
@@ -266,13 +280,13 @@ export class StaffRepository {
     const tenantId = this.tenant.tenantId;
     const rows = await this.db.run((tx) =>
       tx
-        .select({ id: appUser.id })
-        .from(appUser)
+        .select({ id: membership.appUserId })
+        .from(membership)
         .where(
           and(
-            eq(appUser.id, userId),
-            eq(appUser.tenantId, tenantId),
-            eq(appUser.role, 'staff'),
+            eq(membership.appUserId, userId),
+            eq(membership.tenantId, tenantId),
+            eq(membership.role, 'staff'),
           ),
         )
         .limit(1),
@@ -314,27 +328,37 @@ export class StaffRepository {
   }
 
   /**
-   * Remove a staff account. `role = 'staff'` in the WHERE is load-bearing: it is
-   * what stops this endpoint from being a way for one owner to delete another,
-   * and it means an owner id arrives as a 404 (there is no staff member by that
-   * id) rather than as a 403 that confirms one exists.
+   * Remove a staff member from THIS team.
    *
-   * `user_property` rows cascade. Bookings do not: `booking` has no FK to a user
-   * (ADR-0002's spirit - the ledger outlives the people who typed it).
+   * Since #154 this deletes the MEMBERSHIP, not the human. The distinction is the
+   * whole issue: the same account may hold a seat at another villa owner's
+   * tenant, and one owner removing someone from their team must not delete a
+   * login they do not own. Their Assignments here cascade off the membership
+   * (`user_property_app_user_tenant_fk`), so the seat and everything it granted
+   * go together, and an account left with no seats simply cannot sign in until
+   * someone invites it again.
+   *
+   * `role = 'staff'` in the WHERE is load-bearing: it is what stops this endpoint
+   * from being a way for one owner to remove another, and it means an owner id
+   * arrives as a 404 (there is no staff member by that id) rather than as a 403
+   * that confirms one exists.
+   *
+   * Bookings are untouched either way: `booking` has no FK to a user (ADR-0002's
+   * spirit - the ledger outlives the people who typed it).
    */
   async removeStaff(userId: string): Promise<boolean> {
     const tenantId = this.tenant.tenantId;
     const rows = await this.db.run((tx) =>
       tx
-        .delete(appUser)
+        .delete(membership)
         .where(
           and(
-            eq(appUser.id, userId),
-            eq(appUser.tenantId, tenantId),
-            eq(appUser.role, 'staff'),
+            eq(membership.appUserId, userId),
+            eq(membership.tenantId, tenantId),
+            eq(membership.role, 'staff'),
           ),
         )
-        .returning({ id: appUser.id }),
+        .returning({ id: membership.appUserId }),
     );
     return rows.length > 0;
   }

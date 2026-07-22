@@ -12,10 +12,12 @@ import type { Request, Response } from 'express';
 import {
   loginRequestSchema,
   registerRequestSchema,
+  switchTenantRequestSchema,
   type AuthResponse,
   type LoginRequest,
   type MeResponse,
   type RegisterRequest,
+  type SwitchTenantRequest,
 } from '@sambung/shared';
 import { CurrentPrincipal } from '../common/decorators/current-principal.decorator';
 import { NoBody } from '../common/decorators/no-body.decorator';
@@ -82,9 +84,33 @@ export class AuthController {
     clearRefreshCookie(res);
   }
 
+  /**
+   * Act in a different Tenant (#154, ADR-0034).
+   *
+   * Authenticated but NOT throttled as sensitive: the caller already holds a
+   * valid access token, so there is no secret here to guess - the only input is
+   * a tenant id that must match a membership they already have.
+   */
+  @Post('session')
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard)
+  async switchTenant(
+    @CurrentPrincipal() principal: UserPrincipal,
+    @Body(new ZodValidationPipe(switchTenantRequestSchema))
+    dto: SwitchTenantRequest,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResponse> {
+    const { auth, refreshToken } = await this.auth.switchTenant(
+      principal.userId,
+      dto.tenantId,
+    );
+    setRefreshCookie(res, refreshToken);
+    return auth;
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
   me(@CurrentPrincipal() principal: UserPrincipal): Promise<MeResponse> {
-    return this.auth.me(principal.userId);
+    return this.auth.me(principal.userId, principal.tenantId);
   }
 }

@@ -5,7 +5,7 @@ import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import { inArray } from 'drizzle-orm';
 import request from 'supertest';
-import { appUser, tenant } from '@sambung/db';
+import { appUser, membership, tenant } from '@sambung/db';
 import type { AuthResponse, MeResponse } from '@sambung/shared';
 import * as dbErrorMap from '../common/db-error/db-error.map';
 import { AppModule } from '../app.module';
@@ -94,6 +94,36 @@ describe('Auth (FR-AUTH-1)', () => {
       .expect(401);
   });
 
+  // #154. The list is how the SPA decides whether to render a switcher at all,
+  // so "one tenant means one entry" is the case that must not regress into an
+  // empty array (no switcher can then be built) or a stale singleton.
+  it('reports the single membership a new owner holds', async () => {
+    const reg = bodyOf<AuthResponse>(await register({ tenantName: 'Solo Co' }));
+    expect(reg.memberships).toEqual([
+      { tenantId: reg.tenant.id, tenantName: 'Solo Co', role: 'owner' },
+    ]);
+  });
+
+  it('refuses to switch into a tenant the caller is not a member of (404)', async () => {
+    const reg = bodyOf<AuthResponse>(
+      await register({ tenantName: 'Switch Co' }),
+    );
+    // A 404 rather than a 403: "no" and "there is no such tenant" must be one
+    // answer, or this endpoint enumerates the tenants of Sambung a uuid at a time.
+    await request(server())
+      .post('/api/auth/session')
+      .set('Authorization', `Bearer ${reg.accessToken}`)
+      .send({ tenantId: randomUUID() })
+      .expect(404);
+    // ...and switching to the one they DO hold is a plain re-issue.
+    const again = await request(server())
+      .post('/api/auth/session')
+      .set('Authorization', `Bearer ${reg.accessToken}`)
+      .send({ tenantId: reg.tenant.id })
+      .expect(200);
+    expect(bodyOf<AuthResponse>(again).tenant.id).toBe(reg.tenant.id);
+  });
+
   it('rejects a duplicate email (409) with a machine-readable slug', async () => {
     const addr = email();
     await register({ email: addr });
@@ -170,10 +200,13 @@ describe('Auth (FR-AUTH-1)', () => {
       createdTenantIds.push(thief.id);
       // If this throws, the signup already inserted and the premise is broken -
       // loudly, rather than by silently testing the pre-check twice.
-      await dbs.db.insert(appUser).values({
+      const [thiefUser] = await dbs.db
+        .insert(appUser)
+        .values({ email: stolen, passwordHash: 'x' })
+        .returning({ id: appUser.id });
+      await dbs.db.insert(membership).values({
+        appUserId: thiefUser.id,
         tenantId: thief.id,
-        email: stolen,
-        passwordHash: 'x',
         role: 'owner',
       });
 
