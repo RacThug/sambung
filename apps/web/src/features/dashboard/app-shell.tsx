@@ -1,6 +1,7 @@
 import { Link, Outlet, useNavigate } from "@tanstack/react-router";
 import { api } from "../../lib/api-client";
-import { clearSession, getSession } from "../../lib/auth";
+import { clearSession } from "../../lib/auth";
+import { WorkspaceSwitcher } from "./workspace-switcher";
 import { Wordmark } from "@/components/wordmark";
 
 // Nav-link styling, split so exactly one colour class applies at a time: the base
@@ -14,7 +15,6 @@ const navLinkIdle = { className: "text-foreground" };
 // The unified calendar joins the nav in M2, channels in M4. (page-spec §4)
 export function AppShell() {
   const navigate = useNavigate();
-  const session = getSession();
 
   async function logout() {
     await api.post("/auth/logout").catch(() => {
@@ -49,11 +49,7 @@ export function AppShell() {
             </Link>
           </nav>
           <div className="flex items-center gap-4">
-            {session && (
-              <span className="text-sm text-muted-foreground">
-                {session.tenant.name}
-              </span>
-            )}
+            <WorkspaceSwitcher />
             <button
               type="button"
               onClick={() => void logout()}

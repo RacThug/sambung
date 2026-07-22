@@ -19,17 +19,19 @@ Everything below follows from three rules. Internalize these; they generalize fa
 ## 2. Entity map
 
 ```
-tenant ──┬── app_user ──── user_property ──┐
-         │                                  │
-         ├── property ───── unit ───────────┤
-         │                   │              │
-         │                   ├── booking ───┘   (source: direct|airbnb|booking_com|vrbo|manual_block)
+app_user ──── membership ──┐
+                            │
+tenant ──┬──────────────────┴─── user_property ──┐
+         │                                        │
+         ├── property ───── unit ─────────────────┤
+         │                   │                    │
+         │                   ├── booking ─────────┘   (source: direct|airbnb|booking_com|vrbo|manual_block)
          │                   │     └── payment ── payment_event
          │                   └── channel_connection
 ```
 
 - A **tenant** is one owner account (the SaaS customer).
-- **app_user** belongs to a tenant; role `owner` or `staff`. Staff are scoped to specific properties via **user_property**.
+- **app_user** is one human's login and belongs to NO tenant (#154, [ADR-0034](adr/0034-one-identity-many-memberships.md)). **membership** is that user's place at one tenant and carries the role `owner` or `staff` - so the same person can own one tenant and be staff at another. Staff are scoped to specific properties via **user_property**.
 - **property** → **unit** (a bookable thing: a whole villa, or a room).
 - **booking** is the heart. Direct bookings, OTA-imported blocks, and manual blocks are *all* booking rows — just different `source`.
 - **channel_connection** stores an OTA's iCal URL per unit.
@@ -64,13 +66,27 @@ create table tenant (
 
 create type user_role as enum ('owner', 'staff');
 
+-- Identity only: who signs in, never where they work (#154, ADR-0034,
+-- migration 0016). `email` is globally unique because login carries no tenant;
+-- that used to make one address mean one tenant, and `membership` is what
+-- separates the two questions.
 create table app_user (
   id            uuid primary key default gen_random_uuid(),
-  tenant_id     uuid not null references tenant(id) on delete cascade,
   email         citext not null unique,
   password_hash text not null,
-  role          user_role not null default 'staff',
   created_at    timestamptz not null default now()
+);
+
+-- Belonging: one row per (user, tenant), carrying the role held THERE. Also the
+-- composite-FK target for user_property and staff_invite.created_by, which is
+-- strictly stronger than the app_user (id, tenant_id) unique it replaced: an
+-- Assignment is unrepresentable unless the user is already a member.
+create table membership (
+  app_user_id uuid not null references app_user(id) on delete cascade,
+  tenant_id   uuid not null references tenant(id) on delete cascade,
+  role        user_role not null default 'staff',
+  created_at  timestamptz not null default now(),
+  primary key (app_user_id, tenant_id)
 );
 
 -- Inventory -----------------------------------------------------------------
@@ -246,7 +262,7 @@ You *could* reach a booking's tenant via `booking → unit → property → tena
 
 **Why:** (1) Row-Level Security policies become trivial and fast — `using (tenant_id = current_tenant())` with no joins. (2) Every tenant-scoped query filters on one indexed column. The cost is a consistency obligation: when you insert a booking you must set the same `tenant_id` as its unit. That's a deliberate denormalization for security and performance — name it as such in your README, because reviewers respect a *justified* denormalization and frown on an accidental one.
 
-**Update (2026-07-16): the obligation is now structural, not app-enforced.** The composite FKs in §3 (`booking (unit_id, tenant_id) → unit (id, tenant_id)`, and likewise `unit → property` and `channel_connection → unit`) make a mismatched `tenant_id` a constraint violation instead of what it would otherwise be under RLS: a row silently visible to the *wrong* tenant and invisible to the right one. Note FK checks run with table-owner rights and bypass RLS, so the tenant-scoped app role keeps working. (Issue #40.) **Update (2026-07-22, #57):** `user_property` now has one too, with composite FKs to both `app_user (id, tenant_id)` and `property (id, tenant_id)` - so cross-tenant staff assignment is unrepresentable, closing the follow-up this paragraph deferred. That matters more here than on the other tables: a `user_property` row is *read by RLS* ([ADR-0032](adr/0032-a-staff-scope-is-a-second-axis-in-rls.md)), so a cross-tenant one would not merely be visible to the wrong tenant - it would **grant** the wrong tenant sight of a Property. The denormalization is load-bearing a second way: it lets this table's policy be a flat `tenant_id = <guc>`, which it must be, because `property`'s policy now reads `user_property` and a mutual reference would recurse. `staff_invite_property` carries the same guarantee one step earlier in the lifecycle.
+**Update (2026-07-16): the obligation is now structural, not app-enforced.** The composite FKs in §3 (`booking (unit_id, tenant_id) → unit (id, tenant_id)`, and likewise `unit → property` and `channel_connection → unit`) make a mismatched `tenant_id` a constraint violation instead of what it would otherwise be under RLS: a row silently visible to the *wrong* tenant and invisible to the right one. Note FK checks run with table-owner rights and bypass RLS, so the tenant-scoped app role keeps working. (Issue #40.) **Update (2026-07-22, #57):** `user_property` now has one too, with composite FKs to both `app_user (id, tenant_id)` and `property (id, tenant_id)` - so cross-tenant staff assignment is unrepresentable, closing the follow-up this paragraph deferred. That matters more here than on the other tables: a `user_property` row is *read by RLS* ([ADR-0032](adr/0032-a-staff-scope-is-a-second-axis-in-rls.md)), so a cross-tenant one would not merely be visible to the wrong tenant - it would **grant** the wrong tenant sight of a Property. The denormalization is load-bearing a second way: it lets this table's policy be a flat `tenant_id = <guc>`, which it must be, because `property`'s policy now reads `user_property` and a mutual reference would recurse. `staff_invite_property` carries the same guarantee one step earlier in the lifecycle. **Update (2026-07-22, #154):** the left half of that pair now targets `membership (app_user_id, tenant_id)` rather than `app_user (id, tenant_id)` ([ADR-0034](adr/0034-one-identity-many-memberships.md)) - a strictly stronger statement, since it says the user is a *member* of the tenant rather than that the tenant is the user's only one, and it survives the same person holding a seat at two Tenants. `membership`'s own policy is flat for the same anti-recursion reason `user_property`'s is: `app_user` no longer has a `tenant_id`, so its policy reads `membership`.
 
 ### 4.6 Money as integer rupiah, never float
 `bigint` minor units. IDR has no sub-unit in practice, so integer rupiah is clean. Floats lose pennies to rounding and must never touch money. This is a one-line decision that signals you've been burned before (or learned from people who were).

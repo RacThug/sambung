@@ -5,7 +5,7 @@ import { Test } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import { eq, inArray } from 'drizzle-orm';
 import request from 'supertest';
-import { appUser, tenant } from '@sambung/db';
+import { appUser, membership, tenant } from '@sambung/db';
 import {
   DEFAULT_GALLERY_CAP,
   PHOTO_GALLERY_CEILING,
@@ -45,10 +45,14 @@ describe('Tenant settings', () => {
    * a JWT here would test the guard against a token no login could ever mint.
    */
   async function staffTokenFor(email: string): Promise<string> {
-    await dbs.db
-      .update(appUser)
-      .set({ role: 'staff' })
+    const [user] = await dbs.db
+      .select({ id: appUser.id })
+      .from(appUser)
       .where(eq(appUser.email, email));
+    await dbs.db
+      .update(membership)
+      .set({ role: 'staff' })
+      .where(eq(membership.appUserId, user.id));
     const res = await request(server())
       .post('/api/auth/login')
       .send({ email, password: PASSWORD })

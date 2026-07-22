@@ -23,6 +23,7 @@ import {
   appUser,
   booking,
   channelConnection,
+  membership,
   payment,
   paymentEvent,
   property,
@@ -49,7 +50,10 @@ const U_GARDEN = "bbbbbbbb-0000-0000-0000-000000000002";
 const U_SURF = "bbbbbbbb-0000-0000-0000-000000000003";
 const U_RIVER = "bbbbbbbb-0000-0000-0000-000000000004";
 const CC_AIRBNB = "cccccccc-0000-0000-0000-000000000001";
-const STAFF_SEMINYAK = "eeeeeeee-0000-0000-0000-000000000001"; // staff of T1
+const OWNER_BREEZE = "eeeeeeee-0000-0000-0000-000000000010";
+const OWNER_UBUD = "eeeeeeee-0000-0000-0000-000000000011";
+// One account, TWO seats (#154): staff at T1 (Seminyak only) and at T2.
+const STAFF_SEMINYAK = "eeeeeeee-0000-0000-0000-000000000001";
 const SC_DOUBLE_SELL = "dddddddd-0000-0000-0000-000000000001";
 
 // bcrypt("sambung123", 12 rounds) - matches the auth service's BCRYPT_ROUNDS,
@@ -100,6 +104,7 @@ async function main() {
     await tx.delete(booking);
     await tx.delete(channelConnection);
     await tx.delete(userProperty);
+    await tx.delete(membership);
     await tx.delete(unit);
     await tx.delete(property);
     await tx.delete(appUser);
@@ -110,31 +115,39 @@ async function main() {
       { id: T1, name: "Bali Breeze Villas" },
       { id: T2, name: "Ubud Retreats" },
     ]);
+    // Accounts are TENANT-FREE (#154, ADR-0034) - who they are, not where they
+    // work. The seats come next.
     await tx.insert(appUser).values([
       {
-        tenantId: T1,
+        id: OWNER_BREEZE,
         email: "owner@balibreeze.test",
         passwordHash: DEMO_PASSWORD_HASH,
-        role: "owner",
       },
       {
-        tenantId: T2,
+        id: OWNER_UBUD,
         email: "owner@ubudretreats.test",
         passwordHash: DEMO_PASSWORD_HASH,
-        role: "owner",
       },
-      // A STAFF member of Bali Breeze, assigned to Seminyak only (#57). Bali
-      // Breeze has TWO properties, so signing in as this account is the whole
-      // demo of property-scoped RBAC in one click: the calendar, the
-      // reservations list, the properties list and every by-id read show
-      // Seminyak and not Canggu, and the owner-only affordances are gone.
       {
         id: STAFF_SEMINYAK,
-        tenantId: T1,
         email: "staff@balibreeze.test",
         passwordHash: DEMO_PASSWORD_HASH,
-        role: "staff",
       },
+    ]);
+
+    // --- memberships: who works where, and as what (#154) ---
+    //
+    // staff@balibreeze.test holds TWO seats, and that pair is the whole demo of
+    // #154 in one login: staff at Bali Breeze (assigned to Seminyak only, so
+    // Canggu is invisible - ADR-0032) AND staff at Ubud Retreats, a tenant with
+    // a different owner. Before memberships, `app_user.email` being global made
+    // the second seat unrepresentable; the workspace switcher in the dashboard
+    // header is what it looks like now.
+    await tx.insert(membership).values([
+      { appUserId: OWNER_BREEZE, tenantId: T1, role: "owner" },
+      { appUserId: OWNER_UBUD, tenantId: T2, role: "owner" },
+      { appUserId: STAFF_SEMINYAK, tenantId: T1, role: "staff" },
+      { appUserId: STAFF_SEMINYAK, tenantId: T2, role: "staff" },
     ]);
 
     // --- properties (3) ---
@@ -184,6 +197,9 @@ async function main() {
     // properties list, and by direct id (ADR-0032).
     await tx.insert(userProperty).values([
       { appUserId: STAFF_SEMINYAK, propertyId: P_SEMINYAK, tenantId: T1 },
+      // The second seat's Assignment: the same person, at another owner's
+      // tenant, seeing that tenant's one property (#154).
+      { appUserId: STAFF_SEMINYAK, propertyId: P_UBUD, tenantId: T2 },
     ]);
 
     // --- units (4) ---
@@ -387,7 +403,7 @@ async function main() {
     `Seeded: ${await n(tenant)} tenants, ${await n(property)} properties, ${await n(unit)} units, ${await n(booking)} bookings, ${await n(payment)} payments, ${await n(syncConflict)} sync conflict.`,
   );
   console.log(
-    `Demo logins: owner@balibreeze.test / owner@ubudretreats.test / staff@balibreeze.test (Seminyak only) - password "${DEMO_PASSWORD}"`,
+    `Demo logins: owner@balibreeze.test / owner@ubudretreats.test / staff@balibreeze.test (Seminyak only, AND a second seat at Ubud Retreats - use the workspace switcher) - password "${DEMO_PASSWORD}"`,
   );
   // The demo script (docs/demo.md) names these by role, never by absolute date -
   // they move with the calendar. Print them so a presenter can check the state

@@ -100,6 +100,14 @@ function AcceptForm({
       if (conflict) {
         setFormError(describeConflict(conflict));
       } else if (error instanceof ApiError) {
+        if (error.status === 401) {
+          // Only reachable in `signin` mode: the address has an account and the
+          // password given was not its password (#154).
+          setFormError(
+            "That password doesn't match your Sambung account. Use the password you sign in with.",
+          );
+          return;
+        }
         setFieldErrors(error.fieldErrors);
         if (Object.keys(error.fieldErrors).length === 0) {
           setFormError(error.message);
@@ -120,12 +128,35 @@ function AcceptForm({
     accept.mutate(parsed.data);
   }
 
+  // Two shapes, one form (#154). `signin` means this address already has a
+  // Sambung account - perhaps with another villa owner - so the password field
+  // VERIFIES rather than sets, and asking someone to "choose a password" they
+  // already have is the confusion `mode` exists to prevent.
+  //
+  // All four differences live in ONE object rather than four ternaries scattered
+  // through the JSX: whoever adds a fifth should have exactly one place to put it.
+  const copy =
+    invite.mode === "signin"
+      ? {
+          lead: "You already have a Sambung account - enter its password to add this workspace.",
+          label: "Your Sambung password",
+          autoComplete: "current-password",
+          submit: "Join workspace",
+          pending: "Joining…",
+        }
+      : {
+          lead: "Choose a password to set up your account.",
+          label: "Password",
+          autoComplete: "new-password",
+          submit: "Create account",
+          pending: "Setting up…",
+        };
+
   return (
     <div className="rounded-lg border border-border bg-card p-6">
       <h1 className="text-xl font-bold">Join {invite.tenantName}</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        You've been invited as <strong>{invite.email}</strong>. Choose a password
-        to set up your account.
+        You've been invited as <strong>{invite.email}</strong>. {copy.lead}
       </p>
 
       {invite.propertyNames.length > 0 && (
@@ -143,9 +174,9 @@ function AcceptForm({
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <FormField
-          label="Password"
+          label={copy.label}
           type="password"
-          autoComplete="new-password"
+          autoComplete={copy.autoComplete}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           error={fieldErrors.password}
@@ -156,7 +187,7 @@ function AcceptForm({
           </p>
         )}
         <Button type="submit" className="w-full" disabled={accept.isPending}>
-          {accept.isPending ? "Setting up…" : "Create account"}
+          {accept.isPending ? copy.pending : copy.submit}
         </Button>
       </form>
     </div>

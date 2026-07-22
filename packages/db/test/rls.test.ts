@@ -8,6 +8,7 @@ import {
   appUser,
   booking,
   channelConnection,
+  membership,
   payment,
   paymentEvent,
   property,
@@ -80,13 +81,11 @@ describe('RLS policies', () => {
       .returning({ id: tenant.id });
     const [u] = await db
       .insert(appUser)
-      .values({
-        tenantId: t.id,
-        email: `rls-${t.id}@test.dev`,
-        passwordHash: 'x',
-        role: 'owner',
-      })
+      .values({ email: `rls-${t.id}@test.dev`, passwordHash: 'x' })
       .returning({ id: appUser.id });
+    await db
+      .insert(membership)
+      .values({ appUserId: u.id, tenantId: t.id, role: 'owner' });
     const [p] = await db
       .insert(property)
       .values({ tenantId: t.id, name: `${name} Villa`, slug: testSlug() })
@@ -152,6 +151,7 @@ describe('RLS policies', () => {
     ids.payment = { a: a.payment, b: b.payment };
     ids.payment_event = { a: a.event, b: b.event };
     ids.user_property = { a: a.prop, b: b.prop };
+    ids.membership = { a: a.user, b: b.user };
   });
 
   afterAll(async () => {
@@ -179,6 +179,10 @@ describe('RLS policies', () => {
     { name: 'payment', table: payment, col: payment.id },
     { name: 'payment_event', table: paymentEvent, col: paymentEvent.id },
     { name: 'user_property', table: userProperty, col: userProperty.propertyId },
+    // `app_user` lost its tenant_id in 0016, so its policy is now an EXISTS over
+    // this table (#154). Both are in the list: the isolation must hold for the
+    // seat AND for the account the seat points at.
+    { name: 'membership', table: membership, col: membership.appUserId },
   ];
 
   // One per policy: as tenant A, B's row must be invisible.
@@ -383,14 +387,12 @@ describe('RLS policies', () => {
       unassigned = await branch('Unassigned');
       const [s] = await db
         .insert(appUser)
-        .values({
-          tenantId: tenantA,
-          email: `rls-staff-${tenantA}@test.dev`,
-          passwordHash: 'x',
-          role: 'staff',
-        })
+        .values({ email: `rls-staff-${tenantA}@test.dev`, passwordHash: 'x' })
         .returning({ id: appUser.id });
       staff = s.id;
+      await db
+        .insert(membership)
+        .values({ appUserId: staff, tenantId: tenantA, role: 'staff' });
       await db.insert(userProperty).values({
         appUserId: staff,
         propertyId: assigned.property,
@@ -478,7 +480,10 @@ describe('RLS policies', () => {
 
     it('staff reads their OWN grants only, not the whole roster', async () => {
       const [owner] = await asTenant(tenantA, (tx) =>
-        tx.select({ id: appUser.id }).from(appUser).where(inArray(appUser.role, ['owner'])),
+        tx
+          .select({ id: membership.appUserId })
+          .from(membership)
+          .where(inArray(membership.role, ['owner'])),
       );
       // The owner's own user_property row (seeded in `seed`) belongs to someone
       // else; a staff member has no business enumerating who else can see what.

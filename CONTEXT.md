@@ -10,16 +10,32 @@ product/schema/architecture docs live in [`docs/`](docs/README.md).
 
 **Tenant**:
 One accommodation business on Sambung. Every piece of inventory and every booking belongs to exactly one.
-_Avoid_: account, organization, workspace, client
+_Avoid_: account, organization, client. Also **workspace**, with one deliberate exception - see
+Workspace below, which names what a Tenant looks like from inside a session and is UI copy only.
+
+**User**:
+One human's login: an email address and a password, and nothing about where they work. A User
+signs in; they do not by themselves belong anywhere. The address is unique across all of
+Sambung, because sign-in names no Tenant and two people sharing an address would make "which
+account is this?" unanswerable.
+_Avoid_: person, identity, profile, staff (a User is not a role)
+
+**Membership**:
+A User's place at one Tenant, and the role they hold there. This is what makes someone an Owner
+or Staff, so those are things a Membership *is*, never kinds of person: the same User can own one
+Tenant and be Staff at another, which is exactly how a property manager works for two villa
+owners. Removing someone from a team ends the Membership; their login survives, because another
+Tenant may still depend on it.
+_Avoid_: seat (informal only), role (that is a field of it), account, tenancy
 
 **Owner**:
-The person who runs a Tenant and its inventory. The authority over what the Tenant *is*: which
+A Membership that runs a Tenant and its inventory. The authority over what the Tenant *is*: which
 Properties exist, who else may work on them, and the account-wide settings. Every Tenant has at
 least one; a Tenant with none would be unreachable.
 _Avoid_: host, landlord, admin
 
 **Staff**:
-Someone who works on a Tenant's Properties without running the business - a manager, a
+A Membership that works on a Tenant's Properties without running the business - a manager, a
 housekeeper, a receptionist. Distinguished from an Owner by what they *can see* rather than by a
 list of permissions: Staff see only their Assignments, and cannot change the shape of the Tenant.
 Within an assigned Property they do everything an Owner does. Not a lesser Owner - a different
@@ -27,18 +43,25 @@ scope.
 _Avoid_: user, member, employee, sub-account, viewer
 
 **Assignment**:
-The link that lets one Staff member see one Property. It is not a preference or a filter: an
+The link that lets one Staff Membership see one Property. It is not a preference or a filter: an
 unassigned Property does not exist for that person - not in a list, not by its id, not by any
 route. Assignments are the whole of what Staff access means; there is no second permission
 system behind them.
 _Avoid_: permission, role, access level, grant (as the noun for the link), share
 
 **Invite**:
-An Owner's offer of a Staff seat, addressed to one email and naming the Properties it will
-assign. Not a person and not an account - nobody can sign in as an Invite. It is carried by a
+An Owner's offer of a Staff Membership, addressed to one email and naming the Properties it will
+assign. Not a person and not an account - nobody can sign in as an Invite. Accepting it creates
+the Membership; it creates a User too only if that address has none yet. It is carried by a
 single link that works once and lapses on its own, so an Invite is spent, withdrawn, or expired,
 never "used up and still there". The link exists only in the email that was sent.
 _Avoid_: invitation code, token (for the offer itself), request, signup link
+
+**Workspace**:
+What a Membership looks like from inside the dashboard: the one Tenant a session is currently
+acting in. Only ever a UI word, for the switcher a User with more than one Membership sees - the
+thing itself is the Tenant.
+_Avoid_: using it in the API, the schema, or about anything but the current session
 
 **Visitor**:
 Someone reading a public page. They have booked nothing and belong to no Tenant - but they are
