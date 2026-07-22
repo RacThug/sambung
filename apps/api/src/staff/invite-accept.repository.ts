@@ -9,6 +9,7 @@ import {
   tenant,
   userProperty,
   type AppUser,
+  type DbTx,
 } from '@sambung/db';
 import { DbService } from '../db/db.service';
 import type { InviteView } from './invite-liveness';
@@ -157,24 +158,13 @@ export class InviteAcceptRepository {
         });
       if (!spent) return undefined;
 
+      // The one branch: create the identity, or load the one that already exists.
+      // Everything after this point is identical for both, which is the shape
+      // #154 is really about - a seat is granted the same way either way.
       const user =
         input.account.kind === 'create'
-          ? (
-              await tx
-                .insert(appUser)
-                .values({
-                  email: spent.email,
-                  passwordHash: input.account.passwordHash,
-                })
-                .returning()
-            )[0]
-          : (
-              await tx
-                .select()
-                .from(appUser)
-                .where(eq(appUser.id, input.account.userId))
-                .limit(1)
-            )[0];
+          ? await createAccount(tx, spent.email, input.account.passwordHash)
+          : await loadAccount(tx, input.account.userId);
       /* istanbul ignore next - the caller resolved this id moments ago. */
       if (!user) return undefined;
 
@@ -214,4 +204,30 @@ export class InviteAcceptRepository {
       return { user, tenantId: spent.tenantId };
     });
   }
+}
+
+/** A brand-new identity for the address the invite names. */
+async function createAccount(
+  tx: DbTx,
+  email: string,
+  passwordHash: string,
+): Promise<AppUser | undefined> {
+  const [created] = await tx
+    .insert(appUser)
+    .values({ email, passwordHash })
+    .returning();
+  return created;
+}
+
+/** The identity that already exists, whose password the caller just proved. */
+async function loadAccount(
+  tx: DbTx,
+  userId: string,
+): Promise<AppUser | undefined> {
+  const [found] = await tx
+    .select()
+    .from(appUser)
+    .where(eq(appUser.id, userId))
+    .limit(1);
+  return found;
 }

@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import { appUser, membership, tenant, type AppUser } from '@sambung/db';
 import type {
   AuthResponse,
@@ -15,7 +15,6 @@ import type {
   MembershipDto,
   MeResponse,
   RegisterRequest,
-  UserDto,
 } from '@sambung/shared';
 import { emailTaken } from '../common/db-error/conflicts';
 import { DbService } from '../db/db.service';
@@ -44,6 +43,18 @@ interface MembershipRow {
   role: MembershipDto['role'];
 }
 
+/**
+ * Identity and sessions.
+ *
+ * Runs on `DbService` - the OWNER connection, RLS-bypassed - and that is the
+ * same category as register/login always were, not a shortcut. These statements
+ * are identity-level: there is no principal yet (login), or the question spans
+ * tenants by nature (which seats does this account hold?). What makes it safe is
+ * the ADR-0016 property: every statement here is keyed by an already-authenticated
+ * user id, or by the globally-unique email the caller just proved they hold. No
+ * caller-supplied tenant is ever trusted - `switchTenant` verifies the seat
+ * against the authenticated user before it mints anything.
+ */
 @Injectable()
 export class AuthService {
   constructor(
@@ -155,20 +166,15 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('User no longer exists');
     }
-    const [held] = await this.dbs.db
-      .select({ tenantId: membership.tenantId })
-      .from(membership)
-      .where(
-        and(
-          eq(membership.appUserId, userId),
-          eq(membership.tenantId, tenantId),
-        ),
-      )
-      .limit(1);
-    if (!held) {
+    const memberships = await this.membershipsOf(userId);
+    if (!memberships.some((m) => m.tenantId === tenantId)) {
       throw new NotFoundException('No such workspace');
     }
-    return this.issue(user, tenantId);
+    // Deliberately NOT `issue(user, tenantId)`: that would re-read the very list
+    // just fetched. The check and the mint want the same rows, so they share one
+    // read - and sharing it also means the seat that satisfied the check is the
+    // seat the token gets, with no window between them.
+    return this.issueFrom(user, memberships, tenantId);
   }
 
   async me(userId: string, tenantId: string): Promise<MeResponse> {
@@ -185,11 +191,7 @@ export class AuthService {
       // nothing, because RLS reads `membership`, not the token (ADR-0032).
       throw new UnauthorizedException('Membership no longer exists');
     }
-    return {
-      user: this.toUserDto(user, active),
-      tenant: { id: active.tenantId, name: active.tenantName },
-      memberships: memberships.map(toMembershipDto),
-    };
+    return this.toSession(user, active, memberships);
   }
 
   /**
@@ -247,11 +249,29 @@ export class AuthService {
       );
   }
 
+  /** Read the seats, then mint. The one entry point for callers with no list. */
   private async issue(
     user: AppUser,
     preferredTenantId?: string,
   ): Promise<{ auth: AuthResponse; refreshToken: string }> {
-    const memberships = await this.membershipsOf(user.id);
+    return this.issueFrom(
+      user,
+      await this.membershipsOf(user.id),
+      preferredTenantId,
+    );
+  }
+
+  /**
+   * Mint a session from seats the caller has already read.
+   *
+   * Split from `issue` so `switchTenant` can check and mint against ONE read of
+   * the list rather than two - see its comment.
+   */
+  private async issueFrom(
+    user: AppUser,
+    memberships: MembershipRow[],
+    preferredTenantId?: string,
+  ): Promise<{ auth: AuthResponse; refreshToken: string }> {
     if (memberships.length === 0) {
       // Reachable only AFTER a correct password (or a valid token), so it is not
       // an account-existence oracle - and answering "invalid credentials" to
@@ -282,23 +302,31 @@ export class AuthService {
       },
     );
     return {
-      auth: {
-        accessToken,
-        user: this.toUserDto(user, active),
-        tenant: { id: active.tenantId, name: active.tenantName },
-        memberships: memberships.map(toMembershipDto),
-      },
+      auth: { accessToken, ...this.toSession(user, active, memberships) },
       refreshToken,
     };
   }
 
-  private toUserDto(user: AppUser, active: MembershipRow): UserDto {
+  /**
+   * The session body every auth response carries: who you are, where you are,
+   * and everywhere you could be. `AuthResponse` is this plus an access token, so
+   * `me` and `issueFrom` cannot describe the same session two different ways.
+   */
+  private toSession(
+    user: AppUser,
+    active: MembershipRow,
+    memberships: MembershipRow[],
+  ): MeResponse {
     return {
-      id: user.id,
-      email: user.email,
-      // Both describe the ACTIVE membership, not the person (#154).
-      role: active.role,
-      tenantId: active.tenantId,
+      user: {
+        id: user.id,
+        email: user.email,
+        // Both describe the ACTIVE membership, not the person (#154).
+        role: active.role,
+        tenantId: active.tenantId,
+      },
+      tenant: { id: active.tenantId, name: active.tenantName },
+      memberships: memberships.map(toMembershipDto),
     };
   }
 }
