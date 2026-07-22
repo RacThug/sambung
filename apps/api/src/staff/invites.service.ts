@@ -23,8 +23,11 @@ import {
   inviteNotAcceptable,
 } from '../common/db-error/conflicts';
 import { MAILER, type Mailer } from '../notifications/mailer';
-import { InviteAcceptRepository } from './invite-accept.repository';
-import { refusalReason } from './invite-liveness';
+import {
+  InviteAcceptRepository,
+  PasswordRequiredError,
+} from './invite-accept.repository';
+import { inviteAcceptModeFor, refusalReason } from './invite-liveness';
 import { renderInviteEmail } from './invite-email';
 import {
   hashInviteToken,
@@ -192,32 +195,37 @@ export class InvitesService {
       tenantName: invite.tenantName,
       propertyNames: invite.propertyNames,
       expiresAt: invite.expiresAt.toISOString(),
-      // Which password the page must ask for (#154). Told only to the holder of
-      // a live invite for that exact address, and `POST /auth/register` answers
-      // the same question to anyone unauthenticated.
-      mode: account ? 'signin' : 'create',
+      // Which password the page must ask for (#154), from the rule `accept`
+      // uses too. Told only to the holder of a live invite for that exact
+      // address, and `POST /auth/register` answers the same question to anyone
+      // unauthenticated.
+      mode: inviteAcceptModeFor(account),
     };
   }
 
   /**
    * Spend an invite: seat the invitee and start their session.
    *
-   * Two shapes since #154, decided by whether the invited address already has a
-   * Sambung account:
+   * Two shapes since #154, decided by `inviteAcceptModeFor` - the SAME rule the
+   * preview renders from, so the page cannot ask for one thing while this checks
+   * another:
    *
-   *   no account  - `password` SETS one, and an identity is created (the M5 path).
-   *   an account  - `password` PROVES the caller holds it, and a membership is
-   *                 added to the account that already exists.
+   *   `create` - no account, or an INERT one (no seats). `password` SETS it.
+   *   `signin` - a live account. `password` PROVES the caller holds it, and a
+   *              membership is added to the account that already exists.
    *
    * The invite token proves control of the MAILBOX; the password proves control
-   * of the ACCOUNT. Adding a seat to someone's existing login demands both, or
+   * of the ACCOUNT. Adding a seat to someone's live login demands both, or
    * anyone who could read one email could attach that account to a tenant of
-   * their choosing.
+   * their choosing. An inert account is exempt because it guards nothing - see
+   * `inviteAcceptModeFor` for why that exemption has to exist at all.
    *
    * Note the order - resolve, hash/compare, THEN spend. The bcrypt cost sits
    * outside the transaction on purpose: holding a row lock for ~300 ms of CPU is
    * how a hot path becomes a queue. Two racing accepts are still safe, because
-   * the guarded UPDATE inside `accept` (not these reads) is what arbitrates.
+   * the guarded UPDATE inside `accept` (not these reads) is what arbitrates -
+   * and `accept` re-decides the inert/live question under a row lock, so this
+   * read being stale can only cost a retry, never a wrongly-claimed account.
    */
   async accept(
     dto: AcceptInviteRequest,
@@ -228,27 +236,33 @@ export class InvitesService {
     if (!invite) throw new NotFoundException('Invite not found');
 
     const existing = await this.accepts.findAccountByEmail(invite.email);
-    let account:
-      | { kind: 'create'; passwordHash: string }
-      | { kind: 'existing'; userId: string };
-    if (existing) {
-      if (!(await bcrypt.compare(dto.password, existing.passwordHash))) {
+    const mode = inviteAcceptModeFor(existing);
+    let verifiedUserId: string | undefined;
+    if (mode === 'signin') {
+      if (!(await bcrypt.compare(dto.password, existing!.passwordHash))) {
         // The same message login gives. The invite is NOT spent - a mistyped
         // password must be retryable, and nothing about the tenant has changed.
         throw new UnauthorizedException('Invalid credentials');
       }
-      account = { kind: 'existing', userId: existing.id };
-    } else {
-      account = {
-        kind: 'create',
-        passwordHash: await bcrypt.hash(dto.password, BCRYPT_ROUNDS),
-      };
+      verifiedUserId = existing!.id;
     }
 
-    const created = await this.accepts.accept({
-      inviteId: invite.id,
-      account,
-    });
+    let created: Awaited<ReturnType<typeof this.accepts.accept>>;
+    try {
+      created = await this.accepts.accept({
+        inviteId: invite.id,
+        passwordHash: await bcrypt.hash(dto.password, BCRYPT_ROUNDS),
+        verifiedUserId,
+      });
+    } catch (err) {
+      if (err instanceof PasswordRequiredError) {
+        // The account went live between the preview and now, so a password is
+        // required after all. The transaction rolled back, so the invite is
+        // still spendable - reloading the page will ask for the right thing.
+        throw new UnauthorizedException('Invalid credentials');
+      }
+      throw err;
+    }
     if (!created) {
       // The UPDATE matched nothing, so the invite was not live when it counted.
       // Re-read rather than reuse the stale row above: between the two, someone
@@ -263,7 +277,7 @@ export class InvitesService {
       throw inviteNotAcceptable((fresh && refusalReason(fresh)) ?? 'expired');
     }
     this.logger.log(
-      `Invite ${invite.id} accepted - user ${created.user.id} seated at tenant ${created.tenantId} (${account.kind === 'create' ? 'new account' : 'existing account'})`,
+      `Invite ${invite.id} accepted - user ${created.user.id} seated at tenant ${created.tenantId} (mode: ${mode})`,
     );
     return this.auth.startSessionForVerifiedUser(
       created.user,

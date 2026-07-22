@@ -120,6 +120,24 @@ sentence is superseded, and the guarantee is now the narrower and more accurate 
 can mint a token for a tenant the account no longer holds a membership at.** `POST /auth/session`
 answers `404` for it, and an account left with no seats at all cannot refresh into anything.
 
+**`GET /auth/me` 401s on a stale seat while `refresh` falls back, and that is a composition
+rather than a disagreement.** `me` must describe the token it was handed - reporting a tenant the
+token does not authorise would be a lie the caller's next request disproves. `refresh` is being
+asked for a *new* token, so it may mint one for a seat that still exists. Together they are the
+intended flow: 401, refresh, retry. Only that order is safe; the reverse (a `me` that quietly
+re-pointed itself) would leave the caller acting in one tenant while holding a token for another.
+
+**An account with no seats is claimable by an invite, and that is load-bearing rather than lax.**
+Because removal now spares the account, a person removed and later re-invited would otherwise be
+asked for a password they may not remember - and Sambung has no password reset, so the owner could
+never fix it: `create` mode unreachable, the address globally taken, the invite permanently
+unacceptable. So an **inert** account (zero memberships - it cannot even sign in) is claimed by
+whoever holds the invite token, exactly as if the row had not been there. It grants nothing the
+invite did not already grant. A **live** account is never claimable, and the inert/live question is
+re-decided inside the accept transaction under a row lock: if the account gained a seat since the
+preview, the transaction rolls back - so the invite is not spent - and the holder is asked for the
+password after all.
+
 **"Workspace" enters the vocabulary, narrowly.** `CONTEXT.md` lists it under Tenant's *Avoid*; the
 switcher needs a word a villa owner recognises, so the entry is amended rather than contradicted -
 Workspace is what a Tenant looks like from inside a session, UI copy only, never the API or schema.

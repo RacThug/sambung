@@ -22,6 +22,7 @@ export function WorkspaceSwitcher() {
   const session = useSession();
   const queryClient = useQueryClient();
   const [switching, setSwitching] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   if (!session) return null;
 
@@ -35,6 +36,7 @@ export function WorkspaceSwitcher() {
   async function switchTo(tenantId: string) {
     if (tenantId === tenant.id || switching) return;
     setSwitching(true);
+    setFailed(false);
     try {
       const auth = await api.post<AuthResponse>("/auth/session", { tenantId });
       setSession(auth);
@@ -45,26 +47,39 @@ export function WorkspaceSwitcher() {
       // drops the data (so the page shows its loading state) and refetches
       // whatever is on screen.
       await queryClient.resetQueries();
+    } catch {
+      // Say so. The select springs back to the current tenant on its own (it is
+      // controlled by the session), so without this the click looks like it
+      // simply did nothing - and the honest reading of that is "this app is
+      // broken", not "that failed, try again".
+      setFailed(true);
     } finally {
       setSwitching(false);
     }
   }
 
   return (
-    <label className="flex items-center gap-2 text-sm text-muted-foreground">
-      <span className="sr-only">Workspace</span>
-      <select
-        value={tenant.id}
-        disabled={switching}
-        onChange={(e) => void switchTo(e.target.value)}
-        className="rounded-md border border-border bg-card px-2 py-1 text-sm text-foreground disabled:opacity-60"
-      >
-        {memberships.map((m) => (
-          <option key={m.tenantId} value={m.tenantId}>
-            {m.tenantName}
-          </option>
-        ))}
-      </select>
-    </label>
+    <div className="flex items-center gap-2">
+      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+        <span className="sr-only">Workspace</span>
+        <select
+          value={tenant.id}
+          disabled={switching}
+          onChange={(e) => void switchTo(e.target.value)}
+          className="rounded-md border border-border bg-card px-2 py-1 text-sm text-foreground disabled:opacity-60"
+        >
+          {memberships.map((m) => (
+            <option key={m.tenantId} value={m.tenantId}>
+              {m.tenantName}
+            </option>
+          ))}
+        </select>
+      </label>
+      {failed && (
+        <span role="alert" className="text-sm font-medium text-destructive">
+          Couldn't switch - try again
+        </span>
+      )}
+    </div>
   );
 }

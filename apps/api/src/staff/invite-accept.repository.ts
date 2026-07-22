@@ -15,6 +15,29 @@ import { DbService } from '../db/db.service';
 import type { InviteView } from './invite-liveness';
 
 /**
+ * The account an invite for this address would land on.
+ *
+ * `seatCount` is what decides whether the invitee SETS a password or PROVES one
+ * - see `inviteAcceptModeFor`, which owns that rule for both the preview and
+ * the accept.
+ */
+export interface AccountForInvite {
+  id: string;
+  passwordHash: string;
+  seatCount: number;
+}
+
+/**
+ * The account turned out to be live, so the invite holder must prove they hold
+ * it. Thrown INSIDE the accept transaction, so raising it un-spends the invite.
+ */
+export class PasswordRequiredError extends Error {
+  constructor() {
+    super('This account requires its password');
+  }
+}
+
+/**
  * The unauthenticated half of the Invite lifecycle: preview and accept.
  *
  * Runs on the OWNER connection (`DbService`, RLS-bypassed), like register and
@@ -84,9 +107,19 @@ export class InviteAcceptRepository {
    */
   async findAccountByEmail(
     email: string,
-  ): Promise<{ id: string; passwordHash: string } | undefined> {
+  ): Promise<AccountForInvite | undefined> {
     const [row] = await this.dbs.db
-      .select({ id: appUser.id, passwordHash: appUser.passwordHash })
+      .select({
+        id: appUser.id,
+        passwordHash: appUser.passwordHash,
+        // How many Tenants this account can act in. Zero means INERT - it cannot
+        // sign in and guards nothing - which `inviteAcceptModeFor` treats as
+        // claimable. A count, not a boolean, so the caller states its own rule.
+        seatCount: sql<number>`(
+          select count(*)::int from ${membership}
+          where ${membership.appUserId} = ${appUser.id}
+        )`,
+      })
       .from(appUser)
       .where(eq(appUser.email, email))
       .limit(1);
@@ -107,12 +140,6 @@ export class InviteAcceptRepository {
   /**
    * Accept: spend the invite, seat the user, copy the Assignments across.
    *
-   * `account` is the #154 fork, and it is decided by the caller because the
-   * `existing` branch requires a password check that must happen OUTSIDE this
-   * transaction (bcrypt under a row lock is how a hot path becomes a queue -
-   * ADR-0033). Either way what lands is one `membership` row: creating an
-   * identity is the part that is optional now, not the seat.
-   *
    * ONE transaction, and the ORDER is the concurrency control. The guarded
    * UPDATE goes first, so two simultaneous accepts of the same token contend on
    * that row: the winner proceeds, the loser matches zero rows and is refused
@@ -127,6 +154,21 @@ export class InviteAcceptRepository {
    * `expires_at > now()` is evaluated by the DATABASE, not by Node. One clock
    * decides whether an invite is live, and it is the same clock that stamped it.
    *
+   * **The account decision is made HERE, not by the caller** (#154). The caller
+   * has already done the expensive half - comparing a password with bcrypt,
+   * necessarily outside this transaction, because holding a row lock for ~300 ms
+   * of CPU is how a hot path becomes a queue (ADR-0033) - and passes the result
+   * in as `verifiedUserId`. But whether verification was REQUIRED is re-decided
+   * in here, against a locked row, because the caller decided it from a read
+   * taken seconds earlier on the strength of which this transaction must not act.
+   *
+   * That matters for exactly one case: an inert account (no seats) is claimable
+   * by the invite holder, and a live one is not. If it gained a seat between the
+   * preview and now, this throws `PasswordRequiredError` and the whole
+   * transaction ROLLS BACK - so the invite is not spent, and the holder can try
+   * again with the password the page will now ask them for. Burning a link that
+   * exists in one email over a race would be the worse failure.
+   *
    * Returns `undefined` when the invite was not live, leaving the caller to
    * re-read it and name the reason. A duplicate email raises
    * `app_user_email_key`, which the interceptor maps to the same `email_taken`
@@ -135,9 +177,10 @@ export class InviteAcceptRepository {
    */
   async accept(input: {
     inviteId: string;
-    account:
-      | { kind: 'create'; passwordHash: string }
-      | { kind: 'existing'; userId: string };
+    /** The password the invitee typed, hashed. Used only when claiming. */
+    passwordHash: string;
+    /** Set iff the caller verified that password against an existing account. */
+    verifiedUserId?: string;
   }): Promise<{ user: AppUser; tenantId: string } | undefined> {
     return this.dbs.db.transaction(async (tx) => {
       const [spent] = await tx
@@ -158,14 +201,34 @@ export class InviteAcceptRepository {
         });
       if (!spent) return undefined;
 
-      // The one branch: create the identity, or load the one that already exists.
-      // Everything after this point is identical for both, which is the shape
-      // #154 is really about - a seat is granted the same way either way.
-      const user =
-        input.account.kind === 'create'
-          ? await createAccount(tx, spent.email, input.account.passwordHash)
-          : await loadAccount(tx, input.account.userId);
-      /* istanbul ignore next - the caller resolved this id moments ago. */
+      // FOR UPDATE: the seat count decided below must not change under us, and
+      // this is the row a concurrent accept for the same address would touch.
+      const [existing] = await tx
+        .select({ id: appUser.id })
+        .from(appUser)
+        .where(eq(appUser.email, spent.email))
+        .limit(1)
+        .for('update');
+
+      let user: AppUser | undefined;
+      if (!existing) {
+        user = await createAccount(tx, spent.email, input.passwordHash);
+      } else if (input.verifiedUserId === existing.id) {
+        // A live account whose password the caller checked. Nothing to set.
+        user = await loadAccount(tx, existing.id);
+      } else {
+        // An account the caller did not verify. Claimable only while it is inert
+        // - no seats, so it cannot sign in and guards nothing. Re-counted inside
+        // the lock, so a seat granted since the preview flips this to a refusal
+        // rather than letting an invite holder reset a working password.
+        const [{ seats }] = await tx
+          .select({ seats: sql<number>`count(*)::int` })
+          .from(membership)
+          .where(eq(membership.appUserId, existing.id));
+        if (seats > 0) throw new PasswordRequiredError();
+        user = await reclaimAccount(tx, existing.id, input.passwordHash);
+      }
+      /* istanbul ignore next - resolved from a row read moments ago, in-txn. */
       if (!user) return undefined;
 
       // The seat. `DO NOTHING` rather than a pre-check: the only way this row can
@@ -217,6 +280,26 @@ async function createAccount(
     .values({ email, passwordHash })
     .returning();
   return created;
+}
+
+/**
+ * An inert identity (no seats), claimed by whoever holds the invite token.
+ *
+ * The one place this codebase overwrites a password without checking the old
+ * one. Safe because the row guards nothing - see `inviteAcceptModeFor` - and
+ * because the caller has re-counted the seats inside the transaction's lock.
+ */
+async function reclaimAccount(
+  tx: DbTx,
+  userId: string,
+  passwordHash: string,
+): Promise<AppUser | undefined> {
+  const [updated] = await tx
+    .update(appUser)
+    .set({ passwordHash })
+    .where(eq(appUser.id, userId))
+    .returning();
+  return updated;
 }
 
 /** The identity that already exists, whose password the caller just proved. */

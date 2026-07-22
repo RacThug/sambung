@@ -189,6 +189,14 @@ export class AuthService {
       // cryptographically valid until it expires, but it now describes a seat
       // that does not exist - and every scoped read behind it already returns
       // nothing, because RLS reads `membership`, not the token (ADR-0032).
+      //
+      // 401 here while `refresh` FALLS BACK to another seat, and the difference
+      // is deliberate rather than a disagreement. `me` must describe the token
+      // it was given: reporting a tenant the token does not authorise would be a
+      // lie the caller's very next request disproves. `refresh` is asked for a
+      // NEW token, so it is free to mint one for a seat that still exists. The
+      // two compose into the intended flow - 401, refresh, retry - and only that
+      // order is safe.
       throw new UnauthorizedException('Membership no longer exists');
     }
     return this.toSession(user, active, memberships);
@@ -229,9 +237,17 @@ export class AuthService {
    * Every Tenant this account can act in, DEFAULT FIRST.
    *
    * The order is the default-membership rule and lives in exactly one place:
-   * owners before staff, then oldest first. Deterministic and stored nowhere - a
-   * "last used tenant" column would be a write on every login to save one click,
-   * and the switcher is that click.
+   * owners before staff, then oldest first. Stored nowhere - a "last used tenant"
+   * column would be a write on every login to save one click, and the switcher
+   * is that click.
+   *
+   * `tenantId` is the TIEBREAKER, and it is load-bearing rather than tidy. The
+   * first two keys are not a total order: `created_at` defaults to `now()`, which
+   * is transaction-stable, so two seats granted in one transaction share it to
+   * the microsecond - as the seed's own dual-seat account does. Without a third
+   * key the winner is heap order, and "which workspace do I land in?" would be
+   * arbitrary on exactly the login the demo leans on. Any total key would do;
+   * this one is free, since (app_user_id, tenant_id) is the primary key.
    */
   private async membershipsOf(userId: string): Promise<MembershipRow[]> {
     return this.dbs.db
@@ -246,6 +262,7 @@ export class AuthService {
       .orderBy(
         desc(sql`${membership.role} = 'owner'`),
         asc(membership.createdAt),
+        asc(membership.tenantId),
       );
   }
 

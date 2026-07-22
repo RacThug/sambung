@@ -40,6 +40,27 @@ describe("workspace switcher (#154)", () => {
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 
+  it("says so when the switch fails, instead of silently springing back", async () => {
+    stubFetch({
+      "GET /api/properties": () => json([]),
+      "POST /api/auth/session": () =>
+        json({ statusCode: 404, error: "Not Found", message: "No such workspace" }, 404),
+    });
+    setSession(twoSeats());
+    renderAt("/app/properties");
+
+    fireEvent.change(await screen.findByRole("combobox"), {
+      target: { value: OTHER_TENANT },
+    });
+
+    // The select is controlled by the session, so it reverts on its own - which
+    // without a message reads as "this app is broken", not "that failed".
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Couldn't switch/,
+    );
+    expect(getSession()?.tenant.id).toBe("22222222-2222-2222-2222-222222222222");
+  });
+
   it("switches tenant, and the next read is scoped to the new one", async () => {
     const propertyCalls: string[] = [];
     let switched = false;

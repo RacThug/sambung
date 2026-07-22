@@ -1159,6 +1159,155 @@ describe('Staff invites and property-scoped RBAC', () => {
         .expect(404);
     });
 
+    it('a removed person can be re-invited and set a NEW password', async () => {
+      // The regression #154 would otherwise introduce, found in review. Before
+      // memberships, removing someone DELETED the account, so re-inviting was a
+      // clean start. Now the account survives - and Sambung has no password
+      // reset, so if `signin` mode were forced here, someone who forgot their
+      // password could never be re-invited by anyone, ever.
+      const owner = await registerTenant('Re-invite Tenant');
+      const seeded = await seedProperty(owner.tenant.id, 'Reinvite Villa');
+      const staff = await inviteAndAccept(owner.accessToken, [
+        seeded.propertyId,
+      ]);
+
+      await request(server())
+        .delete(`/api/staff/${staff.userId}`)
+        .set(auth(owner.accessToken))
+        .expect(204);
+
+      const token = await inviteToken(owner.accessToken, staff.email, [
+        seeded.propertyId,
+      ]);
+      // The account still exists but is INERT - no seats - so it is claimable.
+      const preview = bodyOf<InvitePreviewResponse>(
+        await request(server())
+          .get(`/api/auth/invites/token/${token}`)
+          .expect(200),
+      );
+      expect(preview.mode).toBe('create');
+
+      const NEW_PASSWORD = 'brandnewpass9';
+      const accepted = bodyOf<AuthResponse>(
+        await request(server())
+          .post('/api/auth/invites/accept')
+          .send({ token, password: NEW_PASSWORD })
+          .expect(200),
+      );
+      // Same account row - not a second one for the same address.
+      expect(accepted.user.id).toBe(staff.userId);
+
+      // The NEW password works at the front door, and the old one does not.
+      await request(server())
+        .post('/api/auth/login')
+        .send({ email: staff.email, password: NEW_PASSWORD })
+        .expect(200);
+      await request(server())
+        .post('/api/auth/login')
+        .send({ email: staff.email, password: PASSWORD })
+        .expect(401);
+    });
+
+    it('will NOT let an invite claim a LIVE account without its password', async () => {
+      // The other half of the same rule: claiming is for inert accounts only.
+      // A live one must prove itself, or an invite to a known address would be a
+      // password reset anyone who reads that mailbox could perform.
+      const first = await registerTenant('Live Claim One');
+      const firstProp = await seedProperty(first.tenant.id, 'LC Villa One');
+      const manager = await inviteAndAccept(first.accessToken, [
+        firstProp.propertyId,
+      ]);
+
+      const second = await registerTenant('Live Claim Two');
+      const secondProp = await seedProperty(second.tenant.id, 'LC Villa Two');
+      const token = await inviteToken(second.accessToken, manager.email, [
+        secondProp.propertyId,
+      ]);
+
+      expect(
+        bodyOf<InvitePreviewResponse>(
+          await request(server())
+            .get(`/api/auth/invites/token/${token}`)
+            .expect(200),
+        ).mode,
+      ).toBe('signin');
+
+      await request(server())
+        .post('/api/auth/invites/accept')
+        .send({ token, password: 'a-different-password' })
+        .expect(401);
+
+      // The original password still works - nothing was overwritten.
+      await request(server())
+        .post('/api/auth/login')
+        .send({ email: manager.email, password: PASSWORD })
+        .expect(200);
+    });
+
+    it('orders tied seats totally, so the default workspace is not heap order', async () => {
+      // Seats created in ONE transaction share `created_at` to the microsecond,
+      // because now() is transaction-stable - which is exactly what the seed's
+      // dual-seat account looks like. Without a third, TOTAL sort key the order
+      // is whatever the heap returns, so "which workspace do I land in?" would be
+      // arbitrary on the very login the demo leans on.
+      //
+      // Asserting the whole ORDER rather than just "it was stable across N
+      // logins": a stable-but-wrong plan passes the latter every time. Three
+      // seats make an accidental match unlikely (1 in 6) instead of a coin flip.
+      const first = await registerTenant('Tie Break One');
+      const firstProp = await seedProperty(first.tenant.id, 'TB Villa One');
+      const manager = await inviteAndAccept(first.accessToken, [
+        firstProp.propertyId,
+      ]);
+      for (const name of ['Tie Break Two', 'Tie Break Three']) {
+        const other = await registerTenant(name);
+        const prop = await seedProperty(other.tenant.id, `${name} Villa`);
+        const token = await inviteToken(other.accessToken, manager.email, [
+          prop.propertyId,
+        ]);
+        await request(server())
+          .post('/api/auth/invites/accept')
+          .send({ token, password: PASSWORD })
+          .expect(200);
+      }
+
+      // Force the tie the seed produces naturally, then force the heap into the
+      // WORST order for us. Re-inserting descending is what makes this test a
+      // real discriminator rather than a coin flip: with a non-total ORDER BY,
+      // Postgres returns these in scan order, so the answer would come back
+      // exactly reversed. (Measured: without the tiebreaker, and without this
+      // step, the assertion passed by luck.)
+      const seats = await dbs.db
+        .select({ tenantId: membership.tenantId, role: membership.role })
+        .from(membership)
+        .where(eq(membership.appUserId, manager.userId));
+      await dbs.db
+        .delete(membership)
+        .where(eq(membership.appUserId, manager.userId));
+      const tied = new Date('2026-01-01T00:00:00.000Z');
+      for (const seat of [...seats].sort((a, b) =>
+        b.tenantId.localeCompare(a.tenantId),
+      )) {
+        await dbs.db
+          .insert(membership)
+          .values({ ...seat, appUserId: manager.userId, createdAt: tied });
+      }
+
+      const login = bodyOf<AuthResponse>(
+        await request(server())
+          .post('/api/auth/login')
+          .send({ email: manager.email, password: PASSWORD })
+          .expect(200),
+      );
+      const seen = login.memberships.map((m) => m.tenantId);
+      expect(seen).toHaveLength(3);
+      // All three are staff seats with identical timestamps, so tenantId - the
+      // documented tiebreaker - is the whole of the order.
+      expect(seen).toEqual([...seen].sort());
+      // ...and the default is the head of that list, not a separate rule.
+      expect(login.tenant.id).toBe(seen[0]);
+    });
+
     it('a staff member of two tenants appears on each roster once', async () => {
       const first = await registerTenant('Roster Split One');
       const firstProp = await seedProperty(first.tenant.id, 'RS Villa One');
