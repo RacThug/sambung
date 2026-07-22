@@ -66,6 +66,24 @@ describe("route tree", () => {
       await screen.findByText("Create your owner account"),
     ).toBeInTheDocument();
   });
+
+  it("renders the accept-invite page at /invite/$token, unauthenticated", async () => {
+    // Public on purpose (#57): the invitee has no account yet, so the token in
+    // the path IS the credential. No session, no redirect to /login.
+    stubFetch({
+      "GET /api/auth/invites/token/abc123": () =>
+        json({
+          email: "chef@villa.dev",
+          tenantName: "Bali Breeze Villas",
+          propertyNames: ["Seminyak Beach Villa"],
+          expiresAt: "2026-07-29T00:00:00.000Z",
+        }),
+    });
+    renderAt("/invite/abc123");
+    expect(
+      await screen.findByRole("heading", { name: "Join Bali Breeze Villas" }),
+    ).toBeInTheDocument();
+  });
 });
 
 describe("auth guard (/app/*)", () => {

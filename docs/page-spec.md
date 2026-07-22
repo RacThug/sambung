@@ -67,7 +67,7 @@ Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · *
 - **Purpose:** owner session start; signup creates tenant + owner (FR-AUTH-1).
 - **Data/Actions:** api #2 / #1; on success store the access token in memory → `/app` (or `?next`).
 - **States:** field validation (mirror the shared zod schemas client-side) · 401 "invalid credentials" (never says which field) · register 409 "email already registered" · already-authed → redirect `/app`.
-- `/invite/:token` (**M5**, FR-AUTH-2): accept-invite form (password only) → staff session.
+- `/invite/:token` - **Built** (#57, FR-AUTH-2): previews who invited you and which Properties you'll manage, then takes a password → staff session (the API sets the refresh cookie exactly as login does, so accepting IS signing in). Unauthenticated - the token in the path is the credential. The email is **shown, never asked for**: a holder must not be able to redirect the seat. English only, and excluded from the language switcher - it is an operator account page, like the dashboard ([ADR-0024](adr/0024-the-funnel-speaks-three-languages-the-wire-speaks-one.md)). A spent link renders its reason and a link to sign in; an unknown one gets generic copy, so a guessed token learns nothing.
 
 ---
 
@@ -116,11 +116,11 @@ Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · *
 - **Actions:** Sync now per connection (api #31) · conflict row → shows the OTA event vs the blocking booking → "open blocking booking" (§4.3, resolve = cancel one side; next sync auto-closes) or **Dismiss** (api #33).
 - **States:** all-green summary · connection `error` rows with `lastError` + last-synced age · open-conflict count **badged in the nav** · empty inbox ("no conflicts - calendars agree").
 
-### 4.7 Settings - `/app/settings` - **Built** (gallery cap, #67) / **M5** (staff)
-- **Purpose:** the tenant-wide knobs. Today one: the **gallery cap** - how many photos each property may hold (#67, [ADR-0030](adr/0030-a-cap-is-a-preference-the-ceiling-is-the-guard.md)). Later: staff invites (M5: api #6). Per-property deposit % is **not** here - it lives on the property edit form (§4.5, api #10), because it is a per-property fact.
+### 4.7 Settings - `/app/settings` - **Built** (gallery cap #67, Team #57)
+- **Purpose:** the tenant-wide knobs. Two: the **gallery cap** - how many photos each property may hold (#67, [ADR-0030](adr/0030-a-cap-is-a-preference-the-ceiling-is-the-guard.md)) - and the **Team** (#57, [ADR-0033](adr/0033-an-invite-is-a-hashed-single-use-grant.md)): invite a staff member scoped to chosen properties, see the roster with each person's assignments, change that access (a whole-set write - shortening the list is how access is removed), revoke a pending invite, remove an account. Per-property deposit % is **not** here - it lives on the property edit form (§4.5, api #10), because it is a per-property fact.
 - **Data:** api #38. **Actions:** save the cap → api #39.
 - **Copy carries the guarantee:** "Lowering this never deletes photos - a gallery already above the new limit stays as it is, and you simply can't add more until you remove some." That is the behaviour, not reassurance: the write blocks only growth.
-- **States:** owner sees the form; **staff sees the value read-only** with "only an account owner can change this" (the server enforces it - the write is 403 for staff, which explains the role, never the existence). Loading skeleton; field error on an out-of-bounds cap, rendered from the same shared schema the API validates with.
+- **States:** owner sees the forms; **staff sees the gallery cap read-only** with "only an account owner can change this", and the Team section as one explanatory sentence rather than a form - the owner-only reads are never even issued, so a staff member's session produces no stray 403s. (The server enforces all of it: the writes are 403 for staff, which explains the role, never the existence.) Loading skeleton; field error on an out-of-bounds cap, rendered from the same shared schema the API validates with. Removing a staff account asks for confirmation - it is not undone by another click.
 - **Edge notes:** the property workbench's photo section reads the cap from here (one `["settings"]` cache key), so raising the cap unblocks "Add photos" without a reload. Until that query resolves, the workbench disables **Add photos** rather than guessing a limit.
 
 ---

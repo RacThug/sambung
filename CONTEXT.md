@@ -13,8 +13,32 @@ One accommodation business on Sambung. Every piece of inventory and every bookin
 _Avoid_: account, organization, workspace, client
 
 **Owner**:
-The person who runs a Tenant and its inventory.
+The person who runs a Tenant and its inventory. The authority over what the Tenant *is*: which
+Properties exist, who else may work on them, and the account-wide settings. Every Tenant has at
+least one; a Tenant with none would be unreachable.
 _Avoid_: host, landlord, admin
+
+**Staff**:
+Someone who works on a Tenant's Properties without running the business - a manager, a
+housekeeper, a receptionist. Distinguished from an Owner by what they *can see* rather than by a
+list of permissions: Staff see only their Assignments, and cannot change the shape of the Tenant.
+Within an assigned Property they do everything an Owner does. Not a lesser Owner - a different
+scope.
+_Avoid_: user, member, employee, sub-account, viewer
+
+**Assignment**:
+The link that lets one Staff member see one Property. It is not a preference or a filter: an
+unassigned Property does not exist for that person - not in a list, not by its id, not by any
+route. Assignments are the whole of what Staff access means; there is no second permission
+system behind them.
+_Avoid_: permission, role, access level, grant (as the noun for the link), share
+
+**Invite**:
+An Owner's offer of a Staff seat, addressed to one email and naming the Properties it will
+assign. Not a person and not an account - nobody can sign in as an Invite. It is carried by a
+single link that works once and lapses on its own, so an Invite is spent, withdrawn, or expired,
+never "used up and still there". The link exists only in the email that was sent.
+_Avoid_: invitation code, token (for the offer itself), request, signup link
 
 **Visitor**:
 Someone reading a public page. They have booked nothing and belong to no Tenant - but they are

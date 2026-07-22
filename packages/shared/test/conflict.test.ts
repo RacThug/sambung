@@ -15,6 +15,8 @@ describe("conflictCodeSchema", () => {
       "channel_already_connected",
       "dates_unavailable",
       "email_taken",
+      "invite_already_pending",
+      "invite_not_acceptable",
       "property_has_bookings",
       "unit_has_bookings",
       "unit_name_taken",
@@ -65,6 +67,23 @@ describe("conflictBodySchema", () => {
         status: "expired",
       }),
     ).toEqual({ code: "booking_not_cancellable", status: "expired" });
+  });
+
+  it("carries the refusal reason for a spent invite", () => {
+    // Three reasons, three different next steps for the invitee (#57) - which is
+    // why this is data rather than one sentence.
+    expect(
+      conflictBodySchema.parse({
+        code: "invite_not_acceptable",
+        reason: "revoked",
+      }),
+    ).toEqual({ code: "invite_not_acceptable", reason: "revoked" });
+    expect(
+      conflictBodySchema.safeParse({
+        code: "invite_not_acceptable",
+        reason: "eaten",
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects a count-bearing code with the count missing", () => {

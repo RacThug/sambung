@@ -4,8 +4,9 @@ import {
   type TenantSettingsResponse,
 } from "@sambung/shared";
 import { ApiError } from "../../lib/api-client";
-import { getSession } from "../../lib/auth";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { isOwner } from "../../lib/role";
+import { TeamSection } from "../staff/team-section";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { useSettings, useUpdateSettings } from "./use-settings";
@@ -21,7 +22,7 @@ import { useSettings, useUpdateSettings } from "./use-settings";
  */
 export function SettingsPage() {
   const query = useSettings();
-  const isOwner = getSession()?.user.role === "owner";
+  const owner = isOwner();
 
   return (
     <section>
@@ -41,7 +42,7 @@ export function SettingsPage() {
           <div className="mt-4 h-20 animate-pulse rounded-md bg-muted/40" />
         )}
         {query.data &&
-          (isOwner ? (
+          (owner ? (
             <GalleryCapForm settings={query.data} />
           ) : (
             <p className="mt-2 text-sm text-muted-foreground">
@@ -50,6 +51,22 @@ export function SettingsPage() {
             </p>
           ))}
       </div>
+
+      {/* Team (#57). Owner-only - a staff member gets the same read-only
+          treatment as the gallery cap above, for the same reason: the server
+          answers 403, and a form that can only fail is worse than a sentence
+          explaining why it isn't there. */}
+      {owner ? (
+        <TeamSection />
+      ) : (
+        <div className="mt-6 rounded-lg border border-border bg-card p-6">
+          <h2 className="text-lg font-semibold">Team</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Only an account owner can invite staff or change who can see which
+            properties.
+          </p>
+        </div>
+      )}
     </section>
   );
 }

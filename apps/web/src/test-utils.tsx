@@ -190,7 +190,17 @@ export function tenantSettingsResponse(
   };
 }
 
-export function authResponse(): AuthResponse {
+/**
+ * The signed-in session, an OWNER by default.
+ *
+ * `user` is a partial override rather than a whole replacement so a test that
+ * only cares about the role (#57 - staff see fewer affordances) can say
+ * `authResponse({ user: { role: "staff" } })` without restating an id, an email
+ * and a tenant it has no opinion about.
+ */
+export function authResponse(
+  overrides: { user?: Partial<AuthResponse["user"]> } = {},
+): AuthResponse {
   return {
     accessToken: "test-token",
     user: {
@@ -198,12 +208,20 @@ export function authResponse(): AuthResponse {
       email: "owner@test.dev",
       role: "owner",
       tenantId: "22222222-2222-2222-2222-222222222222",
+      ...overrides.user,
     },
     tenant: {
       id: "22222222-2222-2222-2222-222222222222",
       name: "Test Tenant",
     },
   };
+}
+
+/** A signed-in STAFF session - the same tenant, a narrower role (#57). */
+export function staffAuthResponse(): AuthResponse {
+  return authResponse({
+    user: { id: "33333333-3333-3333-3333-333333333333", email: "staff@test.dev", role: "staff" },
+  });
 }
 
 /** Renders the real route tree at a URL, the same way main.tsx does. */

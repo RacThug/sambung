@@ -3,6 +3,7 @@ import type {
   BookingRefusalReason,
   BookingStatus,
   ConflictCode,
+  InviteRefusalReason,
 } from '@sambung/shared';
 
 /**
@@ -149,4 +150,33 @@ export const channelAlreadyConnected = (): HttpException =>
   conflict(
     'channel_already_connected',
     'This channel is already connected to this unit',
+  );
+
+/**
+ * A staff Invite resolved, but is no longer live (#57, ADR-0033). One-layer:
+ * the accept transaction's guarded UPDATE matching zero rows produces it, then
+ * reads the row back to say which of the three it was.
+ *
+ * Note what this is NOT reached for: an UNKNOWN token. That is a 404, so a
+ * caller guessing tokens learns nothing - the difference between "no such
+ * invite" and "an invite, but spent" is only ever told to someone already
+ * holding a real one.
+ */
+export const inviteNotAcceptable = (
+  reason: InviteRefusalReason,
+): HttpException =>
+  conflict('invite_not_acceptable', 'This invite can no longer be used', {
+    reason,
+  });
+
+/**
+ * This Tenant already has a live invite for this email (#57). The two-layer kind
+ * (§5.3): InvitesService pre-checks for the friendly answer, and a racing second
+ * create is caught by the `staff_invite_live_email_uniq` partial index and mapped
+ * here (db-error.map.ts) - one factory, so the loser cannot tell which refused.
+ */
+export const inviteAlreadyPending = (): HttpException =>
+  conflict(
+    'invite_already_pending',
+    'An invite for this email is already pending',
   );

@@ -3,7 +3,10 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { sql } from 'drizzle-orm';
 import { createDb, type DbTx } from '@sambung/db';
-import { TenantContext } from '../common/tenant-context.service';
+import {
+  TenantContext,
+  type Principal,
+} from '../common/tenant-context.service';
 
 /**
  * The open transaction, its tenant, and whether it is still live.
@@ -30,7 +33,42 @@ import { TenantContext } from '../common/tenant-context.service';
 interface ActiveTx {
   readonly tx: DbTx;
   readonly tenantId: string;
+  readonly scope: PropertyScope;
   alive: boolean;
+}
+
+/**
+ * The second RLS axis (#57, ADR-0032): which Properties this transaction may
+ * see, on top of which Tenant it belongs to.
+ *
+ * `all` is an Owner, a Visitor, or a system caller - nobody whose sight is
+ * narrowed below their Tenant. `assigned` is a staff member, and then
+ * `staffUserId` names whose Assignments apply.
+ *
+ * Two fields rather than one string that is either 'all' or a uuid, because the
+ * SQL side cannot afford the ambiguity: Postgres does not guarantee OR
+ * short-circuits, so a policy casting a single GUC would be free to evaluate
+ * `'all'::uuid` and raise 22P02 - the exact trap #74 fixed on the tenant axis.
+ * The shape here mirrors the two GUCs so the mapping stays obvious.
+ */
+type PropertyScope =
+  | { readonly mode: 'all'; readonly staffUserId: '' }
+  | { readonly mode: 'assigned'; readonly staffUserId: string };
+
+/**
+ * The scope a principal implies. The ONLY place that decision is made - it
+ * reads TenantContext, the one owner of the principal (#76), for exactly the
+ * same reason `tenantId` does: two readers of "who is asking" is one too many.
+ *
+ * A Visitor gets `all` on purpose. The property axis narrows a user below their
+ * Tenant; a Visitor is already confined to the single Tenant whose slug they
+ * opened (ADR-0003) and has no Assignments to be narrowed by, so
+ * `assigned` would silently blank the public funnel.
+ */
+function scopeFor(principal: Principal): PropertyScope {
+  return principal.kind === 'user' && principal.role === 'staff'
+    ? { mode: 'assigned', staffUserId: principal.userId }
+    : { mode: 'all', staffUserId: '' };
 }
 
 /**
@@ -127,6 +165,15 @@ function isTransactionControl(query: unknown): boolean {
 // with the RLS policies, the database itself scopes every query to the current
 // tenant.
 //
+// Since #57 it sets TWO more GUCs alongside it - `app.property_scope` and
+// `app.staff_user_id` - and the policies answer a second question per row:
+// "may this USER see this Property?" (ADR-0032). That is the entire mechanism
+// behind staff scoping: no repository, service or controller filters by
+// assigned property, because the database already has. The consequence worth
+// internalising is that this one method is where BOTH axes are established, so
+// a route that reaches the database any other way (DbService - the sweepers,
+// the webhook, the iCal import) has neither.
+//
 // Callers MUST have a principal: `run` throws without one rather than querying
 // with the GUC unset. A request that reached a tenant-scoped query with no
 // tenant is a bug, and it should say so here rather than three calls later as
@@ -189,6 +236,8 @@ export class TenantDbService implements OnModuleDestroy {
     // Throws with no principal. Deliberately the same getter services use, so
     // both doors answer a missing tenant the same way.
     const tenantId = this.tenant.tenantId;
+    // Non-null: tenantId above already threw if there is no principal.
+    const scope = scopeFor(this.tenant.principal!);
     const joined = this.activeTx.getStore();
     if (joined) {
       if (!joined.alive) {
@@ -210,18 +259,45 @@ export class TenantDbService implements OnModuleDestroy {
             'One unit of work belongs to one tenant.',
         );
       }
+      // Same reasoning, one axis over. A principal cannot change mid-request
+      // (TenantContext.set throws on a re-mint), so this should be unreachable -
+      // but the property GUCs belong to the outer transaction exactly as the
+      // tenant GUC does, and a check that can only fire on a bug is the cheapest
+      // way to keep it that way.
+      if (
+        joined.scope.mode !== scope.mode ||
+        joined.scope.staffUserId !== scope.staffUserId
+      ) {
+        throw new Error(
+          'TenantDbService.run: the property scope changed inside an open ' +
+            `transaction (opened as ${joined.scope.mode}, now ${scope.mode}). ` +
+            'One unit of work belongs to one principal.',
+        );
+      }
       // Already inside a live transaction that set the GUC - reuse it. The
       // session behind this handle is guarded, so a query deferred out of the
       // nested call is caught by the outer transaction's liveness flag too.
       return fn(joined.tx);
     }
     return this.conn.db.transaction(async (tx) => {
-      const active: ActiveTx = { tx, tenantId, alive: true };
+      const active: ActiveTx = { tx, tenantId, scope, alive: true };
       // Guard the session before the first statement, so every statement this
       // transaction issues - including the set_config below - runs through it.
       guardSession(tx, active);
+      // All three GUCs in ONE statement, on purpose: they are one answer to
+      // "who is asking", and the policies read them together. Splitting them
+      // into separate statements would create a window - however brief - in
+      // which the tenant is set and the property scope is not, which on a warm
+      // pooled connection means the PREVIOUS principal's scope (#74's lesson:
+      // is_local reverts to the reset value, not to unset). Setting all three
+      // every time is also why a request can never inherit a stale scope.
+      //
+      // Parameterized (set_config, not SET) - no SQL injection, and is_local
+      // scopes them to this transaction.
       await tx.execute(
-        sql`select set_config('app.tenant_id', ${tenantId}, true)`,
+        sql`select set_config('app.tenant_id', ${tenantId}, true),
+                   set_config('app.property_scope', ${scope.mode}, true),
+                   set_config('app.staff_user_id', ${scope.staffUserId}, true)`,
       );
       try {
         return await this.activeTx.run(active, () => fn(tx));

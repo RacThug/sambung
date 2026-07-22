@@ -23,13 +23,36 @@ import {
   type UpdatePropertyRequest,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
+import { RolesGuard } from '../common/roles.guard';
 import { PropertiesService } from './properties.service';
 
-// Tenant-scoped property CRUD (FR-PROP-1/3, api-spec §4.1-4.4). Guard seeds
-// the TenantContext; the service scopes every query by tenant_id.
+/**
+ * Tenant-scoped property CRUD (FR-PROP-1/3, api-spec §4.1-4.4). Guard seeds
+ * the TenantContext; the service scopes every query by tenant_id.
+ *
+ * TWO axes of authorization meet on this controller, and they answer different
+ * questions with different status codes (#57):
+ *
+ *   WHICH properties - RLS, invisibly. A staff member's session narrows every
+ *   query to their assigned Properties (ADR-0032), so `list` returns fewer rows
+ *   and `get` of an unassigned id finds none and 404s. No handler here filters
+ *   anything; the database already did.
+ *
+ *   WHICH VERBS - `@Roles('owner')`, visibly, on four handlers. The line is
+ *   whether the action changes the SHAPE of the tenant (which Properties exist)
+ *   or merely OPERATES one: create, delete, archive and unarchive are the
+ *   owner's; editing, photos, and everything under a Property are the staff's to
+ *   do on what they are assigned.
+ *
+ * `create` is the clearest case, and it settles the others: a staff member who
+ * created a Property would have no user_property row for it, so it would vanish
+ * the instant it existed. A verb whose result is invisible to whoever used it is
+ * not a permission worth granting.
+ */
 @Controller('properties')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class PropertiesController {
   constructor(private readonly properties: PropertiesService) {}
 
@@ -44,6 +67,7 @@ export class PropertiesController {
   }
 
   @Post()
+  @Roles('owner')
   create(
     @Body(new ZodValidationPipe(createPropertyRequestSchema))
     dto: CreatePropertyRequest,
@@ -61,6 +85,7 @@ export class PropertiesController {
   }
 
   @Delete(':id')
+  @Roles('owner')
   @HttpCode(204)
   remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.properties.remove(id);
@@ -88,12 +113,14 @@ export class PropertiesController {
   // field: archive is a transition like POST /bookings/:id/cancel, and archivedAt
   // is in no request schema. 200 + the updated resource; idempotent.
   @Post(':id/archive')
+  @Roles('owner')
   @HttpCode(200)
   archive(@Param('id', ParseUUIDPipe) id: string): Promise<PropertyResponse> {
     return this.properties.archive(id);
   }
 
   @Post(':id/unarchive')
+  @Roles('owner')
   @HttpCode(200)
   unarchive(@Param('id', ParseUUIDPipe) id: string): Promise<PropertyResponse> {
     return this.properties.unarchive(id);

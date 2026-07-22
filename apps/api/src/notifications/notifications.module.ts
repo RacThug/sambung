@@ -23,6 +23,10 @@ import { NotificationsService } from './notifications.service';
     NotificationsRepository,
     { provide: MAILER, useFactory: createMailer, inject: [ConfigService] },
   ],
-  exports: [NotificationsService],
+  // MAILER too, since #57: the staff invite email is not a booking notification,
+  // so it does not belong behind NotificationsService - but it must go out
+  // through the SAME bound adapter, or a deployment with Resend configured would
+  // send confirmations for real and log invites to nowhere.
+  exports: [NotificationsService, MAILER],
 })
 export class NotificationsModule {}

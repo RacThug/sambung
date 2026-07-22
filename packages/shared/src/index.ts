@@ -33,6 +33,7 @@ export * from "./property";
 export * from "./public-property";
 export * from "./settings";
 export * from "./slug";
+export * from "./staff";
 export * from "./sync-conflict";
 export * from "./unit";
 

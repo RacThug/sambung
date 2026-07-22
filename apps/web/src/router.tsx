@@ -122,6 +122,19 @@ const registerRoute = createRoute({
   ),
 });
 
+// Accept a staff invite (page-spec §3.4, #57). PUBLIC: the invitee has no
+// account yet - the token in the path IS the credential. No `beforeLoad` guard,
+// deliberately, and no already-authed redirect either: someone signed in as one
+// account may legitimately be opening an invite addressed to another.
+const acceptInviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/invite/$token",
+  component: lazyRouteComponent(
+    () => import("./features/auth/accept-invite-page"),
+    "AcceptInvitePage",
+  ),
+});
+
 // Auth guard for everything under /app: no token in memory → one silent
 // refresh → otherwise bounce to /login carrying the intended URL. (page-spec §2)
 const appRoute = createRoute({
@@ -234,6 +247,7 @@ export const routeTree = rootRoute.addChildren([
   bookingLandingRoute,
   loginRoute,
   registerRoute,
+  acceptInviteRoute,
   appRoute.addChildren([
     appIndexRoute,
     calendarRoute,

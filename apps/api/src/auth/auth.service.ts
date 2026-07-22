@@ -116,6 +116,25 @@ export class AuthService {
     };
   }
 
+  /**
+   * Start a session for a user this service did not authenticate.
+   *
+   * The one caller is accepting a staff Invite (#57): the invite token IS the
+   * proof of identity, verified by InvitesService, and what remains is exactly
+   * what login does after a correct password. Exposing `issue` rather than
+   * letting the staff module sign its own tokens keeps ONE place that decides
+   * what an access token contains - a second signer is how `role` ends up in the
+   * payload on one path and missing on the other.
+   *
+   * Named to be uncomfortable to call by accident: it authenticates nothing.
+   */
+  async startSessionForVerifiedUser(
+    user: AppUser,
+    tenantRow: Tenant,
+  ): Promise<{ auth: AuthResponse; refreshToken: string }> {
+    return this.issue(user, tenantRow);
+  }
+
   /** One user + their tenant, or undefined. `where` is an appUser predicate. */
   private async findUserWithTenant(
     where: ReturnType<typeof eq>,

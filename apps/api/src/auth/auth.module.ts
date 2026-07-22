@@ -11,6 +11,9 @@ import { JwtAuthGuard } from './auth.guard';
   controllers: [AuthController],
   providers: [AuthService, JwtAuthGuard],
   // Export so other feature modules can guard their routes with JwtAuthGuard.
-  exports: [JwtAuthGuard, JwtModule],
+  // AuthService too, since #57: accepting a staff invite starts a session, and
+  // it starts it through the SAME issuer login does rather than signing its own
+  // tokens - one place decides what an access token contains.
+  exports: [JwtAuthGuard, JwtModule, AuthService],
 })
 export class AuthModule {}

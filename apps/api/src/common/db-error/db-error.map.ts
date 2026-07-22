@@ -4,6 +4,7 @@ import {
   channelAlreadyConnected,
   datesUnavailable,
   emailTaken,
+  inviteAlreadyPending,
   unitNameTaken,
 } from './conflicts';
 
@@ -53,6 +54,10 @@ const MAP = new Map<string, () => HttpException>([
   // A lost connect race (#55): the (unit, channel) pair is already taken. Maps to
   // the SAME 409 the app pre-check throws, so the two are indistinguishable (§5.3).
   ['channel_connection_unit_channel_uniq', channelAlreadyConnected],
+  // A lost create-invite race (#57): this tenant already has a live invite for
+  // this email. Same shape as the two above - the app pre-check and the partial
+  // unique index throw the identical factory (§5.3).
+  ['staff_invite_live_email_uniq', inviteAlreadyPending],
 ]);
 
 /**
