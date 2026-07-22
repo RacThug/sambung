@@ -37,7 +37,7 @@ pnpm dev                                 # web on :5173, api on :3000           
 `db:reset` prints the demo calendar it just built. Glance at it before you start talking:
 
 ```
-Demo logins: owner@balibreeze.test / owner@ubudretreats.test - password "sambung123"
+Demo logins: owner@balibreeze.test / owner@ubudretreats.test / staff@balibreeze.test (Seminyak only) - password "sambung123"
 Demo window (all future, half-open, all within a week):
   Wayan D., paid direct  2026-07-22 -> 2026-07-25  (Whole Villa)
   refused Airbnb import  2026-07-23 -> 2026-07-26  (the inbox conflict)
@@ -286,6 +286,7 @@ than discovered by a guest at the door.
 | "What if two people book at once?" | `apps/api/src/bookings/bookings.spec.ts` fires two bookings at the same nights concurrently, against a real Postgres. One gets a booking, one gets a 409, every time. |
 | "Can they get their data out?" | **Reservations** → filter → **Export CSV**. Exact integer rupiah, no float, formula injection neutralised. |
 | "What happens to an unpaid hold?" | The seeded Garden Room hold expires 15 minutes after `db:reset`. Reload the calendar afterwards: the hatched bar is gone and the nights are bookable again. Cleared at two scopes, one inside the booking transaction and one on a cron. |
+| "Can I give my manager access to one villa?" | Sign in (private window) as `staff@balibreeze.test`, same password. They are assigned **Seminyak only**, so the calendar, the reservations list and **Properties** show Seminyak and not Canggu - and pasting Canggu's URL gives a 404, not a 403: within a tenant, an unassigned property simply does not exist for them. **Settings** shows the gallery cap read-only and no Team form. Same mechanism as the multi-tenancy answer above - a second axis in the same row-level security policies, so no endpoint had to be taught about it. |
 | "How much does this cost to run?" | One ~$5/month VPS. No paid third-party service anywhere in the stack. |
 
 ## Deliberately not in this script

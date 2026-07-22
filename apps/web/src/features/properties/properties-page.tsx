@@ -8,17 +8,24 @@ import {
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { isOwner } from "../../lib/role";
 import { FormField } from "@/components/form-field";
 import { VerifiedBadge } from "./verified-badge";
 
 // Inventory home: list + create (FR-PROP-1, page-spec §4.4). Editing happens
 // on the property page (§4.5); the dialog only needs a name to get there.
+//
+// Two things differ for a staff member (#57), and only one of them is this
+// file's doing: the LIST is already narrowed to their assigned properties by the
+// server (RLS, ADR-0032 - nothing here filters), and creating one is owner-only,
+// so the "New property" affordance is hidden rather than offered and refused.
 export function PropertiesPage() {
   const { data: properties, isLoading } = useQuery({
     queryKey: ["properties"],
     queryFn: () => api.get<PropertyResponse[]>("/properties"),
   });
   const [dialogOpen, setDialogOpen] = useState(false);
+  const owner = isOwner();
 
   if (isLoading) {
     return <p className="text-muted-foreground">Loading properties…</p>;
@@ -28,7 +35,7 @@ export function PropertiesPage() {
     <section>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Properties</h1>
-        {properties && properties.length > 0 && (
+        {owner && properties && properties.length > 0 && (
           <button
             type="button"
             onClick={() => setDialogOpen(true)}
@@ -41,17 +48,31 @@ export function PropertiesPage() {
 
       {properties && properties.length === 0 && (
         <div className="mt-12 rounded-lg border border-dashed border-input p-12 text-center">
-          <h2 className="text-lg font-semibold">Add your first property</h2>
-          <p className="mt-1 text-muted-foreground">
-            List a villa or guesthouse to start taking direct bookings.
-          </p>
-          <button
-            type="button"
-            onClick={() => setDialogOpen(true)}
-            className="mt-4 rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground"
-          >
-            New property
-          </button>
+          {owner ? (
+            <>
+              <h2 className="text-lg font-semibold">Add your first property</h2>
+              <p className="mt-1 text-muted-foreground">
+                List a villa or guesthouse to start taking direct bookings.
+              </p>
+              <button
+                type="button"
+                onClick={() => setDialogOpen(true)}
+                className="mt-4 rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground"
+              >
+                New property
+              </button>
+            </>
+          ) : (
+            // An empty list means something different to staff: not "get
+            // started", but "nobody has assigned you anything yet". Offering
+            // them a create button they'd be refused would be worse than useless.
+            <>
+              <h2 className="text-lg font-semibold">No properties assigned</h2>
+              <p className="mt-1 text-muted-foreground">
+                Ask an account owner to give you access to a property.
+              </p>
+            </>
+          )}
         </div>
       )}
 

@@ -13,6 +13,7 @@ import {
 import { api, ApiError } from "../../lib/api-client";
 import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { isOwner } from "../../lib/role";
 import { FormField } from "@/components/form-field";
 import { ChannelsSection } from "./channels-section";
 import { PhotosSection } from "./photos-section";
@@ -81,9 +82,17 @@ export function PropertyEditPage() {
 
       <ChannelsSection property={property} />
 
-      <ArchiveZone property={property} archived={archived} />
-
-      <DangerZone property={property} />
+      {/* Owner-only, and hidden rather than disabled (#57): archiving and
+          deleting change which properties EXIST, which is the owner's call.
+          Everything above - details, photos, units, channels - is what being
+          assigned a property lets a staff member do. The server refuses either
+          way (`@Roles('owner')` → 403); this only stops offering a dead end. */}
+      {isOwner() && (
+        <>
+          <ArchiveZone property={property} archived={archived} />
+          <DangerZone property={property} />
+        </>
+      )}
     </section>
   );
 }

@@ -106,6 +106,13 @@
       "when": 1784645958956,
       "tag": "0014_tenant_gallery_cap",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1784693131941,
+      "tag": "0015_staff_invites_rbac",
+      "breakpoints": true
     }
   ]
 }

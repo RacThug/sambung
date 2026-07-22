@@ -23,9 +23,11 @@ import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { ThrottleSensitive } from '../common/throttle/throttle.decorator';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './auth.guard';
-
-const REFRESH_COOKIE = 'refresh_token';
-const REFRESH_PATH = '/api/auth';
+import {
+  clearRefreshCookie,
+  REFRESH_COOKIE,
+  setRefreshCookie,
+} from './refresh-cookie';
 
 @Controller('auth')
 export class AuthController {
@@ -40,7 +42,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
     const { auth, refreshToken } = await this.auth.register(dto);
-    this.setRefreshCookie(res, refreshToken);
+    setRefreshCookie(res, refreshToken);
     return auth;
   }
 
@@ -55,7 +57,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<AuthResponse> {
     const { auth, refreshToken } = await this.auth.login(dto);
-    this.setRefreshCookie(res, refreshToken);
+    setRefreshCookie(res, refreshToken);
     return auth;
   }
 
@@ -67,31 +69,19 @@ export class AuthController {
   ): Promise<AuthResponse> {
     const token = req.cookies?.[REFRESH_COOKIE] as string | undefined;
     const { auth, refreshToken } = await this.auth.refresh(token);
-    this.setRefreshCookie(res, refreshToken);
+    setRefreshCookie(res, refreshToken);
     return auth;
   }
 
   @Post('logout')
   @HttpCode(204)
   logout(@Res({ passthrough: true }) res: Response): void {
-    res.clearCookie(REFRESH_COOKIE, { path: REFRESH_PATH });
+    clearRefreshCookie(res);
   }
 
   @Get('me')
   @UseGuards(JwtAuthGuard)
   me(@CurrentPrincipal() principal: UserPrincipal): Promise<MeResponse> {
     return this.auth.me(principal.userId);
-  }
-
-  // Refresh token: httpOnly + Secure cookie, scoped to /api/auth so it's only
-  // sent to the refresh endpoint. JS can't read it → XSS can't steal it.
-  private setRefreshCookie(res: Response, token: string): void {
-    res.cookie(REFRESH_COOKIE, token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: REFRESH_PATH,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
   }
 }

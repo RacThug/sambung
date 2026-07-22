@@ -101,16 +101,28 @@ export const tenant = pgTable(
   ],
 );
 
-export const appUser = pgTable("app_user", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: uuid("tenant_id")
-    .notNull()
-    .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
-  email: citext("email").notNull().unique("app_user_email_key"),
-  passwordHash: text("password_hash").notNull(),
-  role: userRole("role").notNull().default("staff"),
-  createdAt: timestamptz("created_at").notNull().defaultNow(),
-});
+export const appUser = pgTable(
+  "app_user",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    // GLOBALLY unique, not per-tenant: login is `email + password` with no
+    // tenant in the request, so two rows sharing an address would make "which
+    // account is this?" unanswerable. The consequence is real and deliberate -
+    // one person cannot be staff at two Tenants with one address (#57).
+    email: citext("email").notNull().unique("app_user_email_key"),
+    passwordHash: text("password_hash").notNull(),
+    role: userRole("role").notNull().default("staff"),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // Composite-FK target for user_property_app_user_tenant_fk and
+    // staff_invite_created_by_tenant_fk (#57, the #40 pattern one table over).
+    unique("app_user_id_tenant_uniq").on(t.id, t.tenantId),
+  ],
+);
 
 // ---- Inventory ------------------------------------------------------------------
 export const property = pgTable(
@@ -202,7 +214,21 @@ export const property = pgTable(
   ],
 );
 
-// Staff scoping: which properties a staff user may touch.
+/**
+ * Staff scoping: which Properties a staff user may touch (#57).
+ *
+ * This table is not merely a convenience list - it is READ BY RLS. The
+ * `app_property_visible()` policy helper (migration 0015) consults it for every
+ * row of property/unit/booking/channel_connection/sync_conflict/payment a staff
+ * session touches, so a row here is literally the difference between a Property
+ * existing and not existing for that user (ADR-0032).
+ *
+ * That is why `tenant_id` is here at all. Without it the pair
+ * (staff of tenant A, property of tenant B) was representable, and the row it
+ * would have made grants cross-tenant visibility - the follow-up #40 deferred
+ * with "user_property has no tenant_id column, so cross-tenant staff assignment
+ * is revisited when staff invites land". They landed.
+ */
 export const userProperty = pgTable(
   "user_property",
   {
@@ -212,8 +238,129 @@ export const userProperty = pgTable(
     propertyId: uuid("property_id")
       .notNull()
       .references(() => property.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    // Denormalized, like unit/booking (db-design §4.5) - and load-bearing twice
+    // over: it carries the composite FKs below, AND it lets this table's own RLS
+    // policy be a flat `tenant_id = <guc>`. That flatness is not cosmetic. If
+    // this policy still resolved the tenant through `property`, then property's
+    // new policy (which reads user_property) and user_property's policy (which
+    // would read property) would reference each other - infinite recursion in
+    // the planner. Denormalizing breaks the cycle.
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
   },
-  (t) => [primaryKey({ columns: [t.appUserId, t.propertyId] })],
+  (t) => [
+    primaryKey({ columns: [t.appUserId, t.propertyId] }),
+    // The two halves of "a staff member may only be assigned Properties of
+    // their OWN Tenant" - unrepresentable, not an app-code obligation (#40).
+    foreignKey({
+      name: "user_property_app_user_tenant_fk",
+      columns: [t.appUserId, t.tenantId],
+      foreignColumns: [appUser.id, appUser.tenantId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "user_property_property_tenant_fk",
+      columns: [t.propertyId, t.tenantId],
+      foreignColumns: [property.id, property.tenantId],
+    }).onDelete("cascade"),
+    // The lookup RLS makes on every scoped row: "is THIS property assigned to
+    // the current staff user?" The PK is (app_user_id, property_id), so that
+    // exact probe is already an index-only scan - no extra index needed.
+  ],
+);
+
+/**
+ * An Invite: a Tenant's offer of a staff account, addressed to one email and
+ * carrying the Properties that account will be able to see (#57, ADR-0033).
+ *
+ * The row holds a SHA-256 of the token, never the token itself. The token is
+ * 256 bits of CSPRNG output, so it needs no key-stretching (bcrypt exists to
+ * make LOW-entropy secrets expensive to guess; a hash is the right tool for a
+ * secret that is already unguessable), and hashing means a database dump cannot
+ * be replayed into a session.
+ */
+export const staffInvite = pgTable(
+  "staff_invite",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    // citext like app_user.email: the person who accepts types their address
+    // back, and case must not decide whether an invite matches.
+    email: citext("email").notNull(),
+    // sha256 hex of the token. UNIQUE because it is the lookup key - accept
+    // resolves an invite by hashing what the caller presented.
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamptz("expires_at").notNull(),
+    // The three ways an invite stops being live. All nullable timestamps rather
+    // than a status enum: each is a distinct event with its own moment, and
+    // "live" is derived from their absence - the same derive-don't-store grain
+    // as archived_at and payment.handled_at.
+    acceptedAt: timestamptz("accepted_at"),
+    revokedAt: timestamptz("revoked_at"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => appUser.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("staff_invite_token_hash_key").on(t.tokenHash),
+    // Composite-FK target for staff_invite_property.
+    unique("staff_invite_id_tenant_uniq").on(t.id, t.tenantId),
+    // The inviter belongs to the Tenant they invite into.
+    foreignKey({
+      name: "staff_invite_created_by_tenant_fk",
+      columns: [t.createdBy, t.tenantId],
+      foreignColumns: [appUser.id, appUser.tenantId],
+    }).onDelete("cascade"),
+    // At most ONE live invite per (tenant, email). Partial, because accepted and
+    // revoked invites are history and must be allowed to pile up - re-inviting
+    // someone whose first invite lapsed has to work. Mapped to
+    // `409 invite_already_pending` (ADR-0012), so the owner is told to revoke or
+    // wait rather than silently minting a second link to the same seat.
+    uniqueIndex("staff_invite_live_email_uniq")
+      .on(t.tenantId, t.email)
+      .where(sql`"accepted_at" is null and "revoked_at" is null`),
+  ],
+);
+
+/**
+ * The Properties one Invite grants. A join table rather than a `uuid[]` column
+ * on staff_invite, for two reasons that are both about the DB doing the work:
+ * the composite FK makes a cross-tenant Property in an invite unrepresentable
+ * (same guarantee as user_property), and a Property deleted between invite and
+ * accept simply cascades out of the grant instead of exploding at accept time.
+ */
+export const staffInviteProperty = pgTable(
+  "staff_invite_property",
+  {
+    inviteId: uuid("invite_id")
+      .notNull()
+      .references(() => staffInvite.id, {
+        onDelete: "cascade",
+        onUpdate: "cascade",
+      }),
+    propertyId: uuid("property_id")
+      .notNull()
+      .references(() => property.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.inviteId, t.propertyId] }),
+    foreignKey({
+      name: "staff_invite_property_invite_tenant_fk",
+      columns: [t.inviteId, t.tenantId],
+      foreignColumns: [staffInvite.id, staffInvite.tenantId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "staff_invite_property_property_tenant_fk",
+      columns: [t.propertyId, t.tenantId],
+      foreignColumns: [property.id, property.tenantId],
+    }).onDelete("cascade"),
+  ],
 );
 
 export const unit = pgTable(
@@ -535,6 +682,8 @@ export const paymentEvent = pgTable(
 // ---- Row types ------------------------------------------------------------------
 export type Tenant = typeof tenant.$inferSelect;
 export type AppUser = typeof appUser.$inferSelect;
+export type UserProperty = typeof userProperty.$inferSelect;
+export type StaffInvite = typeof staffInvite.$inferSelect;
 export type Property = typeof property.$inferSelect;
 export type Unit = typeof unit.$inferSelect;
 export type ChannelConnection = typeof channelConnection.$inferSelect;

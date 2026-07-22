@@ -110,8 +110,13 @@ Clears the cookie. Always succeeds. (Access token simply ages out ≤15 min; v1 
 ### 3.5 `GET /auth/me` → 200 (auth)
 `MeResponse = { user, tenant }`. `401` without/with a garbage token.
 
-### 3.6 Staff invites - M5 (FR-AUTH-2)
-`POST /auth/invites` (owner-only: email + propertyIds[]) → invite token emailed; `POST /auth/invites/accept` (token + password) → staff user scoped via `user_property`. Staff hitting owner-only routes (settings, billing, invites) → **403**. Requires the `user_property` tenant-consistency follow-up noted in #40.
+### 3.6 Staff invites + property-scoped RBAC - **Built** (#57, [ADR-0032](adr/0032-a-staff-scope-is-a-second-axis-in-rls.md) / [ADR-0033](adr/0033-an-invite-is-a-hashed-single-use-grant.md))
+
+**Invites.** `POST /auth/invites` (owner-only: `email` + `propertyIds[]`) mints a 256-bit token, stores its **sha256**, and emails the link - the raw token is never returned by any endpoint. `GET /auth/invites` lists the live ones; `DELETE /auth/invites/:id` withdraws one (idempotent, 404-over-403). `GET /auth/invites/token/:token` (unauthenticated) previews who invited you and to what; `POST /auth/invites/accept` (unauthenticated, `@ThrottleSensitive`) takes `token` + `password`, creates the staff user, copies the grants into `user_property`, and starts a session exactly as login does (access token in the body, refresh cookie set). An **unknown** token → `404` (no existence oracle); a **known but spent** one → `409 invite_not_acceptable {reason: expired|accepted|revoked}`. A second live invite for one email → `409 invite_already_pending` (app pre-check + `staff_invite_live_email_uniq`, indistinguishable per §5.3). A failed send **rolls the invite back** and answers `503` - the token lives only in that email, and a pending-but-unreachable invite would block every retry.
+
+**The team.** `GET /staff` (with assignments), `PATCH /staff/:id {propertyIds}` (a WHOLE-SET write, min 1 - shortening the list is how access is removed), `DELETE /staff/:id`. All `@Roles('owner')`. `DELETE` carries `role = 'staff'` in its WHERE, so another owner's id is a **404**, not a 403 that would confirm one exists; removing **yourself** is a `403` with a reason.
+
+**Scoping.** A staff member sees only assigned Properties - in every list AND by direct id - and that is enforced by **RLS**, not by any handler: `TenantDbService` sets `app.property_scope` + `app.staff_user_id` beside `app.tenant_id`, and the policies gain one term ([ADR-0032](adr/0032-a-staff-scope-is-a-second-axis-in-rls.md)). So an unassigned property is a **404** (it isn't there), while an owner-only *verb* is a **403** naming the role. The role guard runs before any lookup, so a 403 is returned for every id a staff member names and cannot be used as an oracle. Owner-only verbs are those that change the SHAPE of the tenant: `POST /properties`, `DELETE /properties/:id`, archive/unarchive, `PATCH /settings`, and everything under §3.6.
 
 ---
 

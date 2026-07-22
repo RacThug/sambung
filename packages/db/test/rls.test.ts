@@ -11,6 +11,7 @@ import {
   payment,
   paymentEvent,
   property,
+  syncConflict,
   tenant,
   unit,
   userProperty,
@@ -35,15 +36,41 @@ describe('RLS policies', () => {
   let tenantB: string;
   const ids: Record<string, { a: string; b: string }> = {};
 
-  /** Set the tenant GUC for one transaction, exactly as TenantDbService does. */
-  const asTenant = async <T>(
+  type Tx = Parameters<Parameters<typeof appDb.transaction>[0]>[0];
+
+  /**
+   * Set the session GUCs for one transaction, exactly as TenantDbService does.
+   *
+   * All THREE of them since #57 (ADR-0032). An Owner's transaction is
+   * `property_scope = 'all'`, which is what makes the property term in every
+   * policy pass unconditionally - so these tests still ask the tenant question
+   * and only the tenant question.
+   */
+  const asPrincipal = async <T>(
     tenantId: string,
-    fn: (tx: Parameters<Parameters<typeof appDb.transaction>[0]>[0]) => Promise<T>,
+    scope: { mode: 'all' | 'assigned'; staffUserId: string },
+    fn: (tx: Tx) => Promise<T>,
   ): Promise<T> =>
     appDb.transaction(async (tx) => {
-      await tx.execute(sql`select set_config('app.tenant_id', ${tenantId}, true)`);
+      await tx.execute(
+        sql`select set_config('app.tenant_id', ${tenantId}, true),
+                   set_config('app.property_scope', ${scope.mode}, true),
+                   set_config('app.staff_user_id', ${scope.staffUserId}, true)`,
+      );
       return fn(tx);
     });
+
+  /** An Owner of this tenant: scoped by tenant, unscoped within it. */
+  const asTenant = <T>(tenantId: string, fn: (tx: Tx) => Promise<T>): Promise<T> =>
+    asPrincipal(tenantId, { mode: 'all', staffUserId: '' }, fn);
+
+  /** A staff member: scoped by tenant AND by their user_property grants. */
+  const asStaff = <T>(
+    tenantId: string,
+    staffUserId: string,
+    fn: (tx: Tx) => Promise<T>,
+  ): Promise<T> =>
+    asPrincipal(tenantId, { mode: 'assigned', staffUserId }, fn);
 
   /** Seed one tenant's full row set through the owner connection. */
   async function seed(name: string) {
@@ -105,7 +132,9 @@ describe('RLS policies', () => {
         bookingId: b.id,
       })
       .returning({ id: paymentEvent.id });
-    await db.insert(userProperty).values({ appUserId: u.id, propertyId: p.id });
+    await db
+      .insert(userProperty)
+      .values({ appUserId: u.id, propertyId: p.id, tenantId: t.id });
     return { tenantId: t.id, user: u.id, prop: p.id, unit: un.id, cc: cc.id, booking: b.id, payment: pay.id, event: pe.id };
   }
 
@@ -272,6 +301,212 @@ describe('RLS policies', () => {
       ),
       '42501', // insufficient_privilege: new row violates RLS policy
     );
+  });
+
+  /**
+   * The SECOND axis (#57, ADR-0032): within one tenant, a staff member sees only
+   * the Properties assigned to them.
+   *
+   * The fixture is the whole point - tenant A gets a SECOND property with its own
+   * unit, booking, payment, connection and conflict, and the staff user is
+   * assigned only to the FIRST. So every assertion below is intra-tenant: the
+   * tenant term passes for both rows and the property term is the only thing
+   * that can separate them.
+   */
+  describe('scope to assigned properties (staff)', () => {
+    let staff: string;
+    let assigned: { property: string; unit: string; booking: string; payment: string; cc: string; conflict: string };
+    let unassigned: typeof assigned;
+
+    /** One property and everything hanging off it, inside tenant A. */
+    async function branch(name: string) {
+      const [p] = await db
+        .insert(property)
+        .values({ tenantId: tenantA, name, slug: testSlug() })
+        .returning({ id: property.id });
+      const [un] = await db
+        .insert(unit)
+        .values({
+          propertyId: p.id,
+          tenantId: tenantA,
+          name: `${name} Room`,
+          basePriceIdr: 500_000n,
+        })
+        .returning({ id: unit.id });
+      const [cc] = await db
+        .insert(channelConnection)
+        .values({
+          tenantId: tenantA,
+          unitId: un.id,
+          channel: 'airbnb',
+          importIcalUrl: `https://example.com/${name}.ics`,
+        })
+        .returning({ id: channelConnection.id });
+      const [b] = await db
+        .insert(booking)
+        .values({
+          tenantId: tenantA,
+          unitId: un.id,
+          source: 'direct',
+          status: 'confirmed',
+          checkIn: '2027-03-01',
+          checkOut: '2027-03-04',
+        })
+        .returning({ id: booking.id });
+      const [pay] = await db
+        .insert(payment)
+        .values({ bookingId: b.id, provider: 'midtrans', amountIdr: 500_000n })
+        .returning({ id: payment.id });
+      const [sc] = await db
+        .insert(syncConflict)
+        .values({
+          tenantId: tenantA,
+          channelConnectionId: cc.id,
+          unitId: un.id,
+          externalUid: `uid-${name}`,
+          checkIn: '2027-03-01',
+          checkOut: '2027-03-04',
+        })
+        .returning({ id: syncConflict.id });
+      return {
+        property: p.id,
+        unit: un.id,
+        booking: b.id,
+        payment: pay.id,
+        cc: cc.id,
+        conflict: sc.id,
+      };
+    }
+
+    beforeAll(async () => {
+      assigned = await branch('Assigned');
+      unassigned = await branch('Unassigned');
+      const [s] = await db
+        .insert(appUser)
+        .values({
+          tenantId: tenantA,
+          email: `rls-staff-${tenantA}@test.dev`,
+          passwordHash: 'x',
+          role: 'staff',
+        })
+        .returning({ id: appUser.id });
+      staff = s.id;
+      await db.insert(userProperty).values({
+        appUserId: staff,
+        propertyId: assigned.property,
+        tenantId: tenantA,
+      });
+    });
+
+    // One row per table, both branches, one query each: the assigned id must be
+    // visible and the unassigned id must not. `payment` is in this list on
+    // purpose - migration 0015 does NOT restate the property term on its policy,
+    // relying on `booking`'s policy applying inside its EXISTS subquery. That is
+    // a rewriter behaviour, not something to take on faith for a money table, so
+    // this is the assertion that pins it.
+    const scoped = [
+      { name: 'property', col: property.id, table: property, key: 'property' },
+      { name: 'unit', col: unit.id, table: unit, key: 'unit' },
+      { name: 'booking', col: booking.id, table: booking, key: 'booking' },
+      {
+        name: 'channel_connection',
+        col: channelConnection.id,
+        table: channelConnection,
+        key: 'cc',
+      },
+      {
+        name: 'sync_conflict',
+        col: syncConflict.id,
+        table: syncConflict,
+        key: 'conflict',
+      },
+      { name: 'payment', col: payment.id, table: payment, key: 'payment' },
+    ] as const;
+
+    for (const { name, col, table, key } of scoped) {
+      it(`${name}: staff sees the assigned property's row, not the unassigned one`, async () => {
+        const rows = await asStaff(tenantA, staff, (tx) =>
+          tx
+            .select({ id: col })
+            .from(table)
+            .where(inArray(col, [assigned[key], unassigned[key]])),
+        );
+        const seen = rows.map((r) => r.id);
+        expect(seen).toEqual([assigned[key]]);
+      });
+
+      it(`${name}: the owner of the same tenant sees BOTH`, async () => {
+        const rows = await asTenant(tenantA, (tx) =>
+          tx
+            .select({ id: col })
+            .from(table)
+            .where(inArray(col, [assigned[key], unassigned[key]])),
+        );
+        // The control. Without it, a policy that filtered everything would pass
+        // every assertion above while breaking the product.
+        expect(rows.map((r) => r.id).sort()).toEqual(
+          [assigned[key], unassigned[key]].sort(),
+        );
+      });
+    }
+
+    it('a direct read by id of an unassigned property returns nothing, not an error', async () => {
+      // This is what makes "404 for unassigned" true at the HTTP layer without a
+      // single service changing: every getter already turns zero rows into a
+      // NotFoundException, and RLS makes the row zero.
+      const rows = await asStaff(tenantA, staff, (tx) =>
+        tx
+          .select({ id: property.id })
+          .from(property)
+          .where(inArray(property.id, [unassigned.property])),
+      );
+      expect(rows).toEqual([]);
+    });
+
+    it('staff cannot grant themselves a property - WITH CHECK refuses the write', async () => {
+      await expectDbError(
+        asStaff(tenantA, staff, (tx) =>
+          tx.insert(userProperty).values({
+            appUserId: staff,
+            propertyId: unassigned.property,
+            tenantId: tenantA,
+          }),
+        ),
+        '42501',
+      );
+    });
+
+    it('staff reads their OWN grants only, not the whole roster', async () => {
+      const [owner] = await asTenant(tenantA, (tx) =>
+        tx.select({ id: appUser.id }).from(appUser).where(inArray(appUser.role, ['owner'])),
+      );
+      // The owner's own user_property row (seeded in `seed`) belongs to someone
+      // else; a staff member has no business enumerating who else can see what.
+      const rows = await asStaff(tenantA, staff, (tx) =>
+        tx.select({ appUserId: userProperty.appUserId }).from(userProperty),
+      );
+      expect(rows.map((r) => r.appUserId)).toEqual([staff]);
+      expect(rows.map((r) => r.appUserId)).not.toContain(owner.id);
+    });
+
+    it('a staff scope with no matching grants sees nothing - it does not fall open', async () => {
+      // The failure this design is built to prevent: "restricted" must never
+      // degrade into "unrestricted" when the restriction matches no rows.
+      const rows = await asStaff(tenantA, unassigned.property /* not a user id */, (tx) =>
+        tx.select({ id: property.id }).from(property),
+      );
+      expect(rows).toEqual([]);
+    });
+
+    it('the property term cannot be bypassed by naming another tenant\'s staff', async () => {
+      // A staff user id from tenant B, presented inside tenant A's scope. The
+      // tenant term already refuses it; this pins that the two axes are ANDed,
+      // never ORed.
+      const rows = await asStaff(tenantB, staff, (tx) =>
+        tx.select({ id: property.id }).from(property),
+      );
+      expect(rows).toEqual([]);
+    });
   });
 
   it('the app role is actually subject to RLS - the premise of this file', async () => {

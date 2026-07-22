@@ -17,6 +17,7 @@ import { ChannelSyncModule } from './channel-sync/channel-sync.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PropertiesModule } from './properties/properties.module';
 import { SettingsModule } from './settings/settings.module';
+import { StaffModule } from './staff/staff.module';
 import { UnitsModule } from './units/units.module';
 
 @Module({
@@ -85,6 +86,7 @@ import { UnitsModule } from './units/units.module';
     PaymentsModule,
     ChannelSyncModule,
     SettingsModule,
+    StaffModule,
   ],
   controllers: [AppController],
   providers: [

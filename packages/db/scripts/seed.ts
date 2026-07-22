@@ -49,6 +49,7 @@ const U_GARDEN = "bbbbbbbb-0000-0000-0000-000000000002";
 const U_SURF = "bbbbbbbb-0000-0000-0000-000000000003";
 const U_RIVER = "bbbbbbbb-0000-0000-0000-000000000004";
 const CC_AIRBNB = "cccccccc-0000-0000-0000-000000000001";
+const STAFF_SEMINYAK = "eeeeeeee-0000-0000-0000-000000000001"; // staff of T1
 const SC_DOUBLE_SELL = "dddddddd-0000-0000-0000-000000000001";
 
 // bcrypt("sambung123", 12 rounds) - matches the auth service's BCRYPT_ROUNDS,
@@ -122,6 +123,18 @@ async function main() {
         passwordHash: DEMO_PASSWORD_HASH,
         role: "owner",
       },
+      // A STAFF member of Bali Breeze, assigned to Seminyak only (#57). Bali
+      // Breeze has TWO properties, so signing in as this account is the whole
+      // demo of property-scoped RBAC in one click: the calendar, the
+      // reservations list, the properties list and every by-id read show
+      // Seminyak and not Canggu, and the owner-only affordances are gone.
+      {
+        id: STAFF_SEMINYAK,
+        tenantId: T1,
+        email: "staff@balibreeze.test",
+        passwordHash: DEMO_PASSWORD_HASH,
+        role: "staff",
+      },
     ]);
 
     // --- properties (3) ---
@@ -162,6 +175,15 @@ async function main() {
         description: "Riverside suite overlooking the jungle.",
         licenseNo: "NIB-0987654321",
       },
+    ]);
+
+    // --- staff assignment (#57) ---
+    // One row, and it is the whole of property-scoped RBAC: RLS reads this table
+    // for every scoped query, so Seminyak here means Canggu is invisible to
+    // staff@balibreeze.test - in the calendar, the reservations list, the
+    // properties list, and by direct id (ADR-0032).
+    await tx.insert(userProperty).values([
+      { appUserId: STAFF_SEMINYAK, propertyId: P_SEMINYAK, tenantId: T1 },
     ]);
 
     // --- units (4) ---
@@ -365,7 +387,7 @@ async function main() {
     `Seeded: ${await n(tenant)} tenants, ${await n(property)} properties, ${await n(unit)} units, ${await n(booking)} bookings, ${await n(payment)} payments, ${await n(syncConflict)} sync conflict.`,
   );
   console.log(
-    `Demo logins: owner@balibreeze.test / owner@ubudretreats.test - password "${DEMO_PASSWORD}"`,
+    `Demo logins: owner@balibreeze.test / owner@ubudretreats.test / staff@balibreeze.test (Seminyak only) - password "${DEMO_PASSWORD}"`,
   );
   // The demo script (docs/demo.md) names these by role, never by absolute date -
   // they move with the calendar. Print them so a presenter can check the state

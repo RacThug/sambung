@@ -2,6 +2,7 @@ import {
   parseConflictBody,
   type BookingRefusalReason,
   type ConflictBody,
+  type InviteRefusalReason,
 } from "@sambung/shared";
 import { ApiError } from "./api-client";
 
@@ -56,6 +57,14 @@ export function describeConflict(body: ConflictBody): string {
     // Field-level (sits under the channel select), no terminal period.
     case "channel_already_connected":
       return "This channel is already connected to this unit";
+    // The invite link resolved but is spent. Each reason gets its own NEXT STEP,
+    // which is the whole reason the API sends a reason rather than one sentence:
+    // "ask for a new one", "you already have an account", "talk to the owner".
+    case "invite_not_acceptable":
+      return describeInviteRefusal(body.reason);
+    // Field-level (sits under the email input), no terminal period.
+    case "invite_already_pending":
+      return "An invite for this email is already pending";
     default:
       return assertNever(body);
   }
@@ -78,6 +87,22 @@ function describeRefusal(reasons: readonly BookingRefusalReason[]): string {
   if (reasons.includes("min_stay"))
     return "That stay is shorter than this unit's minimum.";
   return "Those dates can't be booked.";
+}
+
+/**
+ * A spent invite, and what to do about it. Each reason has a different next
+ * step, which is why the API sends a reason rather than one sentence: "already
+ * used" means sign in, the other two mean ask for a new link.
+ */
+function describeInviteRefusal(reason: InviteRefusalReason): string {
+  switch (reason) {
+    case "accepted":
+      return "This invite has already been used. Sign in with your email and password instead.";
+    case "revoked":
+      return "This invite was withdrawn. Ask the account owner to send you a new one.";
+    case "expired":
+      return "This invite has expired. Ask the account owner to send you a new one.";
+  }
 }
 
 function plural(n: number, noun: string): string {

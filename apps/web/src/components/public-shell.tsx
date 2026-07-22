@@ -13,7 +13,11 @@ import { LanguageSwitcher } from "./language-switcher";
  */
 export function PublicShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  if (pathname.startsWith("/app")) return null;
+  // /app is the dashboard. /invite is an account page for an incoming STAFF
+  // member - operator-facing like the dashboard, and its invite email is English
+  // too, so offering three languages there would be a promise the rest of that
+  // journey doesn't keep (#57).
+  if (pathname.startsWith("/app") || pathname.startsWith("/invite")) return null;
   return (
     <header className="flex items-center justify-end px-6 py-3">
       <LanguageSwitcher />

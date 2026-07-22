@@ -59,6 +59,16 @@ export const conflictCodeSchema = z.enum([
   // so both throw the same factory (§5.3). No detail: the unit and channel are
   // already in the request, so the web has everything it needs to render copy.
   "channel_already_connected",
+  // accepting a staff Invite (#57, ADR-0033): the token resolved to a real
+  // invite that is no longer live. Carries WHY, because the three cases need
+  // different copy and a different next step - ask for a new link, sign in
+  // instead, or talk to the owner. An UNKNOWN token is NOT this: that is a 404,
+  // so a guessed token cannot confirm that an invite exists.
+  "invite_not_acceptable",
+  // creating a staff Invite (#57): this Tenant already has a live invite for
+  // this email, arbitrated by the `staff_invite_live_email_uniq` partial index.
+  // No detail - the email is already in the request.
+  "invite_already_pending",
 ]);
 export type ConflictCode = z.infer<typeof conflictCodeSchema>;
 
@@ -106,6 +116,27 @@ const channelAlreadyConnectedBodySchema = z.object({
   code: z.literal("channel_already_connected"),
 });
 
+/**
+ * Why a live-looking invite link is refused. A closed set, like every other
+ * detail here: the web switches on it to choose between "ask for a new link",
+ * "you already accepted - just sign in", and "this invite was withdrawn".
+ */
+export const inviteRefusalReasonSchema = z.enum([
+  "expired",
+  "accepted",
+  "revoked",
+]);
+export type InviteRefusalReason = z.infer<typeof inviteRefusalReasonSchema>;
+
+const inviteNotAcceptableBodySchema = z.object({
+  code: z.literal("invite_not_acceptable"),
+  reason: inviteRefusalReasonSchema,
+});
+
+const inviteAlreadyPendingBodySchema = z.object({
+  code: z.literal("invite_already_pending"),
+});
+
 export const conflictBodySchema = z.discriminatedUnion("code", [
   emailTakenBodySchema,
   unitNameTakenBodySchema,
@@ -115,6 +146,8 @@ export const conflictBodySchema = z.discriminatedUnion("code", [
   bookingNotCancellableBodySchema,
   bookingNotPayableBodySchema,
   channelAlreadyConnectedBodySchema,
+  inviteNotAcceptableBodySchema,
+  inviteAlreadyPendingBodySchema,
 ]);
 export type ConflictBody = z.infer<typeof conflictBodySchema>;
 
