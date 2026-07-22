@@ -107,10 +107,18 @@ account holder, and attaching a workspace to someone else's login on the strengt
 address is not a thing to do. "Create another workspace" is an authenticated verb, and it does not
 exist yet - deliberately out of scope, since #154 is about *staff* at two owners.
 
-**Revocation is still bounded by the token's life.** Removing a membership takes effect on the next
-query for data - RLS reads `membership` on every statement - but the access token stays
-cryptographically valid until it expires (≤15 min). Unchanged from ADR-0032, and the same reason
-the scope was never put in the token.
+**Revocation is still bounded by the token's life, and ADR-0032's wording needs one correction.**
+Removing a membership takes effect on the next query for data - RLS reads `membership` on every
+statement, so a stale token naming the lost tenant reads zero rows - but the access token stays
+cryptographically valid until it expires (≤15 min). Unchanged, and the same reason the scope was
+never put in the token.
+
+ADR-0032 added "and no refresh can mint another", which was true when removing someone deleted
+their `app_user` row. It no longer is: an account with a **second** seat refreshes successfully into
+that other seat. That is the correct outcome - the other owner never agreed to the removal - but the
+sentence is superseded, and the guarantee is now the narrower and more accurate one: **no refresh
+can mint a token for a tenant the account no longer holds a membership at.** `POST /auth/session`
+answers `404` for it, and an account left with no seats at all cannot refresh into anything.
 
 **"Workspace" enters the vocabulary, narrowly.** `CONTEXT.md` lists it under Tenant's *Avoid*; the
 switcher needs a word a villa owner recognises, so the entry is amended rather than contradicted -
