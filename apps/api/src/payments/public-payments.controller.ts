@@ -1,5 +1,6 @@
 import { Controller, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import type { PaymentSessionResponse } from '@sambung/shared';
+import { NoBody } from '../common/decorators/no-body.decorator';
 import { ThrottleSensitive } from '../common/throttle/throttle.decorator';
 import { PaymentsService } from './payments.service';
 
@@ -21,6 +22,7 @@ export class PublicPaymentsController {
   // real guest clicking "pay" a few times never trips it.
   @ThrottleSensitive()
   @Post(':id/pay')
+  @NoBody()
   pay(@Param('id', ParseUUIDPipe) id: string): Promise<PaymentSessionResponse> {
     return this.payments.pay(id);
   }

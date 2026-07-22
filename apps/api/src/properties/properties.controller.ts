@@ -23,6 +23,7 @@ import {
   type UpdatePropertyRequest,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { NoBody } from '../common/decorators/no-body.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { RolesGuard } from '../common/roles.guard';
@@ -87,6 +88,7 @@ export class PropertiesController {
   @Delete(':id')
   @Roles('owner')
   @HttpCode(204)
+  @NoBody()
   remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.properties.remove(id);
   }
@@ -115,6 +117,7 @@ export class PropertiesController {
   @Post(':id/archive')
   @Roles('owner')
   @HttpCode(200)
+  @NoBody()
   archive(@Param('id', ParseUUIDPipe) id: string): Promise<PropertyResponse> {
     return this.properties.archive(id);
   }
@@ -122,6 +125,7 @@ export class PropertiesController {
   @Post(':id/unarchive')
   @Roles('owner')
   @HttpCode(200)
+  @NoBody()
   unarchive(@Param('id', ParseUUIDPipe) id: string): Promise<PropertyResponse> {
     return this.properties.unarchive(id);
   }

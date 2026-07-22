@@ -17,6 +17,7 @@ import {
   type SyncConnectionResponse,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { NoBody } from '../common/decorators/no-body.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { ChannelsService } from './channels.service';
 
@@ -59,6 +60,7 @@ export class ChannelsController {
   // owner can clean up deliberately (api-spec §7.4). Unknown / foreign id → 404.
   @Delete(':id')
   @HttpCode(200)
+  @NoBody()
   disconnect(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<DisconnectChannelResponse> {
@@ -71,6 +73,7 @@ export class ChannelsController {
   // Unknown / foreign id → 404.
   @Post(':id/sync')
   @HttpCode(200)
+  @NoBody()
   syncNow(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<SyncConnectionResponse> {

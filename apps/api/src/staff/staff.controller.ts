@@ -16,6 +16,7 @@ import {
   type UpdateStaffRequest,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { NoBody } from '../common/decorators/no-body.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { RolesGuard } from '../common/roles.guard';
@@ -56,6 +57,7 @@ export class StaffController {
 
   @Delete(':id')
   @HttpCode(204)
+  @NoBody()
   remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.staff.remove(id);
   }

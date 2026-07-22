@@ -21,6 +21,7 @@ import {
   type ListBookingsQuery,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
+import { NoBody } from '../common/decorators/no-body.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { BookingsQueryService } from './bookings-query.service';
 import { BookingsService } from './bookings.service';
@@ -84,6 +85,7 @@ export class BookingsController {
   // { status, refund }; already-terminal → 409; unknown → 404.
   @Post(':id/cancel')
   @HttpCode(200)
+  @NoBody()
   cancel(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<CancelBookingResponse> {
