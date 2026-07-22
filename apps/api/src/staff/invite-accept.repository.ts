@@ -10,20 +10,8 @@ import {
   type AppUser,
   type Tenant,
 } from '@sambung/db';
-import type { InviteRefusalReason } from '@sambung/shared';
 import { DbService } from '../db/db.service';
-
-export interface InviteView {
-  id: string;
-  tenantId: string;
-  tenantName: string;
-  email: string;
-  expiresAt: Date;
-  acceptedAt: Date | null;
-  revokedAt: Date | null;
-  invitedBy: string;
-  propertyNames: string[];
-}
+import type { InviteView } from './invite-liveness';
 
 /**
  * The unauthenticated half of the Invite lifecycle: preview and accept.
@@ -81,7 +69,30 @@ export class InviteAcceptRepository {
   }
 
   /**
-   * Accept: spend the invite, create the staff user, copy the grants across.
+   * Does ANY tenant already have an account for this address?
+   *
+   * `app_user_email_key` is global (see the schema comment on `app_user.email`),
+   * so this is the question that decides whether an invite can ever be accepted -
+   * and it cannot be asked under RLS, which by design shows only our own users.
+   * Found in review: without it, inviting someone who already had an account
+   * elsewhere created and EMAILED a link that answered 409 on every attempt,
+   * forever, with nothing to tell either party why.
+   *
+   * Asking it globally leaks nothing new. `POST /auth/register` already answers
+   * "does this address have an account?" to anyone at all, unauthenticated; this
+   * merely spares an owner from sending an invite that cannot work.
+   */
+  async emailHasAccountAnywhere(email: string): Promise<boolean> {
+    const rows = await this.dbs.db
+      .select({ id: appUser.id })
+      .from(appUser)
+      .where(eq(appUser.email, email))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  /**
+   * Accept: spend the invite, create the staff user, copy the Assignments across.
    *
    * ONE transaction, and the ORDER is the concurrency control. The guarded
    * UPDATE goes first, so two simultaneous accepts of the same token contend on
@@ -160,12 +171,4 @@ export class InviteAcceptRepository {
       return { user: newUser, tenant: tenantRow };
     });
   }
-}
-
-/** Why a resolved-but-dead invite is dead. Checked in the order a human would
- * explain it: withdrawn beats spent beats lapsed. */
-export function refusalReason(invite: InviteView): InviteRefusalReason {
-  if (invite.revokedAt) return 'revoked';
-  if (invite.acceptedAt) return 'accepted';
-  return 'expired';
 }

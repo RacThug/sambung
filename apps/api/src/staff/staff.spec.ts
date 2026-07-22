@@ -416,6 +416,122 @@ describe('Staff invites and property-scoped RBAC', () => {
         .expect(201);
     });
 
+    it('refuses to invite an address that already has an account ANYWHERE', async () => {
+      // Found in review. `app_user_email_key` is GLOBAL, so an invitee who
+      // already has an account under another tenant hits it at accept - and the
+      // pre-check only looked inside the inviting tenant, so the invite was
+      // created and EMAILED before anyone could find out. That is a permanent
+      // dead end: every retry of a link that can never work.
+      const other = await registerTenant('Invite Foreign Account');
+      const owner = await registerTenant('Invite Global Email');
+      const { propertyId } = await seedProperty(
+        owner.tenant.id,
+        'Villa Global',
+      );
+      const before = sent.length;
+
+      const res = await request(server())
+        .post('/api/auth/invites')
+        .set(auth(owner.accessToken))
+        .send({ email: other.email, propertyIds: [propertyId] })
+        .expect(409);
+      expect(bodyOf<ConflictBody>(res)).toMatchObject({ code: 'email_taken' });
+      // Nothing was created, and - the part that matters - nothing was sent.
+      expect(sent).toHaveLength(before);
+      const invites = await dbs.db
+        .select({ id: staffInvite.id })
+        .from(staffInvite)
+        .where(eq(staffInvite.tenantId, owner.tenant.id));
+      expect(invites).toHaveLength(0);
+    });
+
+    it('an EXPIRED invite does not block re-inviting the same address', async () => {
+      // Also found in review. `staff_invite_live_email_uniq` cannot include
+      // `expires_at > now()` (an index predicate must be immutable), so a lapsed
+      // invite kept occupying the one live slot for its address: re-inviting
+      // returned 409 invite_already_pending forever, and the owner had to guess
+      // that revoking a dead invite was the way out.
+      const owner = await registerTenant('Invite Expiry Reuse');
+      const { propertyId } = await seedProperty(owner.tenant.id, 'Villa Again');
+      const email = `invitee+${randomUUID()}@test.dev`;
+      const first = bodyOf<InviteDto>(
+        await request(server())
+          .post('/api/auth/invites')
+          .set(auth(owner.accessToken))
+          .send({ email, propertyIds: [propertyId] })
+          .expect(201),
+      );
+      await dbs.db
+        .update(staffInvite)
+        .set({ expiresAt: sql`now() - interval '1 second'` })
+        .where(eq(staffInvite.id, first.id));
+
+      // A dead invite is not pending - it should not be on the owner's list...
+      const pending = bodyOf<ListInvitesResponse>(
+        await request(server())
+          .get('/api/auth/invites')
+          .set(auth(owner.accessToken))
+          .expect(200),
+      );
+      expect(pending.invites.map((i) => i.id)).not.toContain(first.id);
+
+      // ...and it must not stand in the way of a fresh one.
+      const before = sent.length;
+      const second = bodyOf<InviteDto>(
+        await request(server())
+          .post('/api/auth/invites')
+          .set(auth(owner.accessToken))
+          .send({ email, propertyIds: [propertyId] })
+          .expect(201),
+      );
+      expect(second.id).not.toBe(first.id);
+
+      // The NEW link works; the old one still reports `expired`, not `revoked` -
+      // superseding it is bookkeeping, and must not rewrite what happened to it.
+      const token = tokenFromLastEmail(before);
+      await request(server())
+        .post('/api/auth/invites/accept')
+        .send({ token, password: PASSWORD })
+        .expect(200);
+    });
+
+    it('a superseded invite still reports EXPIRED, not revoked', async () => {
+      const owner = await registerTenant('Invite Supersede Reason');
+      const { propertyId } = await seedProperty(
+        owner.tenant.id,
+        'Villa Reason',
+      );
+      const email = `invitee+${randomUUID()}@test.dev`;
+      const before = sent.length;
+      const first = bodyOf<InviteDto>(
+        await request(server())
+          .post('/api/auth/invites')
+          .set(auth(owner.accessToken))
+          .send({ email, propertyIds: [propertyId] })
+          .expect(201),
+      );
+      const staleToken = tokenFromLastEmail(before);
+      await dbs.db
+        .update(staffInvite)
+        .set({ expiresAt: sql`now() - interval '1 second'` })
+        .where(eq(staffInvite.id, first.id));
+      await request(server())
+        .post('/api/auth/invites')
+        .set(auth(owner.accessToken))
+        .send({ email, propertyIds: [propertyId] })
+        .expect(201);
+
+      const refused = await request(server())
+        .post('/api/auth/invites/accept')
+        .send({ token: staleToken, password: PASSWORD })
+        .expect(409);
+      // The holder of the stale link ran out of time; they were not withdrawn.
+      expect(bodyOf<ConflictBody>(refused)).toMatchObject({
+        code: 'invite_not_acceptable',
+        reason: 'expired',
+      });
+    });
+
     it('the stored token is a hash, not the token itself', async () => {
       const owner = await registerTenant('Invite Hashing');
       const { propertyId } = await seedProperty(owner.tenant.id, 'Villa Hash');

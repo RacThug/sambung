@@ -26,6 +26,26 @@ export const assignedPropertyIdsSchema = z
   .min(1)
   .max(200);
 
+/**
+ * The Invite token as it travels: opaque to everyone but the server, which
+ * compares its hash. Bounded so an absurd value is a 400 at the boundary rather
+ * than something the hash function is asked to chew through - and shared by the
+ * accept BODY and the preview PATH PARAM, which are the same secret arriving two
+ * ways and must not disagree about what is acceptable.
+ */
+export const inviteTokenSchema = z.string().min(1).max(200);
+
+/**
+ * A Property named in an Invite or an Assignment: id to act on, name to read.
+ * One schema, because the Team screen renders both lists the same way and a
+ * second copy is a field that can go missing from one of them.
+ */
+export const assignedPropertySchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+});
+export type AssignedProperty = z.infer<typeof assignedPropertySchema>;
+
 export const createInviteRequestSchema = strictObject({
   email: z.string().trim().email().max(254),
   propertyIds: assignedPropertyIdsSchema,
@@ -44,9 +64,7 @@ export const inviteDtoSchema = z.object({
   email: z.string().email(),
   expiresAt: z.string().datetime(),
   createdAt: z.string().datetime(),
-  properties: z.array(
-    z.object({ id: z.string().uuid(), name: z.string() }),
-  ),
+  properties: z.array(assignedPropertySchema),
 });
 export type InviteDto = z.infer<typeof inviteDtoSchema>;
 
@@ -74,7 +92,7 @@ export type InvitePreviewResponse = z.infer<typeof invitePreviewResponseSchema>;
  * register's, because this creates exactly the same kind of account.
  */
 export const acceptInviteRequestSchema = strictObject({
-  token: z.string().min(1).max(200),
+  token: inviteTokenSchema,
   password: z.string().min(8).max(200),
 });
 export type AcceptInviteRequest = z.infer<typeof acceptInviteRequestSchema>;
@@ -84,9 +102,7 @@ export const staffMemberDtoSchema = z.object({
   id: z.string().uuid(),
   email: z.string().email(),
   createdAt: z.string().datetime(),
-  properties: z.array(
-    z.object({ id: z.string().uuid(), name: z.string() }),
-  ),
+  properties: z.array(assignedPropertySchema),
 });
 export type StaffMemberDto = z.infer<typeof staffMemberDtoSchema>;
 

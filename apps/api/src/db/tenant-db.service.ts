@@ -43,7 +43,7 @@ interface ActiveTx {
  *
  * `all` is an Owner, a Visitor, or a system caller - nobody whose sight is
  * narrowed below their Tenant. `assigned` is a staff member, and then
- * `staffUserId` names whose `user_property` grants apply.
+ * `staffUserId` names whose Assignments apply.
  *
  * Two fields rather than one string that is either 'all' or a uuid, because the
  * SQL side cannot afford the ambiguity: Postgres does not guarantee OR
@@ -62,7 +62,7 @@ type PropertyScope =
  *
  * A Visitor gets `all` on purpose. The property axis narrows a user below their
  * Tenant; a Visitor is already confined to the single Tenant whose slug they
- * opened (ADR-0003) and has no user_property grants to be narrowed by, so
+ * opened (ADR-0003) and has no Assignments to be narrowed by, so
  * `assigned` would silently blank the public funnel.
  */
 function scopeFor(principal: Principal): PropertyScope {

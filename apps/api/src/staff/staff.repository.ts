@@ -10,13 +10,32 @@ import {
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
 
-/** One invite or staff member, with the Properties it grants, flattened. */
-export interface GrantRow {
+/** A Property an Invite or a Staff member is scoped to. */
+export interface AssignedProperty {
+  id: string;
+  name: string;
+}
+
+/** One staff member and their Assignments. */
+export interface StaffRow {
   id: string;
   email: string;
   createdAt: Date;
-  expiresAt: Date | null;
-  properties: { id: string; name: string }[];
+  properties: AssignedProperty[];
+}
+
+/**
+ * One live invite and the Assignments it will make.
+ *
+ * A SEPARATE type from StaffRow, though the two are nearly identical. They were
+ * one, and the seam showed: the staff query had to select a literal
+ * `null as expires_at` for a column it has no concept of, and the invite mapper
+ * then had to invent `?? new Date()` to get it back. Two shapes, honestly
+ * spelled, cost less than one shape both callers have to lie to - and the domain
+ * agrees (CONTEXT.md keeps Invite and Staff deliberately apart).
+ */
+export interface InviteRow extends StaffRow {
+  expiresAt: Date;
 }
 
 /**
@@ -63,45 +82,63 @@ export class StaffRepository {
     return rows[0]?.n ?? 0;
   }
 
-  /** A live invite already outstanding for this email? The friendly half of the
-   * two-layer check; `staff_invite_live_email_uniq` is the real one. */
+  /**
+   * A live invite already outstanding for this email? The friendly half of the
+   * two-layer check; `staff_invite_live_email_uniq` is the real one.
+   *
+   * "Live" includes NOT EXPIRED, which the index cannot express - an index
+   * predicate must be immutable, so `now()` is not available to it. That gap is
+   * why `supersedeExpiredInvites` exists: this check and the index have to agree,
+   * and the only way to make the index agree is to close the stale row first.
+   */
   async hasLiveInvite(email: string): Promise<boolean> {
     const tenantId = this.tenant.tenantId;
     const rows = await this.db.run((tx) =>
       tx
         .select({ id: staffInvite.id })
         .from(staffInvite)
+        .where(and(...liveInviteFor(tenantId, email)))
+        .limit(1),
+    );
+    return rows.length > 0;
+  }
+
+  /**
+   * Close any invite for this address that has simply run out of time.
+   *
+   * Found in review. `staff_invite_live_email_uniq` is partial on
+   * `accepted_at is null and revoked_at is null` and CANNOT also test
+   * `expires_at > now()`, so a lapsed invite went on occupying the one live slot
+   * for its address: re-inviting answered `409 invite_already_pending` forever,
+   * and the only way out was to guess that revoking a dead invite would help.
+   *
+   * Marking it `revoked_at` is BOOKKEEPING, not a claim about what happened -
+   * `refusalReason` checks expiry before revocation precisely so the holder of
+   * the stale link is still told it expired (invite-liveness.ts).
+   *
+   * Idempotent, and scoped to one address: it closes only rows that are already
+   * dead by the clock, so running it twice changes nothing the second time.
+   */
+  async supersedeExpiredInvites(email: string): Promise<void> {
+    const tenantId = this.tenant.tenantId;
+    await this.db.run((tx) =>
+      tx
+        .update(staffInvite)
+        .set({ revokedAt: new Date() })
         .where(
           and(
             eq(staffInvite.tenantId, tenantId),
             eq(staffInvite.email, email),
             isNull(staffInvite.acceptedAt),
             isNull(staffInvite.revokedAt),
+            sql`${staffInvite.expiresAt} <= now()`,
           ),
-        )
-        .limit(1),
+        ),
     );
-    return rows.length > 0;
   }
 
-  /** Is this email already an account in THIS tenant? RLS means the question can
-   * only ever be asked about our own users, which is the point: the global
-   * `app_user_email_key` answers the cross-tenant case at accept time, and no
-   * pre-check here can turn into an existence oracle for another tenant. */
-  async emailInUse(email: string): Promise<boolean> {
-    const tenantId = this.tenant.tenantId;
-    const rows = await this.db.run((tx) =>
-      tx
-        .select({ id: appUser.id })
-        .from(appUser)
-        .where(and(eq(appUser.tenantId, tenantId), eq(appUser.email, email)))
-        .limit(1),
-    );
-    return rows.length > 0;
-  }
-
-  /** Invite + its granted properties, in ONE transaction: an invite that grants
-   * nothing is not a half-created invite, it is a bug. */
+  /** Invite + the Properties it will assign, in ONE transaction: an invite that
+   * assigns nothing is not a half-created invite, it is a bug. */
   async createInvite(input: {
     email: string;
     tokenHash: string;
@@ -132,8 +169,15 @@ export class StaffRepository {
     });
   }
 
-  /** Pending (live) invites with their granted property names. */
-  async listPendingInvites(): Promise<GrantRow[]> {
+  /**
+   * Pending invites - live ones only, with the Properties they will assign.
+   *
+   * "Pending" means an invite somebody could still accept, so an expired one is
+   * excluded rather than listed with a date in the past. Found in review: it was
+   * shown as pending, which made the owner's screen disagree with the accept
+   * endpoint about the same row.
+   */
+  async listPendingInvites(): Promise<InviteRow[]> {
     const tenantId = this.tenant.tenantId;
     const rows = await this.db.run((tx) =>
       tx
@@ -151,13 +195,7 @@ export class StaffRepository {
           eq(staffInviteProperty.inviteId, staffInvite.id),
         )
         .leftJoin(property, eq(property.id, staffInviteProperty.propertyId))
-        .where(
-          and(
-            eq(staffInvite.tenantId, tenantId),
-            isNull(staffInvite.acceptedAt),
-            isNull(staffInvite.revokedAt),
-          ),
-        )
+        .where(and(...liveInviteFor(tenantId)))
         .orderBy(asc(staffInvite.createdAt), asc(property.name)),
     );
     return group(rows);
@@ -202,7 +240,7 @@ export class StaffRepository {
   }
 
   /** Staff members of this tenant, with their Assignments. */
-  async listStaff(): Promise<GrantRow[]> {
+  async listStaff(): Promise<StaffRow[]> {
     const tenantId = this.tenant.tenantId;
     const rows = await this.db.run((tx) =>
       tx
@@ -210,7 +248,6 @@ export class StaffRepository {
           id: appUser.id,
           email: appUser.email,
           createdAt: appUser.createdAt,
-          expiresAt: sql<Date | null>`null`,
           propertyId: property.id,
           propertyName: property.name,
         })
@@ -304,38 +341,49 @@ export class StaffRepository {
 }
 
 /**
- * Collapse a LEFT JOIN's row-per-property into one entry per invite/user.
+ * Collapse a LEFT JOIN's row-per-property into one entry per invite or staff
+ * member, carrying through whatever extra columns the caller selected.
  *
- * A left join, so an invite whose only Property was deleted still appears (with
+ * Generic over those extras rather than over one union shape, which is what lets
+ * an Invite keep its `expiresAt` and a Staff member simply not have one - no
+ * fabricated column on either side.
+ *
+ * A LEFT join, so an invite whose only Property was deleted still appears (with
  * an empty list) rather than vanishing from the owner's screen - which is what
  * an inner join would do, turning a cascade into an invisible invite.
  */
-function group(
-  rows: {
-    id: string;
-    email: string;
-    createdAt: Date;
-    expiresAt: Date | null;
-    propertyId: string | null;
-    propertyName: string | null;
-  }[],
-): GrantRow[] {
-  const byId = new Map<string, GrantRow>();
-  for (const row of rows) {
-    let entry = byId.get(row.id);
+function group<T extends { id: string; email: string; createdAt: Date }>(
+  rows: (T & { propertyId: string | null; propertyName: string | null })[],
+): (T & { properties: AssignedProperty[] })[] {
+  const byId = new Map<string, T & { properties: AssignedProperty[] }>();
+  for (const { propertyId, propertyName, ...rest } of rows) {
+    let entry = byId.get(rest.id);
     if (!entry) {
-      entry = {
-        id: row.id,
-        email: row.email,
-        createdAt: row.createdAt,
-        expiresAt: row.expiresAt,
-        properties: [],
-      };
-      byId.set(row.id, entry);
+      entry = { ...(rest as unknown as T), properties: [] };
+      byId.set(entry.id, entry);
     }
-    if (row.propertyId && row.propertyName) {
-      entry.properties.push({ id: row.propertyId, name: row.propertyName });
+    if (propertyId && propertyName) {
+      entry.properties.push({ id: propertyId, name: propertyName });
     }
   }
   return [...byId.values()];
+}
+
+/**
+ * What makes an invite LIVE: ours, open, and not yet out of time.
+ *
+ * One predicate builder rather than the same four conditions written wherever
+ * "live" is needed - the list, the duplicate check, and (inverted) the supersede
+ * sweep all have to mean exactly the same thing, or the owner's screen and the
+ * accept endpoint disagree about a row. `email` is optional so the same
+ * definition serves "all live invites" and "a live invite for this address".
+ */
+function liveInviteFor(tenantId: string, email?: string) {
+  return [
+    eq(staffInvite.tenantId, tenantId),
+    ...(email ? [eq(staffInvite.email, email)] : []),
+    isNull(staffInvite.acceptedAt),
+    isNull(staffInvite.revokedAt),
+    sql`${staffInvite.expiresAt} > now()`,
+  ];
 }

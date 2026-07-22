@@ -31,7 +31,7 @@ The link that lets one Staff member see one Property. It is not a preference or 
 unassigned Property does not exist for that person - not in a list, not by its id, not by any
 route. Assignments are the whole of what Staff access means; there is no second permission
 system behind them.
-_Avoid_: permission, role, access level, grant (as the general word), share
+_Avoid_: permission, role, access level, grant (as the noun for the link), share
 
 **Invite**:
 An Owner's offer of a Staff seat, addressed to one email and naming the Properties it will

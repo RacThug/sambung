@@ -14,6 +14,7 @@ import type { Response } from 'express';
 import {
   acceptInviteRequestSchema,
   createInviteRequestSchema,
+  inviteTokenSchema,
   type AcceptInviteRequest,
   type AuthResponse,
   type CreateInviteRequest,
@@ -80,9 +81,18 @@ export class InvitesController {
    *
    * Nested under `token/` rather than sitting at `:token`, so it can never be
    * confused with the uuid-shaped `:id` the revoke route takes.
+   *
+   * Bounded and throttled exactly like `accept` below, because it is the same
+   * surface: one unauthenticated route taking one unauthenticated secret. Two
+   * protections on one of them and none on the other is not a decision, it is an
+   * oversight - the boundary rule (CLAUDE.md: validate all external input with
+   * zod) does not stop at request bodies.
    */
+  @ThrottleSensitive()
   @Get('token/:token')
-  preview(@Param('token') token: string): Promise<InvitePreviewResponse> {
+  preview(
+    @Param('token', new ZodValidationPipe(inviteTokenSchema)) token: string,
+  ): Promise<InvitePreviewResponse> {
     return this.invites.preview(token);
   }
 

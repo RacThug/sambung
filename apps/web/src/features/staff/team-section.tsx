@@ -89,6 +89,56 @@ export function TeamSection() {
   );
 }
 
+/**
+ * The one place a set of Properties is picked. Both callers - inviting someone
+ * and changing an existing member's access - are asking the identical question,
+ * so they ask it with the identical control; two copies of a toggle-a-set
+ * handler is two places for a filter to go subtly wrong.
+ *
+ * `legend` is required rather than optional: this page renders TWO of these with
+ * the same property names in them, so without a group label a screen reader
+ * announces the same checkbox twice with nothing to distinguish them.
+ */
+function PropertyPicker({
+  properties,
+  selected,
+  onChange,
+  legend,
+  legendVisible = false,
+}: {
+  properties: PropertyResponse[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  legend: string;
+  legendVisible?: boolean;
+}) {
+  return (
+    <fieldset>
+      <legend className={legendVisible ? "text-sm font-medium" : "sr-only"}>
+        {legend}
+      </legend>
+      <div className="mt-2 space-y-2">
+        {properties.map((property) => (
+          <label key={property.id} className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={selected.includes(property.id)}
+              onChange={(e) =>
+                onChange(
+                  e.target.checked
+                    ? [...selected, property.id]
+                    : selected.filter((id) => id !== property.id),
+                )
+              }
+            />
+            {property.name}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function InviteForm({ properties }: { properties: PropertyResponse[] }) {
   const create = useCreateInvite();
   const [email, setEmail] = useState("");
@@ -137,41 +187,22 @@ function InviteForm({ properties }: { properties: PropertyResponse[] }) {
         error={fieldErrors.email}
       />
 
-      <fieldset>
-        <legend className="text-sm font-medium">Can manage</legend>
-        {noProperties ? (
-          <p className="mt-2 text-sm text-muted-foreground">
-            Add a property first - an invite has to grant access to something.
-          </p>
-        ) : (
-          <div className="mt-2 space-y-2">
-            {properties.map((property) => (
-              <label
-                key={property.id}
-                className="flex items-center gap-2 text-sm"
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.includes(property.id)}
-                  onChange={(e) =>
-                    setSelected((prev) =>
-                      e.target.checked
-                        ? [...prev, property.id]
-                        : prev.filter((id) => id !== property.id),
-                    )
-                  }
-                />
-                {property.name}
-              </label>
-            ))}
-          </div>
-        )}
-        {fieldErrors.propertyIds && (
-          <p className="mt-2 text-sm text-destructive">
-            {fieldErrors.propertyIds}
-          </p>
-        )}
-      </fieldset>
+      {noProperties ? (
+        <p className="text-sm text-muted-foreground">
+          Add a property first - an invite has to grant access to something.
+        </p>
+      ) : (
+        <PropertyPicker
+          properties={properties}
+          selected={selected}
+          onChange={setSelected}
+          legend="Can manage"
+          legendVisible
+        />
+      )}
+      {fieldErrors.propertyIds && (
+        <p className="text-sm text-destructive">{fieldErrors.propertyIds}</p>
+      )}
 
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={create.isPending || noProperties}>
@@ -251,36 +282,12 @@ function StaffRow({
 
       {editing && (
         <div className="mt-4 border-t border-border pt-4">
-          {/* A named group, not a bare list of checkboxes. There is a second
-              set of identically-labelled boxes on this page (the invite form),
-              so without a legend a screen reader announces "Seminyak Beach
-              Villa, checkbox" twice with nothing to tell them apart. */}
-          <fieldset>
-            <legend className="sr-only">
-              Properties {member.email} can manage
-            </legend>
-            <div className="space-y-2">
-              {properties.map((property) => (
-                <label
-                  key={property.id}
-                  className="flex items-center gap-2 text-sm"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(property.id)}
-                    onChange={(e) =>
-                      setSelected((prev) =>
-                        e.target.checked
-                          ? [...prev, property.id]
-                          : prev.filter((id) => id !== property.id),
-                      )
-                    }
-                  />
-                  {property.name}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <PropertyPicker
+            properties={properties}
+            selected={selected}
+            onChange={setSelected}
+            legend={`Properties ${member.email} can manage`}
+          />
           <div className="mt-3 flex items-center gap-3">
             <Button
               type="button"

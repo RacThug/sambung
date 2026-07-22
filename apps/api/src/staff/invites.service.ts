@@ -22,10 +22,8 @@ import {
   inviteNotAcceptable,
 } from '../common/db-error/conflicts';
 import { MAILER, type Mailer } from '../notifications/mailer';
-import {
-  InviteAcceptRepository,
-  refusalReason,
-} from './invite-accept.repository';
+import { InviteAcceptRepository } from './invite-accept.repository';
+import { refusalReason } from './invite-liveness';
 import { renderInviteEmail } from './invite-email';
 import {
   hashInviteToken,
@@ -78,7 +76,24 @@ export class InvitesService {
       throw new NotFoundException('Property not found');
     }
 
-    if (await this.repo.emailInUse(dto.email)) throw emailTaken();
+    // GLOBAL, not tenant-scoped, because `app_user_email_key` is global. Asking
+    // only about our own tenant (as this did) let an invite be created and
+    // EMAILED to someone who already had an account elsewhere - and it then
+    // answered 409 on every attempt to accept, forever, with nothing to tell
+    // either party why. Found in review; the test names the shape.
+    //
+    // The same 409 either way (§5.3): the pre-check and the constraint at accept
+    // are indistinguishable, this one merely arrives before the email does.
+    if (await this.accepts.emailHasAccountAnywhere(dto.email)) {
+      throw emailTaken();
+    }
+
+    // An invite that has simply run out of time must not stand in the way of its
+    // own replacement. The partial unique index cannot test expiry (an index
+    // predicate must be immutable), so the stale row is closed here first -
+    // otherwise re-inviting the same address is refused forever.
+    await this.repo.supersedeExpiredInvites(dto.email);
+
     // The friendly half of a two-layer check; staff_invite_live_email_uniq is
     // the guarantee, and a racing create lands on the identical 409 (§5.3).
     if (await this.repo.hasLiveInvite(dto.email)) throw inviteAlreadyPending();
@@ -165,13 +180,8 @@ export class InvitesService {
   async preview(token: string): Promise<InvitePreviewResponse> {
     const invite = await this.accepts.findByTokenHash(hashInviteToken(token));
     if (!invite) throw new NotFoundException('Invite not found');
-    if (
-      invite.revokedAt ||
-      invite.acceptedAt ||
-      invite.expiresAt <= new Date()
-    ) {
-      throw inviteNotAcceptable(refusalReason(invite));
-    }
+    const reason = refusalReason(invite);
+    if (reason) throw inviteNotAcceptable(reason);
     return {
       email: invite.email,
       tenantName: invite.tenantName,
@@ -208,7 +218,11 @@ export class InvitesService {
       const fresh = await this.accepts.findByTokenHash(
         hashInviteToken(dto.token),
       );
-      throw inviteNotAcceptable(fresh ? refusalReason(fresh) : 'expired');
+      // `?? 'expired'` covers the vanishingly narrow case where the re-read says
+      // the invite is live: it was not live when the guarded UPDATE looked, and
+      // running out of time is the only way that happens without another closure
+      // timestamp being set.
+      throw inviteNotAcceptable((fresh && refusalReason(fresh)) ?? 'expired');
     }
     this.logger.log(
       `Invite ${invite.id} accepted - staff user ${created.user.id} created for tenant ${created.tenant.id}`,
