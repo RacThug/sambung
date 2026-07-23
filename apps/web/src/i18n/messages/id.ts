@@ -8,10 +8,35 @@ import type { Messages } from "./en";
 export const id: Messages = {
   "switcher.label": "Bahasa",
 
-  "home.tagline": "Mesin pemesanan langsung + pengelola kanal yang ringan.",
-  "home.apiHealth": "Status API",
-  "home.checking": "Memeriksa…",
-  "home.apiUnreachable": "API tidak dapat dijangkau",
+  "landing.navLogin": "Masuk",
+  "landing.getStarted": "Mulai",
+  "landing.heroTitle": "Pemesanan langsung tanpa komisi untuk penginapan di Bali.",
+  "landing.heroBody":
+    "Terima pembayaran langsung dan jaga setiap kalender OTA tetap sinkron lewat iCal - jadi kamar yang terjual di Airbnb tidak bisa terjual lagi di sini. Dibuat untuk pemilik vila yang lelah membayar komisi 15% ke kanal.",
+  "landing.viewDemo": "Lihat demo langsung",
+  "landing.hardTitle": "Lima bagian tersulit",
+  "landing.hardBody":
+    "Perangkat lunak pemesanan hidup atau mati pada segelintir kasus pelik. Beginilah cara Sambung menanganinya.",
+  "landing.hard1Title": "Tidak pernah pesan ganda",
+  "landing.hard1Body":
+    "Exclusion constraint Postgres - bukan kode aplikasi - yang menentukan siapa memenangkan malam terakhir.",
+  "landing.hard2Title": "Ketersediaan diturunkan",
+  "landing.hard2Body":
+    "Malam kosong dihitung dari pemesanan nyata, sehingga kalender tidak pernah menyimpang dari dirinya sendiri.",
+  "landing.hard3Title": "Sinkronisasi iCal dua arah",
+  "landing.hard3Body":
+    "Kalender OTA tetap selaras, dan feed yang rusak tidak pernah membatalkan menginap nyata secara massal.",
+  "landing.hard4Title": "Pembayaran idempoten",
+  "landing.hard4Body":
+    "Webhook pembayaran yang terkirim ulang tidak pernah bisa mengonfirmasi atau menagih sebuah pemesanan dua kali.",
+  "landing.hard5Title": "Isolasi multi-tenant",
+  "landing.hard5Body":
+    "Data setiap pemilik terpisah di dalam basis data dengan row-level security.",
+  "landing.stackTitle": "Dibangun dengan",
+  "landing.forGuests":
+    "Ingin memesan penginapan? Buka tautan pemesanan yang dikirim tuan rumah Anda.",
+  "landing.footerTagline":
+    "Mesin pemesanan langsung + pengelola kanal yang ringan.",
 
   "property.notFoundTitle": "Halaman ini tidak ada",
   "property.notFoundBody":

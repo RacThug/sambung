@@ -11,11 +11,38 @@ export const en = {
   // Language switcher (page-spec §2 shell).
   "switcher.label": "Language",
 
-  // Home / scaffold landing.
-  "home.tagline": "Direct-booking engine + lightweight channel manager.",
-  "home.apiHealth": "API health",
-  "home.checking": "Checking…",
-  "home.apiUnreachable": "API unreachable",
+  // Landing page (/) - the portfolio front door (#60 follow-up). Guests never
+  // reach it (they open a property link); its audience is a reviewer or a
+  // returning owner, so it explains the product and routes owners to auth.
+  "landing.navLogin": "Log in",
+  "landing.getStarted": "Get started",
+  "landing.heroTitle": "Commission-free direct bookings for Bali stays.",
+  "landing.heroBody":
+    "Take payments directly and keep every OTA calendar in sync over iCal - so a room sold on Airbnb can't be sold again here. Built for the villa owner tired of paying 15% to a channel.",
+  "landing.viewDemo": "View a live demo",
+  "landing.hardTitle": "The five hard parts",
+  "landing.hardBody":
+    "Booking software lives or dies on a handful of edge cases. Here is how Sambung handles them.",
+  "landing.hard1Title": "No double-booking, ever",
+  "landing.hard1Body":
+    "A Postgres exclusion constraint - not application code - decides who wins the race for the last night.",
+  "landing.hard2Title": "Availability is derived",
+  "landing.hard2Body":
+    "Free nights are computed from real bookings, so the calendar can never drift out of sync with itself.",
+  "landing.hard3Title": "Two-way iCal sync",
+  "landing.hard3Body":
+    "OTA calendars stay in step, and a broken feed never mass-cancels a real stay.",
+  "landing.hard4Title": "Idempotent payments",
+  "landing.hard4Body":
+    "A replayed payment webhook can never double-confirm or double-charge a booking.",
+  "landing.hard5Title": "Multi-tenant isolation",
+  "landing.hard5Body":
+    "Every owner's data is walled off inside the database with row-level security.",
+  "landing.stackTitle": "Built on",
+  "landing.forGuests":
+    "Looking to book a stay? Open the booking link your host sent you.",
+  "landing.footerTagline":
+    "Direct-booking engine + lightweight channel manager.",
 
   // Property page (page-spec §3.1).
   "property.notFoundTitle": "This page doesn’t exist",

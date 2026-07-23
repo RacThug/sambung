@@ -45,8 +45,8 @@ const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: lazyRouteComponent(
-    () => import("./features/public-booking/home-page"),
-    "HomePage",
+    () => import("./features/public-booking/landing-page"),
+    "LandingPage",
   ),
 });
 

@@ -9,10 +9,35 @@ import type { Messages } from "./en";
 export const zh: Messages = {
   "switcher.label": "语言",
 
-  "home.tagline": "直接预订引擎 + 轻量级渠道管理器。",
-  "home.apiHealth": "API 状态",
-  "home.checking": "检查中…",
-  "home.apiUnreachable": "无法连接 API",
+  "landing.navLogin": "登录",
+  "landing.getStarted": "开始使用",
+  "landing.heroTitle": "巴厘岛住宿的免佣金直接预订。",
+  "landing.heroBody":
+    "直接收款，并通过 iCal 让每个 OTA 日历保持同步。在 Airbnb 售出的房间不会在这里被再次售出。为厌倦向渠道支付 15% 佣金的别墅业主打造。",
+  "landing.viewDemo": "查看在线演示",
+  "landing.hardTitle": "五个最难的部分",
+  "landing.hardBody":
+    "预订软件的成败取决于少数几个边界情况。以下是 Sambung 的处理方式。",
+  "landing.hard1Title": "绝不重复预订",
+  "landing.hard1Body":
+    "由 Postgres 排他约束（而非应用代码）来裁定谁赢得最后一晚。",
+  "landing.hard2Title": "可用性为推导所得",
+  "landing.hard2Body":
+    "空闲的夜晚由真实预订推算而来，因此日历永远不会与自身失去同步。",
+  "landing.hard3Title": "双向 iCal 同步",
+  "landing.hard3Body":
+    "OTA 日历保持一致，损坏的订阅源也绝不会批量取消真实的入住。",
+  "landing.hard4Title": "幂等支付",
+  "landing.hard4Body":
+    "重复发送的支付回调绝不会重复确认或重复扣款。",
+  "landing.hard5Title": "多租户隔离",
+  "landing.hard5Body":
+    "每位业主的数据都通过行级安全在数据库内部彼此隔离。",
+  "landing.stackTitle": "技术栈",
+  "landing.forGuests":
+    "想预订住宿？请打开房东发给您的预订链接。",
+  "landing.footerTagline":
+    "直接预订引擎 + 轻量级渠道管理器。",
 
   "property.notFoundTitle": "此页面不存在",
   "property.notFoundBody": "链接可能有误，或该房源已不再上架。",
