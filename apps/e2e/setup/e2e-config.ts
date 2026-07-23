@@ -10,9 +10,31 @@
  * different Postgres host is one export away.
  */
 
+/**
+ * Lane isolation (#167). One `SAMBUNG_E2E_LANE=<n>` derives a whole isolated
+ * stack - its own database and its own web/api ports - so two `pnpm test:e2e`
+ * runs (a parallel dispatch, say) never collide. Unset = the base lane, i.e.
+ * today's EXACT values (`sambung_e2e`, ports 5173 / 3000): the single-lane
+ * workflow is unchanged. Any individual `SAMBUNG_E2E_*` var still overrides the
+ * lane-derived default below.
+ */
+const LANE = (() => {
+  const raw = process.env.SAMBUNG_E2E_LANE;
+  if (raw === undefined || raw === "") return 0;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) {
+    throw new Error(
+      `SAMBUNG_E2E_LANE must be a non-negative integer, got "${raw}"`,
+    );
+  }
+  return n;
+})();
+/** Base lane keeps the bare name/ports so nothing about a single run changes. */
+const laneSuffix = LANE === 0 ? "" : `_${LANE}`;
+
 /** The isolated database the whole suite runs against - never the dev `sambung`
  *  DB, so the destructive seed can never eat your demo data (Q4 / blueprint). */
-export const E2E_DB_NAME = process.env.SAMBUNG_E2E_DB ?? "sambung_e2e";
+export const E2E_DB_NAME = process.env.SAMBUNG_E2E_DB ?? `sambung_e2e${laneSuffix}`;
 
 const PG_HOST = process.env.SAMBUNG_E2E_PG_HOST ?? "localhost";
 const PG_PORT = process.env.SAMBUNG_E2E_PG_PORT ?? "5432";
@@ -38,10 +60,23 @@ export const ADMIN_DATABASE_URL =
 export const OWNER_DATABASE_URL = base(OWNER_USER, OWNER_PASSWORD, E2E_DB_NAME);
 export const APP_DATABASE_URL = base(APP_USER, APP_PASSWORD, E2E_DB_NAME);
 
+export const API_PORT = process.env.SAMBUNG_E2E_API_PORT ?? String(3000 + LANE);
+
+/** The Vite dev-server port for this lane. Passed to the web `webServer` as
+ *  `WEB_DEV_PORT`, which vite.config reads (lane isolation, #167). */
+export const WEB_PORT = process.env.SAMBUNG_E2E_WEB_PORT ?? String(5173 + LANE);
+
 /** The app under test. baseURL is the single knob (blueprint Q3): point it at a
- *  built preview or the Caddy edge later without touching a spec. */
-export const WEB_BASE_URL = process.env.SAMBUNG_E2E_WEB_URL ?? "http://localhost:5173";
-export const API_PORT = process.env.SAMBUNG_E2E_API_PORT ?? "3000";
+ *  built preview or the Caddy edge later without touching a spec. Lane-derived
+ *  from WEB_PORT unless SAMBUNG_E2E_WEB_URL is set explicitly. */
+export const WEB_BASE_URL =
+  process.env.SAMBUNG_E2E_WEB_URL ?? `http://localhost:${WEB_PORT}`;
+
+/** Where this lane's web dev server proxies `/api` - its OWN api, so lane N's
+ *  browser never talks to lane M's backend. Passed to the web `webServer` as
+ *  `WEB_API_PROXY_TARGET`, which vite.config reads. */
+export const API_PROXY_TARGET =
+  process.env.SAMBUNG_E2E_API_PROXY_TARGET ?? `http://localhost:${API_PORT}`;
 
 /** Object storage (Garage) S3 endpoint. Probed up front by the provisioner: the
  *  seed uploads demo photos, so a down Garage must fail fast, not mid-seed. */
@@ -76,3 +111,18 @@ export const DEMO_PASSWORD = "sambung123";
 export const AUTH_DIR = "playwright/.auth";
 export const OWNER_STATE = `${AUTH_DIR}/owner.json`;
 export const STAFF_STATE = `${AUTH_DIR}/staff.json`;
+
+/**
+ * Seed fixtures the flow lanes READ but never create (#167 part c). Mirrored here
+ * with a pointer rather than imported - same reason as the demo logins above (the
+ * seed script does not export them, and importing it would run it). If either
+ * drifts from the seed, Flow 5's accept fails loudly: the token resolves to no
+ * invite. Source of truth: packages/db/scripts/seed.ts.
+ */
+
+/** A LIVE staff invite seeded on Bali Breeze, scoped to Seminyak, addressed to
+ *  KNOWN_INVITE_EMAIL - which has NO account, so `/invite/<token>` drives the
+ *  create-account accept path (Flow 5, #172). The seed stores sha256 of this raw
+ *  token, exactly like the real create flow (ADR-0033). Dev/demo + e2e only. */
+export const KNOWN_INVITE_TOKEN = "e2e-known-staff-invite-do-not-use-in-prod";
+export const KNOWN_INVITE_EMAIL = "newstaff@balibreeze.test";

@@ -72,6 +72,22 @@ export function validateEnv(env: NodeJS.ProcessEnv): void {
     }
   }
 
+  // PAYMENT_GATEWAY=fake binds the signature-free FakePaymentGateway for the e2e
+  // stack (#167). It must NEVER bind in production - a prod process that cannot
+  // really take money, yet confirms bookings against fabricated payment events,
+  // is the worst kind of silent failure. This is the guard that lets the seam
+  // depart from ADR-0015 ("fake out of the DI graph") safely: the departure is
+  // safe precisely because the fake cannot boot here. Same fail-fast shape as
+  // STORAGE_BOOTSTRAP below.
+  if (env.PAYMENT_GATEWAY?.trim() === 'fake') {
+    throw new Error(
+      'PAYMENT_GATEWAY must not be "fake" in production: it binds the ' +
+        'signature-free FakePaymentGateway (an e2e-only seam, #167), so a prod ' +
+        'process would accept fabricated payment events and confirm bookings for ' +
+        'free. Unset it - production uses the real MidtransGateway.',
+    );
+  }
+
   // STORAGE_BOOTSTRAP is the dev-only convenience that applies bucket CORS and
   // website access on boot so a fresh `docker compose up` just works. R2
   // supports neither PutBucketCors nor PutBucketWebsite over the S3 API - CORS

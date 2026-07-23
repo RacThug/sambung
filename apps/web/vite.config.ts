@@ -3,6 +3,20 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
+// Lane isolation for the e2e harness (#167): the dev-server port and the /api
+// proxy target are env-driven so N e2e stacks can run in parallel without
+// colliding on 5173 / :3000. Unset -> today's exact values, so `pnpm dev` and
+// prod are byte-for-byte unchanged (`vite build` ignores `server.*` entirely).
+//
+// Deliberately NOT named VITE_*: a VITE_-prefixed var is, by Vite's contract,
+// exposed to the client bundle through import.meta.env. These are dev-server
+// INFRA that must never be baked into a shipped SPA - a VITE_ name would invite
+// exactly that leak. Read from process.env here in the Node-side config, they
+// stay off the client.
+const DEV_PORT = Number(process.env.WEB_DEV_PORT) || 5173;
+const API_PROXY_TARGET =
+  process.env.WEB_API_PROXY_TARGET || "http://localhost:3000";
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -29,8 +43,8 @@ export default defineConfig({
   // guessing from filenames. Costs one small JSON file; no effect on the SPA.
   build: { manifest: true },
   server: {
-    port: 5173,
-    // Fail loudly when 5173 is taken instead of silently moving to 5174. Vite's
+    port: DEV_PORT,
+    // Fail loudly when the port is taken instead of silently moving to +1. Vite's
     // default is to relocate, which is friendly right up until something else is
     // already serving on 5173 - a stray `pnpm dev` from another worktree, say.
     // Then the URL everything hardcodes (docs/demo.md names localhost:5173 five
@@ -42,7 +56,7 @@ export default defineConfig({
     // Keeps the FE→API boundary explicit and dodges CORS in dev.
     proxy: {
       "/api": {
-        target: "http://localhost:3000",
+        target: API_PROXY_TARGET,
         changeOrigin: true,
       },
     },

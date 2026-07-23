@@ -1,10 +1,11 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
 import { BookingsModule } from '../bookings/bookings.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ConfirmationService } from './confirmation.service';
-import { MidtransGateway } from './midtrans.gateway';
 import { PAYMENT_GATEWAY } from './payment-gateway';
+import { createPaymentGateway } from './payment-gateway.factory';
 import { PaymentInboxController } from './payment-inbox.controller';
 import { PaymentInboxRepository } from './payment-inbox.repository';
 import { PaymentInboxService } from './payment-inbox.service';
@@ -20,11 +21,12 @@ import { PublicPaymentsController } from './public-payments.controller';
  * Provider session + Deposit); #53 (webhook → confirmed) and #54 (confirmation
  * reconcile) join it.
  *
- * The Provider boundary (ADR-0015): PAYMENT_GATEWAY is bound to MidtransGateway in
- * prod/dev; tests `.overrideProvider(PAYMENT_GATEWAY).useValue(new
- * FakePaymentGateway())`, so no suite reaches live Midtrans. FakePaymentGateway is
- * deliberately NOT in this DI graph - a fake wired into prod would be a foot-gun;
- * the test constructs it directly and overrides the token.
+ * The Provider boundary (ADR-0015): PAYMENT_GATEWAY is bound by `createPaymentGateway`,
+ * which reads the environment - the real MidtransGateway in prod/dev, and the
+ * FakePaymentGateway only when `PAYMENT_GATEWAY=fake` (the e2e-only seam, #167).
+ * That env value is refused in production by `validateEnv`, so the fake can never
+ * bind on a live server. Tests still `.overrideProvider(PAYMENT_GATEWAY).useValue(new
+ * FakePaymentGateway())`, so no jest suite reaches live Midtrans either.
  *
  * BookingsModule is imported for BookingsRepository - the pay path AND the
  * confirmation read reuse its opportunistic hold-sweep (ADR-0009), the one
@@ -49,7 +51,11 @@ import { PublicPaymentsController } from './public-payments.controller';
     ConfirmationService,
     PaymentInboxService,
     PaymentInboxRepository,
-    { provide: PAYMENT_GATEWAY, useClass: MidtransGateway },
+    {
+      provide: PAYMENT_GATEWAY,
+      useFactory: createPaymentGateway,
+      inject: [ConfigService],
+    },
   ],
 })
 export class PaymentsModule {}

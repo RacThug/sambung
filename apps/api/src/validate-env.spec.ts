@@ -105,4 +105,30 @@ describe('validateEnv', () => {
       ).not.toThrow();
     });
   });
+
+  // --- The e2e payment-gateway seam guard (#167 part b) ---
+
+  describe('PAYMENT_GATEWAY', () => {
+    it('refuses "fake" in production (would confirm fabricated payments)', () => {
+      expect(() => validateEnv({ ...PROD, PAYMENT_GATEWAY: 'fake' })).toThrow(
+        /PAYMENT_GATEWAY/,
+      );
+    });
+
+    it('accepts it unset or set to the real gateway in production', () => {
+      expect(() => validateEnv(PROD)).not.toThrow();
+      expect(() =>
+        validateEnv({ ...PROD, PAYMENT_GATEWAY: 'midtrans' }),
+      ).not.toThrow();
+    });
+
+    it('leaves "fake" alone outside production (the e2e stack sets it)', () => {
+      expect(() =>
+        validateEnv({ NODE_ENV: 'test', PAYMENT_GATEWAY: 'fake' }),
+      ).not.toThrow();
+      expect(() =>
+        validateEnv({ NODE_ENV: 'development', PAYMENT_GATEWAY: 'fake' }),
+      ).not.toThrow();
+    });
+  });
 });
