@@ -102,17 +102,24 @@ export default defineConfig({
       url: API_READY_URL,
       reuseExistingServer: false,
       timeout: 120_000,
-      // Only the DB connection strings + PORT are overridden; JWT secrets,
-      // STORAGE_*, throttle limits etc. still come from apps/api/.env
-      // (loadEnvFile), and an already-set env var wins over that file - so these
-      // point every API statement at sambung_e2e. PORT is pinned to the same
-      // constant API_READY_URL uses, so an apps/api/.env PORT can never diverge
-      // from the readiness poll.
+      // The DB connection strings + PORT are overridden; JWT secrets, STORAGE_*,
+      // throttle limits etc. still come from apps/api/.env (loadEnvFile), and an
+      // already-set env var wins over that file - so these point every API
+      // statement at sambung_e2e. PORT is pinned to the same constant
+      // API_READY_URL uses, so an apps/api/.env PORT can never diverge from the
+      // readiness poll.
+      //
+      // PAYMENT_GATEWAY=fake binds the deterministic, signature-free
+      // FakePaymentGateway (#167 part b), so a spec can drive a booking to
+      // `confirmed` (fake webhook POST / reconcile-on-read) with no outbound
+      // Midtrans call. `nest start` does not set NODE_ENV=production, so
+      // validateEnv (which refuses `fake` only in prod) allows it here.
       env: {
         ...process.env,
         DATABASE_URL: OWNER_DATABASE_URL,
         APP_DATABASE_URL: APP_DATABASE_URL,
         PORT: API_PORT,
+        PAYMENT_GATEWAY: "fake",
       },
     },
     {

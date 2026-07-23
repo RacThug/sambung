@@ -15,18 +15,21 @@ describe('createPaymentGateway', () => {
   const config = (env: Record<string, string | undefined>) =>
     ({ get: (key: string) => env[key] }) as unknown as ConfigService;
 
-  it('returns FakePaymentGateway on PAYMENT_GATEWAY=fake', () => {
-    expect(
-      createPaymentGateway(config({ PAYMENT_GATEWAY: 'fake' })),
-    ).toBeInstanceOf(FakePaymentGateway);
-  });
+  it.each(['fake', ' fake '])(
+    'returns FakePaymentGateway on PAYMENT_GATEWAY=%p (trimmed, matching validateEnv)',
+    (value) => {
+      expect(
+        createPaymentGateway(config({ PAYMENT_GATEWAY: value })),
+      ).toBeInstanceOf(FakePaymentGateway);
+    },
+  );
 
   it('returns the real MidtransGateway when unset', () => {
     expect(createPaymentGateway(config({}))).toBeInstanceOf(MidtransGateway);
   });
 
-  it.each(['', 'real', 'midtrans', 'Fake', 'FAKE', ' fake '])(
-    'returns the real MidtransGateway for %p (only the exact "fake" selects it)',
+  it.each(['', 'real', 'midtrans', 'Fake', 'FAKE'])(
+    'returns the real MidtransGateway for %p (only the exact "fake" selects the fake)',
     (value) => {
       expect(
         createPaymentGateway(config({ PAYMENT_GATEWAY: value })),

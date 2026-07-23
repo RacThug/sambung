@@ -27,9 +27,15 @@ import type { PaymentGateway } from './payment-gateway';
  * env-selected binding). Tests still `.overrideProvider(PAYMENT_GATEWAY)`, which
  * replaces the token regardless of whether it is bound by class or factory - so
  * no existing suite changes.
+ *
+ * The `'fake'` comparison is `.trim()`ed to match `validateEnv` byte-for-byte -
+ * the same string decides "bind the fake here" and "refuse to boot in prod", so
+ * the two must never disagree about which values count (a whitespace-padded value
+ * that bound the fake but slipped past the guard would be the exact drift this
+ * avoids).
  */
 export function createPaymentGateway(config: ConfigService): PaymentGateway {
-  if (config.get<string>('PAYMENT_GATEWAY') === 'fake') {
+  if (config.get<string>('PAYMENT_GATEWAY')?.trim() === 'fake') {
     new Logger('PaymentGateway').warn(
       'PAYMENT_GATEWAY=fake - binding FakePaymentGateway (no live Midtrans). ' +
         'This is an e2e-only seam and must never happen in production ' +
