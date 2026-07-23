@@ -26,6 +26,14 @@
     },
     "test": {
       "dependsOn": ["^build"]
+    },
+    "test:e2e": {
+      // Drives a live stack + a real browser, so it is NOT in the `test` graph
+      // (kept out of the fast inner loop) and NEVER cached - a cached "pass"
+      // would be a lie about an external system. `^build` so @sambung/shared and
+      // @sambung/db compile to dist before the API and web dev servers start.
+      "dependsOn": ["^build"],
+      "cache": false
     }
   }
 }

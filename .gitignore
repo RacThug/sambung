@@ -30,6 +30,13 @@ Thumbs.db
 coverage/
 .obsidian/
 
+# Playwright e2e (apps/e2e): reports, per-run artifacts, and saved sessions.
+# The .auth files hold a real refresh cookie - never commit them.
+playwright-report/
+test-results/
+**/playwright/.auth/
+.last-run.json
+
 # Local dev tooling (treehouse worktree pool - personal, machine-specific)
 treehouse.toml
 .treehouse/
