@@ -43,6 +43,14 @@ const STACK = [
   "Docker",
 ];
 
+// Shared CTA styling so the primary/outline button shape can't drift across the
+// nav + hero (three near-identical class strings otherwise). Colour and shape
+// live here; each call site appends its own size.
+const CTA_PRIMARY =
+  "rounded-md bg-primary font-medium text-primary-foreground hover:bg-primary/90";
+const CTA_OUTLINE =
+  "rounded-md border border-input bg-card font-medium hover:bg-accent hover:text-accent-foreground";
+
 export function LandingPage() {
   const { t } = useI18n();
 
@@ -57,10 +65,7 @@ export function LandingPage() {
           >
             {t("landing.navLogin")}
           </Link>
-          <Link
-            to="/register"
-            className="rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground hover:bg-primary/90"
-          >
+          <Link to="/register" className={`${CTA_PRIMARY} px-4 py-2`}>
             {t("landing.getStarted")}
           </Link>
         </nav>
@@ -79,14 +84,11 @@ export function LandingPage() {
             <Link
               to="/p/$slug"
               params={{ slug: DEMO_SLUG }}
-              className="rounded-md bg-primary px-5 py-3 font-medium text-primary-foreground hover:bg-primary/90"
+              className={`${CTA_PRIMARY} px-5 py-3`}
             >
               {t("landing.viewDemo")} →
             </Link>
-            <Link
-              to="/register"
-              className="rounded-md border border-input bg-card px-5 py-3 font-medium hover:bg-accent hover:text-accent-foreground"
-            >
+            <Link to="/register" className={`${CTA_OUTLINE} px-5 py-3`}>
               {t("landing.getStarted")}
             </Link>
           </div>
@@ -106,7 +108,7 @@ export function LandingPage() {
                 key={part.n}
                 className="rounded-xl border border-border bg-card p-6"
               >
-                <span className="font-display text-sm font-semibold tabular-nums text-primary">
+                <span className="text-sm font-semibold tabular-nums text-primary">
                   {part.n}
                 </span>
                 <h3 className="mt-2 font-semibold text-card-foreground">

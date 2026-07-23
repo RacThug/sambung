@@ -13,7 +13,7 @@ export const zh: Messages = {
   "landing.getStarted": "开始使用",
   "landing.heroTitle": "巴厘岛住宿的免佣金直接预订。",
   "landing.heroBody":
-    "直接收款，并通过 iCal 让每个 OTA 日历保持同步——在 Airbnb 售出的房间不会在这里被再次售出。为厌倦向渠道支付 15% 佣金的别墅业主打造。",
+    "直接收款，并通过 iCal 让每个 OTA 日历保持同步。在 Airbnb 售出的房间不会在这里被再次售出。为厌倦向渠道支付 15% 佣金的别墅业主打造。",
   "landing.viewDemo": "查看在线演示",
   "landing.hardTitle": "五个最难的部分",
   "landing.hardBody":
