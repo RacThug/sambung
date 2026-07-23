@@ -64,9 +64,10 @@ so this PR touches no page.
 **Update (follow-up, implemented):** the title + primary action now live in the top bar via a header
 **slot** - the shell renders an empty container there and each page portals its heading (and, where it
 has one clear primary action, that button) into it with `<PageHeader>` (`components/page-header.tsx`).
-A `createPortal` over a context-of-state-set-in-an-effect because it renders in the *same commit* as the
-page (no flicker) and unmounts with it; the dynamic-title problem dissolves because a detail page just
-passes `title={property.name}` from its fetched data. With no slot in context (an isolated render) it
+A `createPortal` over a context-of-state-set-in-an-effect because on navigation the title portals in the
+page's first commit (no inline-then-jump flash) and unmounts with it - an effect would publish the slot
+after paint and flash; the dynamic-title problem dissolves because a detail page just passes
+`title={property.name}` from its fetched data. With no slot in context (an isolated render) it
 degrades to an inline header. `PageHeader` lands the title on all seven dashboard pages; the primary
 action moves up only for Properties ("New property") and Reservations ("Export CSV") - the calendar's
 toolbar, the property workbench's section actions, and the booking detail's danger-zone Cancel are not
