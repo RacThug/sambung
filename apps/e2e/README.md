@@ -40,6 +40,29 @@ pnpm --filter e2e test:e2e:report   # open the HTML report of the last run
 `pnpm test:e2e` is **not** part of `pnpm test` and **not** in the pre-push hook -
 it needs docker and a browser, so it is a deliberate, separate command.
 
+### Run lanes in parallel (`SAMBUNG_E2E_LANE`)
+
+A single run uses one database (`sambung_e2e`) and fixed ports (web 5173, api
+3000), so two `pnpm test:e2e` on one machine would collide. One env var isolates
+a whole stack:
+
+```bash
+SAMBUNG_E2E_LANE=1 pnpm test:e2e   # DB sambung_e2e_1, web 5174, api 3001
+SAMBUNG_E2E_LANE=2 pnpm test:e2e   # DB sambung_e2e_2, web 5175, api 3002
+```
+
+`SAMBUNG_E2E_LANE=<n>` derives the database name (`sambung_e2e_<n>`) and offsets
+both ports by `n`, wiring the web dev server's `/api` proxy at its own lane's api.
+**Unset = the base lane = today's exact values**, so a single run is unchanged.
+Every derived value still has an individual override (`SAMBUNG_E2E_DB`,
+`SAMBUNG_E2E_API_PORT`, `SAMBUNG_E2E_WEB_PORT`, `SAMBUNG_E2E_WEB_URL`,
+`SAMBUNG_E2E_API_PROXY_TARGET`). All of this lives in `setup/e2e-config.ts`.
+
+> Object storage (Garage) is **shared** across lanes - it is not lane-scoped. This
+> is safe: the seed's photo keys are deterministic and per-tenant with identical
+> bytes, each lane references only its own DB's keys, and the GC cron never runs in
+> e2e. Two lanes seeding the same tenant just overwrite identical objects.
+
 ---
 
 ## How it's wired
@@ -61,6 +84,15 @@ it needs docker and a browser, so it is a deliberate, separate command.
   (funnel) + **WebKit / Mobile Safari** (funnel read specs - real iOS guests,
   ADR-0007/0023). The funnel's one WRITE spec (checkout-payment) runs on Chromium
   only, so two engines never contend for the same nights.
+- **Payments.** The api `webServer` sets `PAYMENT_GATEWAY=fake`, binding the
+  deterministic, signature-free `FakePaymentGateway` (#167). So a spec can drive a
+  booking to `confirmed` with **no outbound Midtrans call** and no real signature:
+  create the hold → pay (returns a fake redirect, never real Snap) → simulate the
+  provider callback by `POST /api/webhooks/payment/midtrans` with a `FakeWebhookBody`
+  (`{ orderId, transactionId, transactionStatus, grossAmountIdr }`; `orderId` is the
+  `payment.id`, which the fake echoes into the pay response's redirect URL). The seam
+  is **off by default** and is refused in production by `validateEnv` - never drive
+  the real Snap UI.
 
 ---
 
@@ -91,6 +123,22 @@ it needs docker and a browser, so it is a deliberate, separate command.
 - **Far-future dates for writes.** The seed packs stays into `[today+1, today+8)`.
   `futureIso(30+)` is guaranteed free on every unit, which is what keeps write
   journeys deterministic without reading seed rows.
+
+### Seed fixtures the flows read (#167)
+
+Two Baseline fixtures exist because a flow can't create them at runtime through
+the UI. Both are re-seeded on every run, so a flow that consumes/mutates one is
+clean on the next run.
+
+- **A known-token staff invite** on Bali Breeze, scoped to Seminyak, addressed to
+  an email with **no account** (so `/invite/<token>` drives the create-account
+  accept path). The raw token is `KNOWN_INVITE_TOKEN` in `setup/e2e-config.ts`
+  (mirrored from the seed, which stores its sha256); build the URL from it. The
+  invite is single-use - one accept scenario per run.
+- **A paid-but-lapsed payment** on Bali Breeze: a `paid` payment on an `expired`
+  booking with `handled_at` NULL - the `/app/inbox` item Flow 7 handles. This is
+  the only seeded row a flow **mutates** (marking it handled), and it touches no
+  row a read-only flow depends on.
 
 ---
 
@@ -123,9 +171,10 @@ imports both; the web imports `@sambung/shared`). Specs may also import
 These are deliberately **not** built here; each has a named way in:
 
 - **The confirmation / reconcile flow.** `checkout-payment.spec.ts` covers the
-  handoff up to the provider (stubbed at `page.route`); the `/booking/:id`
-  reconcile page (which polls the real provider) is not driven. To cover it, add
-  a `PAYMENT_GATEWAY=fake` env seam in the API - never drive the real Snap UI.
+  handoff up to the provider (stubbed at `page.route`). The full `/booking/:id`
+  reconcile-to-`confirmed` journey is now **unblocked** by the `PAYMENT_GATEWAY=fake`
+  seam (#167, see *Payments* above) and belongs to Flow 1 (#168) - still never
+  drive the real Snap UI.
 - **Firefox, and WebKit on the dashboard.** WebKit already covers the funnel; add
   more projects in `playwright.config.ts` if desktop-Safari coverage is wanted.
 - **Prod-build / edge target.** Point `baseURL` at `vite preview` or the

@@ -8,6 +8,7 @@
  * Run: pnpm --filter @sambung/db db:seed
  */
 import "./load-env";
+import { createHash } from "node:crypto";
 import { count, eq } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { closeDb, db } from "../src/index";
@@ -27,6 +28,8 @@ import {
   payment,
   paymentEvent,
   property,
+  staffInvite,
+  staffInviteProperty,
   syncConflict,
   tenant,
   unit,
@@ -55,6 +58,19 @@ const OWNER_UBUD = "eeeeeeee-0000-0000-0000-000000000011";
 // One account, TWO seats (#154): staff at T1 (Seminyak only) and at T2.
 const STAFF_SEMINYAK = "eeeeeeee-0000-0000-0000-000000000001";
 const SC_DOUBLE_SELL = "dddddddd-0000-0000-0000-000000000001";
+// e2e harness fixtures (#167). Fixed ids so the flow specs can target them.
+const INVITE_KNOWN = "ffffffff-0000-0000-0000-000000000001";
+const B_LAPSED = "1a1a1a1a-0000-0000-0000-000000000001"; // paid-but-lapsed booking
+const PAY_LAPSED = "9a9a9a9a-0000-0000-0000-000000000001"; // its paid payment
+
+// A fixed, documented raw invite token for the e2e Flow-5 accept path (#167).
+// The row stores its SHA-256 (exactly like the real create flow, ADR-0033); the
+// raw value lives only here and in apps/e2e/setup/e2e-config.ts (KNOWN_INVITE_TOKEN,
+// mirrored with a drift-fails-loud note). Dev/demo + e2e ONLY, like DEMO_PASSWORD.
+// Addressed to an email with NO account, so /invite/<token> drives the
+// create-account path.
+const KNOWN_INVITE_TOKEN = "e2e-known-staff-invite-do-not-use-in-prod";
+const KNOWN_INVITE_EMAIL = "newstaff@balibreeze.test";
 
 // bcrypt("sambung123", 12 rounds) - matches the auth service's BCRYPT_ROUNDS,
 // so seeded owners can log into the dashboard. Precomputed constant: keeps the
@@ -70,6 +86,18 @@ const DEMO_PASSWORD_HASH =
 // fortnight ahead of them is invisible, not just stale). Only the DATES move
 // with time; the stable demo surface (ids, slugs, logins) stays fixed.
 const D = demoDates(new Date());
+
+// A far-future ISO date, N whole days from today, in UTC over the LOCAL calendar
+// day - the same model demo-dates uses. For the paid-but-lapsed fixture below,
+// which must sit OUTSIDE the packed `[today+1, today+8)` demo window.
+const TODAY0 = new Date();
+const farIso = (days: number): string =>
+  new Date(
+    Date.UTC(TODAY0.getFullYear(), TODAY0.getMonth(), TODAY0.getDate()) +
+      days * 86_400_000,
+  )
+    .toISOString()
+    .slice(0, 10);
 
 /** Nightly rate per unit, integer rupiah (invariant #6). */
 const PRICE: Record<DemoUnitKey, bigint> = {
@@ -98,6 +126,11 @@ const total = (stay: DemoStay, unit: DemoUnitKey): bigint =>
 async function main() {
   await db.transaction(async (tx) => {
     // --- wipe (FK-safe order) so the seed is idempotent ---
+    // Invites first: their composite FK to membership cascades, but delete them
+    // explicitly (matching this block's style) so re-seeding never depends on
+    // cascade order, and the child join table before its parent.
+    await tx.delete(staffInviteProperty);
+    await tx.delete(staffInvite);
     await tx.delete(syncConflict);
     await tx.delete(paymentEvent);
     await tx.delete(payment);
@@ -201,6 +234,30 @@ async function main() {
       // tenant, seeing that tenant's one property (#154).
       { appUserId: STAFF_SEMINYAK, propertyId: P_UBUD, tenantId: T2 },
     ]);
+
+    // --- a known-token staff invite (#167 part c, Flow 5 / #172) ---
+    // A LIVE invite on Bali Breeze, scoped to Seminyak, addressed to an email with
+    // NO account - so opening /invite/<token> drives the create-account accept
+    // path. Stores sha256(token) exactly like the real create flow (ADR-0033);
+    // the raw token is the fixed KNOWN_INVITE_TOKEN constant above, mirrored in
+    // the e2e config. created_by is the Bali Breeze owner (their membership at T1
+    // is what the composite FK checks).
+    await tx.insert(staffInvite).values({
+      id: INVITE_KNOWN,
+      tenantId: T1,
+      email: KNOWN_INVITE_EMAIL,
+      tokenHash: createHash("sha256").update(KNOWN_INVITE_TOKEN).digest("hex"),
+      // Far future so the invite never lapses at demo/test time. Unlike the stays
+      // (which move with the calendar to stay visible), this deliberately does not
+      // need to - a live invite is a live invite whatever today is.
+      expiresAt: new Date(Date.now() + 90 * 86_400_000),
+      createdBy: OWNER_BREEZE,
+    });
+    await tx.insert(staffInviteProperty).values({
+      inviteId: INVITE_KNOWN,
+      propertyId: P_SEMINYAK,
+      tenantId: T1,
+    });
 
     // --- units (4) ---
     // `minStay` comes from DEMO_UNIT_MIN_STAY rather than a literal, so the
@@ -338,6 +395,45 @@ async function main() {
       status: "paid",
     });
 
+    // --- a paid-but-lapsed payment (#167 part c, Flow 7 / #120, ADR-0022) ---
+    // The late-settlement case: a hold LAPSED (status `expired`, hold_expires_at
+    // in the PAST - the exact shape the hold sweeper leaves), yet the guest paid
+    // afterwards, so payment.status = paid while the booking is dead and
+    // handled_at is NULL. That is precisely the paid-but-lapsed inbox item the
+    // owner resolves. Far-future dates OUTSIDE the packed demo window; an expired
+    // booking is not occupying, so it draws no calendar bar and cannot trip
+    // booking_no_overlap. Also enriches the /app/inbox demo, whose paid-but-lapsed
+    // half had no seeded example (only the sync conflict below did).
+    const [lapsedBooking] = await tx
+      .insert(booking)
+      .values({
+        id: B_LAPSED,
+        tenantId: T1,
+        unitId: U_GARDEN,
+        source: "direct",
+        status: "expired",
+        checkIn: farIso(40),
+        checkOut: farIso(43),
+        guestName: "Late Payer",
+        guestPhone: "+62 812-0000-0009",
+        guestEmail: "late@example.com",
+        guestCount: 2,
+        totalPriceIdr: 3n * PRICE.gardenRoom,
+        holdExpiresAt: new Date(Date.now() - 60 * 60 * 1000),
+      })
+      .returning({ id: booking.id });
+
+    await tx.insert(payment).values({
+      id: PAY_LAPSED,
+      bookingId: lapsedBooking.id,
+      provider: "midtrans",
+      providerRef: "SEED-ORDER-LAPSED",
+      amountIdr: 3n * PRICE.gardenRoom,
+      status: "paid",
+      // handled_at stays NULL -> it shows in the paid-but-lapsed inbox until the
+      // owner marks it handled (POST /payments/:id/handle).
+    });
+
     // --- an open sync conflict (#38, ADR-0027) ---
     // A real-world double-sell: Airbnb sold nights on the Whole Villa that
     // "Wayan D." above has ALREADY booked direct and PAID for. The exclusion
@@ -404,6 +500,10 @@ async function main() {
   );
   console.log(
     `Demo logins: owner@balibreeze.test / owner@ubudretreats.test / staff@balibreeze.test (Seminyak only, AND a second seat at Ubud Retreats - use the workspace switcher) - password "${DEMO_PASSWORD}"`,
+  );
+  console.log(
+    `Inbox demo (Bali Breeze /app/inbox): 1 open sync conflict + 1 paid-but-lapsed payment. ` +
+      `Pending staff invite for ${KNOWN_INVITE_EMAIL} (create-account accept path).`,
   );
   // The demo script (docs/demo.md) names these by role, never by absolute date -
   // they move with the calendar. Print them so a presenter can check the state
