@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/page-header";
 import { SyncConflictsSection } from "../channels/sync-conflicts-section";
 import { LapsedPaymentsSection } from "../payments/lapsed-payments-section";
 
@@ -20,7 +21,7 @@ import { LapsedPaymentsSection } from "../payments/lapsed-payments-section";
 export function InboxPage() {
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-foreground">Inbox</h1>
+      <PageHeader title="Inbox" />
       <div className="mt-6 space-y-10">
         <SyncConflictsSection />
         <LapsedPaymentsSection />

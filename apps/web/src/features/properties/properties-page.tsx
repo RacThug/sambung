@@ -10,6 +10,8 @@ import { api, ApiError } from "../../lib/api-client";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { isOwner } from "../../lib/role";
 import { FormField } from "@/components/form-field";
+import { PageHeader } from "@/components/page-header";
+import { Button } from "@/components/ui/button";
 import { VerifiedBadge } from "./verified-badge";
 
 // Inventory home: list + create (FR-PROP-1, page-spec §4.4). Editing happens
@@ -33,18 +35,16 @@ export function PropertiesPage() {
 
   return (
     <section>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Properties</h1>
-        {owner && properties && properties.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setDialogOpen(true)}
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-          >
-            New property
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Properties"
+        action={
+          owner && properties && properties.length > 0 ? (
+            <Button size="sm" onClick={() => setDialogOpen(true)}>
+              New property
+            </Button>
+          ) : undefined
+        }
+      />
 
       {properties && properties.length === 0 && (
         <div className="mt-12 rounded-lg border border-dashed border-input p-12 text-center">
