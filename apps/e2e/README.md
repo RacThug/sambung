@@ -56,9 +56,10 @@ it needs docker and a browser, so it is a deliberate, separate command.
   UI and saves the session to `playwright/.auth/<role>.json` (the httpOnly refresh
   cookie; `ensureSession()` restores the session on load). Dashboard projects
   reuse it - no test re-logs in.
-- **Browser matrix.** Chromium only, two viewports: **desktop** for the dashboard
-  (where owners work) and **mobile** for the funnel (the product's primary
-  audience, ADR-0007/0023). WebKit (iOS Safari) is the natural next addition.
+- **Browser matrix.** **Chromium desktop** (dashboard) + **Chromium mobile**
+  (funnel) + **WebKit / Mobile Safari** (funnel read specs - real iOS guests,
+  ADR-0007/0023). The funnel's one WRITE spec (checkout-payment) runs on Chromium
+  only, so two engines never contend for the same nights.
 
 ---
 
@@ -104,8 +105,8 @@ fixtures/
 lib/
   helpers.ts        futureIso(), uniqueName()
 tests/
-  funnel/           Journey 1 (availability) + the i18n locale-switch spec
-  dashboard/        Journey 2 - owner dashboard, owner session, desktop
+  funnel/           availability -> checkout · i18n switch · checkout-payment (stubbed)
+  dashboard/        manual-booking (owner walk-in) · staff-scope (RBAC)
 playwright.config.ts
 ```
 
@@ -120,13 +121,13 @@ imports both; the web imports `@sambung/shared`). Specs may also import
 
 These are deliberately **not** built here; each has a named way in:
 
-- **Full payment / confirmation flow.** Journeys stop at the Midtrans trust
-  boundary. To go further, stub `POST .../pay` with `page.route`, or add a
-  `PAYMENT_GATEWAY=fake` env seam in the API - never drive the real Snap UI.
-- **Firefox / WebKit.** Add a project in `playwright.config.ts`.
+- **The confirmation / reconcile flow.** `checkout-payment.spec.ts` covers the
+  handoff up to the provider (stubbed at `page.route`); the `/booking/:id`
+  reconcile page (which polls the real provider) is not driven. To cover it, add
+  a `PAYMENT_GATEWAY=fake` env seam in the API - never drive the real Snap UI.
+- **Firefox, and WebKit on the dashboard.** WebKit already covers the funnel; add
+  more projects in `playwright.config.ts` if desktop-Safari coverage is wanted.
 - **Prod-build / edge target.** Point `baseURL` at `vite preview` or the
   `--profile edge` Caddy origin.
 - **Per-test reseed.** Not needed - per-test data ownership keeps tests isolated
   without it.
-- **Property-scoped RBAC (staff).** The staff `storageState` is already produced
-  by the setup project; write the assertions.

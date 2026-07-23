@@ -54,12 +54,24 @@ export default defineConfig({
       testMatch: /fixtures\/auth\.setup\.ts/,
     },
 
-    // Journey 1 - the public funnel, on a phone (the product's primary audience,
-    // ADR-0007/0023). No auth. Locale is pinned to EN by the fixture.
+    // The public funnel, on a phone (the product's primary audience,
+    // ADR-0007/0023). No auth. Locale is pinned to EN by the fixture. Runs every
+    // funnel spec, including the write one (checkout-payment).
     {
       name: "funnel-mobile",
       testMatch: /tests\/funnel\/.*\.spec\.ts/,
       use: { ...devices["Pixel 5"] },
+    },
+
+    // The same funnel on Mobile Safari / WebKit - real iOS guests (the README's
+    // first expansion). Scoped to the READ specs only: the checkout-payment spec
+    // WRITES a hold, and running the same write on two engines in parallel would
+    // make both contend for the same nights (the unique-(unit, offset) rule). The
+    // payment handoff is engine-agnostic, so chromium alone covers it.
+    {
+      name: "funnel-mobile-safari",
+      testMatch: /tests\/funnel\/(availability|i18n)\.spec\.ts/,
+      use: { ...devices["iPhone 13"] },
     },
 
     // Journey 2 - the owner dashboard, on desktop (where owners live in wide
