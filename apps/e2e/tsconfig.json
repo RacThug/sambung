@@ -1,0 +1,24 @@
+{
+  // Bundler resolution matches how Playwright's own ts transform loads modules,
+  // and lets a workspace package resolve through its package.json exports without
+  // a project reference. (@sambung/shared + @sambung/db are declared as deps in
+  // package.json so `turbo --filter=e2e` BUILDS them before the app-under-test
+  // starts - the API imports both, the web imports @sambung/shared - and are
+  // available for specs to import contract types/codes as the suite grows.)
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": false,
+    "noEmit": true
+  },
+  "include": ["**/*.ts", "playwright.config.ts"],
+  "exclude": ["node_modules"]
+}
