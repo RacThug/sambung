@@ -41,6 +41,11 @@ Sources: `direct | airbnb | booking_com | vrbo | manual_block`. Transitions outs
 
 ## 2. Endpoint index
 
+> The **complete, code-verified** route list - every SPA page and every endpoint, including any added
+> since this index was last renumbered - is **[`sitemap.md`](./sitemap.md)**, enforced against the real
+> controllers by a test. This index keys endpoints by `#n` for the detailed shapes in the sections
+> below; when the two disagree on *what exists*, `sitemap.md` is authoritative.
+
 | # | Method + path | Purpose | Status | FR |
 |---|---|---|---|---|
 | 1 | `POST /auth/register` | Signup: tenant + owner + session | **Built** | AUTH-1 |

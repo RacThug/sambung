@@ -8,17 +8,10 @@
 
 ## 1. Site map
 
-```
-Public (no auth)                       Dashboard (auth guard: /app/*)
-├── /                → redirect /login ├── /app            → redirect /app/calendar
-├── /p/:slug           property page   ├── /app/calendar        unified calendar
-├── /p/:slug/book      checkout        ├── /app/reservations    list + filters
-├── /booking/:id       confirmation    ├── /app/bookings/:id    booking detail
-├── /login                             ├── /app/properties      list + create
-├── /register                          ├── /app/properties/:id  edit (photos, units, channels)
-├── /invite/:token     (M5)            ├── /app/channels        sync health + conflict inbox
-└── * 404                              └── /app/settings        gallery cap, staff (M5)
-```
+The canonical, **code-verified** route map - every SPA page *and* every API endpoint, plus a
+route-tree diagram and the FE↔API wiring - lives in **[`sitemap.md`](./sitemap.md)** and is enforced
+against the real router by a test, so it cannot drift. This file is the per-page UX **detail** behind
+those routes; `sitemap.md` is the index that links back into it.
 
 Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · **Data** (endpoints) · **Actions** (mutations) · **States** · **Edge notes**. Milestone tag in the heading.
 
@@ -109,12 +102,13 @@ Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · *
   - Delete property → api #11; **409 path renders the reason** ("this property has n bookings - deleting it would destroy that history"). Delete is only for inventory nothing was ever booked on (ADR-0002); the copy says so up front rather than only on failure. Retiring inventory with history is archive (M2, #84).
 - **States:** tab-level loading/saving · upload progress/failure per photo · unit delete 409 rendered on the row (same any-booking guard).
 
-### 4.6 Channel sync health - `/app/channels` - **M4**
-- **Purpose:** fleet-wide view of every OTA connection + **the conflict inbox** (#38) - the page that makes sync failures impossible to miss (FR-SYNC-3).
-- **Route & URL state:** `?status=open|dismissed` for the inbox tab.
-- **Data:** connections across units (api #29 aggregated) + `GET /sync-conflicts` (api #32).
-- **Actions:** Sync now per connection (api #31) · conflict row → shows the OTA event vs the blocking booking → "open blocking booking" (§4.3, resolve = cancel one side; next sync auto-closes) or **Dismiss** (api #33).
-- **States:** all-green summary · connection `error` rows with `lastError` + last-synced age · open-conflict count **badged in the nav** · empty inbox ("no conflicts - calendars agree").
+### 4.6 Operations inbox - `/app/inbox` - **M4**
+> **There is no `/app/channels` page.** Per-Channel connection + health (connect, status, disconnect, copy export URL, Sync now) lives on the Property workbench's per-Unit Channels section (§4.5). What shipped as a standalone page is the **operations inbox** below.
+- **Purpose:** the two "the system did the safe thing and now needs a human" queues in one place: **Sync conflicts** (#38 - a Channel sold nights Sambung already held) and **paid-but-lapsed Payments** (#120 - money captured after the Hold lapsed). (FR-SYNC-3)
+- **Route & URL state:** none - each is a whole (small) list, acted on in place.
+- **Data:** `GET /sync-conflicts` (api #32) + `GET /payments/lapsed` (#36); each conflict derives its blocking bookings at read time.
+- **Actions:** conflict row → shows the OTA event vs the blocking booking → "open blocking booking" (§4.3, resolve = cancel one side; next sync auto-closes) or **Dismiss** (api #33, the Owner's judgement - a Sync never reopens it) · lapsed payment → **Mark handled** (#37, a marker only, never the ledger).
+- **States:** empty inbox ("no conflicts - calendars agree") · open-conflict count **badged in the nav** · a conflict's blocking-booking list · loading skeleton.
 
 ### 4.7 Settings - `/app/settings` - **Built** (gallery cap #67, Team #57)
 - **Purpose:** the tenant-wide knobs. Two: the **gallery cap** - how many photos each property may hold (#67, [ADR-0030](adr/0030-a-cap-is-a-preference-the-ceiling-is-the-guard.md)) - and the **Team** (#57, [ADR-0033](adr/0033-an-invite-is-a-hashed-single-use-grant.md)): invite a staff member scoped to chosen properties, see the roster with each person's assignments, change that access (a whole-set write - shortening the list is how access is removed), revoke a pending invite, remove an account. Per-property deposit % is **not** here - it lives on the property edit form (§4.5, api #10), because it is a per-property fact.
@@ -137,7 +131,7 @@ Per-page template: **Purpose** (+ FR) · **Actor** · **Route & URL state** · *
 | 22-24 | §3.1 property page · §3.2 checkout |
 | 25-26 | §3.3 confirmation · §3.2 checkout |
 | 27 | no page - machine consumer (payment provider) |
-| 28-31, 34 | §4.5 property edit (channels section) · §4.6 health |
+| 28-31, 34 | §4.5 property edit (channels section) - note #31 "Sync now" has no FE consumer yet |
 | 32-33 | §4.6 conflict inbox |
 | 36-37 | §4.6 inbox (paid-but-lapsed payments) |
 | 38-39 | §4.7 settings · §4.5 property edit reads #38 for the gallery cap |
