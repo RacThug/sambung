@@ -15,9 +15,10 @@ config, DB provisioning, auth-state, fixtures, and two reference journeys to cop
 # 1. the local stack must be up (Postgres + Garage) - same as for pnpm test
 docker compose up -d
 
-# 2. one-time: install the browser binary (Chromium only; not a postinstall,
-#    so people who never run e2e don't download it)
-pnpm --filter e2e exec playwright install chromium
+# 2. one-time: install the browser binaries (not a postinstall, so people who
+#    never run e2e don't download them). Chromium runs everything; WebKit runs
+#    the Mobile-Safari funnel project.
+pnpm --filter e2e exec playwright install chromium webkit
 
 # 3. run (from the repo root). Turbo builds @sambung/shared + @sambung/db first.
 pnpm test:e2e
