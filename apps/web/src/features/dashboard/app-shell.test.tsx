@@ -8,7 +8,13 @@ import {
   within,
 } from "@testing-library/react";
 import { clearSession, setSession } from "../../lib/auth";
-import { authResponse, json, renderAt, stubFetch } from "../../test-utils";
+import {
+  authResponse,
+  json,
+  propertyResponse,
+  renderAt,
+  stubFetch,
+} from "../../test-utils";
 
 /**
  * The dashboard shell (ADR-0037): sidebar + top bar + width-by-route + mobile
@@ -128,6 +134,23 @@ describe("AppShell", () => {
 
     const link = screen.getByRole("link", { name: /^properties$/i });
     expect(link.className).toContain("bg-accent");
+  });
+
+  it("portals a page's title + primary action into the top bar", async () => {
+    setSession(authResponse());
+    stubFetch({
+      "GET /api/properties": () => json([propertyResponse()]),
+      "GET /api/sync-conflicts": () => json([]),
+      "GET /api/payments/lapsed": () => json([]),
+    });
+    renderAt("/app/properties");
+
+    const heading = await screen.findByRole("heading", { name: "Properties" });
+    expect(
+      screen.getByRole("button", { name: "New property" }),
+    ).toBeInTheDocument();
+    // It lives in the top bar (portaled), not inside the page content.
+    expect(document.querySelector("main")?.contains(heading)).toBe(false);
   });
 
   it("caps a form page's width", async () => {

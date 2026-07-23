@@ -14,6 +14,7 @@ import {
 } from "./manual-booking-dialog";
 import { SourceLegend } from "./source-legend";
 import { useCalendarData } from "./use-calendar";
+import { PageHeader } from "@/components/page-header";
 
 const route = getRouteApi("/app/calendar");
 
@@ -78,11 +79,12 @@ export function CalendarPage() {
 
   return (
     <section>
+      <PageHeader title="Calendar" />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-foreground">
+          <div className="text-lg font-semibold text-foreground">
             {windowLabel(window.from, window.to)}
-          </h1>
+          </div>
           <div className="flex items-center gap-1">
             <button
               type="button"

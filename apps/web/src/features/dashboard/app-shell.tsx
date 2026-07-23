@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useRouterState } from "@tanstack/react-router";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Menu } from "lucide-react";
+import { PageHeaderSlotContext } from "@/components/page-header-context";
 import { AccountMenu } from "./account-menu";
 import { Sidebar } from "./sidebar";
 import { useInboxCount } from "./use-inbox-count";
@@ -25,6 +26,10 @@ const WIDE_ROUTES = new Set<string>(["/app/calendar", "/app/reservations"]);
 export function AppShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // The top-bar header slot: each page portals its title + primary action here
+  // via <PageHeader> (ADR-0037 follow-up). A ref callback into state so the slot
+  // node is published to the context once the header mounts.
+  const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
   const inboxCount = useInboxCount();
 
   // Close the drawer whenever the route changes - a nav link inside it was tapped,
@@ -68,15 +73,17 @@ export function AppShell() {
           >
             <Menu className="size-5" />
           </button>
-          <div className="ml-auto">
-            <AccountMenu />
-          </div>
+          {/* The page's title + primary action portal in here (see PageHeader). */}
+          <div ref={setHeaderSlot} className="flex min-w-0 flex-1 items-center gap-3" />
+          <AccountMenu />
         </header>
 
         <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8">
-          <div className={isWide ? "w-full" : "mx-auto w-full max-w-5xl"}>
-            <Outlet />
-          </div>
+          <PageHeaderSlotContext.Provider value={headerSlot}>
+            <div className={isWide ? "w-full" : "mx-auto w-full max-w-5xl"}>
+              <Outlet />
+            </div>
+          </PageHeaderSlotContext.Provider>
         </main>
       </div>
     </div>

@@ -11,6 +11,7 @@ import {
 } from "./reservations-model";
 import { useReservations } from "./use-reservations";
 import type { ReservationsSearch } from "./reservations-search";
+import { PageHeader } from "@/components/page-header";
 
 const route = getRouteApi("/app/reservations");
 
@@ -56,10 +57,10 @@ export function ReservationsPage() {
 
   return (
     <section>
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold text-foreground">Reservations</h1>
-        <ExportCsvButton filters={filters} />
-      </div>
+      <PageHeader
+        title="Reservations"
+        action={<ExportCsvButton filters={filters} />}
+      />
 
       <ReservationFilters
         search={search}
