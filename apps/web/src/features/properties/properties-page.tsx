@@ -54,13 +54,9 @@ export function PropertiesPage() {
               <p className="mt-1 text-muted-foreground">
                 List a villa or guesthouse to start taking direct bookings.
               </p>
-              <button
-                type="button"
-                onClick={() => setDialogOpen(true)}
-                className="mt-4 rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground"
-              >
+              <Button className="mt-4" onClick={() => setDialogOpen(true)}>
                 New property
-              </button>
+              </Button>
             </>
           ) : (
             // An empty list means something different to staff: not "get

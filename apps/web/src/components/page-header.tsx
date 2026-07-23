@@ -9,10 +9,14 @@ import { PageHeaderSlotContext } from "./page-header-context";
  * which PORTALS into that container - so the title/action sit in the top bar
  * without any page importing the shell's markup.
  *
- * Why a portal, not a context-of-state set in an effect: the portal renders in the
- * SAME commit as the page (no empty-then-fills flicker) and unmounts with the page
- * (auto-cleanup on navigation). The dynamic-title case falls out for free - a
- * detail page passes `title={property.name}` straight from its fetched data.
+ * Why a portal, not a context-of-state set in an effect: on navigation the slot
+ * already exists, so a page's title portals in its FIRST commit - no
+ * empty-then-fills flash - and unmounts with the page (auto-cleanup). An
+ * effect-based header would publish the slot AFTER paint, flashing inline then
+ * jumping to the top bar. (On the very first dashboard mount the shell's ref
+ * callback publishes the slot during commit, so even then the portal lands before
+ * the browser paints.) The dynamic-title case falls out for free - a detail page
+ * passes `title={property.name}` straight from its fetched data.
  *
  * Graceful fallback: with no slot in context - a page rendered on its own (a unit
  * test), or the brief moment before the shell's slot ref is attached - it renders
@@ -31,14 +35,8 @@ export function PageHeader({
 }) {
   const slot = useContext(PageHeaderSlotContext);
 
-  const content = (
-    <div
-      className={
-        slot
-          ? "flex min-w-0 flex-1 items-center gap-3"
-          : "mb-4 flex items-center gap-3"
-      }
-    >
+  const inner = (
+    <>
       <div className="flex min-w-0 items-center gap-2">
         <h1 className="truncate text-lg font-semibold text-foreground">
           {title}
@@ -48,8 +46,16 @@ export function PageHeader({
       {action && (
         <div className="ml-auto flex shrink-0 items-center gap-2">{action}</div>
       )}
-    </div>
+    </>
   );
 
-  return slot ? createPortal(content, slot) : content;
+  // The shell's slot div OWNS the flex layout (so it lives in one place, not
+  // duplicated here). With no slot - an isolated render, or the first-mount frame
+  // before the shell's ref callback publishes it - wrap the same content in a
+  // plain inline header instead of vanishing.
+  return slot ? (
+    createPortal(inner, slot)
+  ) : (
+    <div className="mb-4 flex items-center gap-3">{inner}</div>
+  );
 }
