@@ -11,16 +11,20 @@ import { useSession } from "../../lib/use-session";
  * never showed the signed-in user; this surfaces the email + role and folds logout
  * into it.
  *
- * Hand-rolled rather than pulling in a Radix dropdown-menu dependency: a small
- * disclosure with the a11y that actually matters here - `aria-haspopup`/
- * `aria-expanded`, Escape to close, outside-click to close. (The mobile nav DOES
- * use Radix Dialog, where the focus-trap is load-bearing; a corner menu is not.)
+ * A plain DISCLOSURE, not an ARIA menu widget: it toggles a small panel of a
+ * couple of controls, which Tab reaches natively - so it deliberately does NOT
+ * claim `role="menu"`/`menuitem` (that would promise an arrow-key model we don't
+ * implement). The a11y that matters here is `aria-expanded`, Escape to close
+ * *returning focus to the trigger*, and outside-click to close. Hand-rolled
+ * rather than adding a Radix dropdown-menu dependency; the mobile nav DOES use
+ * Radix Dialog, where the focus-trap is load-bearing - a corner disclosure is not.
  */
 export function AccountMenu() {
   const session = useSession();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -30,7 +34,10 @@ export function AccountMenu() {
       }
     }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
     }
     document.addEventListener("mousedown", onPointerDown);
     document.addEventListener("keydown", onKeyDown);
@@ -55,7 +62,7 @@ export function AccountMenu() {
     <div ref={ref} className="relative">
       <button
         type="button"
-        aria-haspopup="menu"
+        ref={triggerRef}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         className="flex items-center gap-2 rounded-md px-1.5 py-1 text-sm hover:bg-accent"
@@ -71,10 +78,7 @@ export function AccountMenu() {
       </button>
 
       {open && (
-        <div
-          role="menu"
-          className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-md border border-border bg-popover shadow-md"
-        >
+        <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-md border border-border bg-popover shadow-md">
           <div className="border-b border-border px-3 py-2">
             <p className="truncate text-sm font-medium text-popover-foreground">
               {email}
@@ -83,7 +87,6 @@ export function AccountMenu() {
           </div>
           <button
             type="button"
-            role="menuitem"
             onClick={() => void logout()}
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground"
           >

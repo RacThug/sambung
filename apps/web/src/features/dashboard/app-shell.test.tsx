@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { clearSession, setSession } from "../../lib/auth";
 import { authResponse, json, renderAt, stubFetch } from "../../test-utils";
 
@@ -63,7 +69,7 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: /account menu/i }));
     expect(screen.getByText("owner@balibreeze.test")).toBeInTheDocument();
     expect(
-      screen.getByRole("menuitem", { name: /log out/i }),
+      screen.getByRole("button", { name: /log out/i }),
     ).toBeInTheDocument();
   });
 
@@ -85,6 +91,43 @@ describe("AppShell", () => {
     expect(
       within(dialog).getByRole("link", { name: /calendar/i }),
     ).toBeInTheDocument();
+  });
+
+  it("closes the mobile drawer when a nav link is tapped", async () => {
+    setSession(authResponse());
+    stubFetch({
+      "GET /api/properties": () => json([]),
+      "GET /api/units": () => json([]),
+      "GET /api/bookings": () => json([]),
+      "GET /api/sync-conflicts": () => json([]),
+      "GET /api/payments/lapsed": () => json([]),
+    });
+    renderAt("/app/properties");
+    await screen.findByText("Operate");
+
+    fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
+    const dialog = await screen.findByRole("dialog");
+
+    // Tapping a nav link navigates; the route change must close the drawer.
+    fireEvent.click(within(dialog).getByRole("link", { name: /reservations/i }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("keeps Properties active on the property workbench (child route)", async () => {
+    setSession(authResponse());
+    // The property fetch 404s to "Property not found"; the nav active state is
+    // computed from the path, not the page data, so no property stub is needed.
+    stubFetch({
+      "GET /api/sync-conflicts": () => json([]),
+      "GET /api/payments/lapsed": () => json([]),
+    });
+    renderAt("/app/properties/11111111-1111-1111-1111-111111111111");
+    await screen.findByText("Operate");
+
+    const link = screen.getByRole("link", { name: /^properties$/i });
+    expect(link.className).toContain("bg-accent");
   });
 
   it("caps a form page's width", async () => {

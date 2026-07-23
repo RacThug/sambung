@@ -3,7 +3,7 @@ import { Outlet, useRouterState } from "@tanstack/react-router";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Menu } from "lucide-react";
 import { AccountMenu } from "./account-menu";
-import { SidebarNav } from "./sidebar";
+import { Sidebar } from "./sidebar";
 import { useInboxCount } from "./use-inbox-count";
 
 /**
@@ -37,9 +37,10 @@ export function AppShell() {
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Desktop rail: always mounted (so the badge query runs), hidden < md. */}
+      {/* Desktop rail: hidden < md, shown as a fixed column from md up. (The badge
+          query lives in AppShell, so it runs regardless of this aside.) */}
       <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col overflow-y-auto border-r border-border bg-card md:flex">
-        <SidebarNav inboxCount={inboxCount} />
+        <Sidebar inboxCount={inboxCount} />
       </aside>
 
       {/* Mobile drawer: the same nav as a left sheet. Radix Dialog gives the
@@ -52,7 +53,7 @@ export function AppShell() {
             className="fixed inset-y-0 left-0 z-50 w-64 border-r border-border bg-card focus:outline-none md:hidden"
           >
             <Dialog.Title className="sr-only">Navigation</Dialog.Title>
-            <SidebarNav inboxCount={inboxCount} />
+            <Sidebar inboxCount={inboxCount} />
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

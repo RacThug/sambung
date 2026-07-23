@@ -45,7 +45,7 @@ function NavGroup({ label, children }: { label: string; children: ReactNode }) {
  * badge query subscribes once at the shell and both this desktop + drawer copy
  * render the same number.
  */
-export function SidebarNav({ inboxCount }: { inboxCount: number }) {
+export function Sidebar({ inboxCount }: { inboxCount: number }) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-col gap-3 border-b border-border p-4">
@@ -85,7 +85,7 @@ export function SidebarNav({ inboxCount }: { inboxCount: number }) {
             Inbox
             {inboxCount > 0 && (
               <span
-                aria-label={`${inboxCount} items need attention`}
+                aria-label={`${inboxCount} ${inboxCount === 1 ? "item needs" : "items need"} attention`}
                 className="ml-auto inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-semibold tabular-nums text-primary-foreground"
               >
                 {inboxCount}
@@ -97,6 +97,10 @@ export function SidebarNav({ inboxCount }: { inboxCount: number }) {
         <NavGroup label="Manage">
           <Link
             to="/app/properties"
+            // Stay lit on the property workbench (/app/properties/:id), not just
+            // the list. Pinned explicitly so a future exact-match default can't
+            // silently drop the highlight on every detail page.
+            activeOptions={{ exact: false }}
             className={navLink}
             activeProps={navLinkActive}
             inactiveProps={navLinkIdle}
