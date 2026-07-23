@@ -42,7 +42,7 @@ flowchart TD
 
   subgraph pub["Public funnel (no auth)"]
     direction TB
-    r_home["/ (scaffold)"]
+    r_home["/ (landing)"]
     r_prop["/p/$slug"]
     r_book["/p/$slug/book"]
     r_conf["/booking/$bookingId"]
@@ -84,7 +84,7 @@ flowchart TD
 
 | Route | Purpose | Actor | Detail |
 |---|---|---|---|
-| `/` | Scaffold landing - pings the API health check. The real funnel entry is a Property link, not this page. | Visitor | M0 scaffold (page-spec §6 out-of-scope) |
+| `/` | Portfolio landing: what Sambung is, the five hard parts, a live-demo link + owner CTAs. Guests never see it (they open a Property link); its audience is a reviewer or a returning Owner. | Visitor | #60 follow-up |
 | `/p/$slug` | Property page: the direct-booking landing reached from an OTA profile or a shared link - gallery, units, availability picker + Quote. | Visitor | page-spec §3.1 |
 | `/p/$slug/book` | Checkout: guest details → create the Hold → hand off to payment. | Visitor | page-spec §3.2 |
 | `/booking/$bookingId` | Confirmation: live booking status after payment (and the link in the email); reconciles on read. | Guest | page-spec §3.3 |
@@ -217,7 +217,7 @@ Grouped by module. Machine/edge routes (no page) are last. `api #n` points into 
 | Endpoint | Purpose | Auth | Detail |
 |---|---|---|---|
 | `GET /` | Liveness hello (scaffold). | machine | app.controller |
-| `GET /health` | Health check (pinged by the `/` scaffold page). | machine | app.controller |
+| `GET /health` | Health check (liveness probe; no FE consumer). | machine | app.controller |
 | `GET /public/units/:id/calendar.ics` | Export feed - confirmed Stays as `.ics` (archive-blind, PII-free by construction). | machine (OTA) | api #34 · ADR-0016 |
 | `GET /public/properties/:slug/og` | The OG Stub served to link-preview Crawlers. | machine (crawler) | ADR-0019 |
 | `POST /webhooks/payment/:provider` | The Settlement webhook - idempotent reconcile (boss fight #4). | machine (provider) | api #27 · ADR-0018 |
@@ -232,7 +232,7 @@ Each page → the endpoints it calls → the feature module behind it → the bo
 
 | Page | Endpoints it calls | Feature module (`apps/web/src/features/…`) | Hard part |
 |---|---|---|---|
-| `/` | `GET /health` | `public-booking/home-page.tsx` | - (scaffold) |
+| `/` | - (no API calls) | `public-booking/landing-page.tsx` | - |
 | `/p/$slug` | `GET /public/properties/:slug` · `GET /public/units/:id/availability` | `public-booking/{property-page, use-availability, availability-picker}` | ADR-0008 · ADR-0013 |
 | `/p/$slug/book` | `GET /public/properties/:slug` · `GET …/availability` (re-quote) · `POST /public/bookings` · `POST /public/bookings/:id/pay` | `public-booking/checkout-page.tsx` | boss fight #1 (ADR-0009) · ADR-0015 |
 | `/booking/$bookingId` | `GET /public/bookings/:id` | `public-booking/confirmation-page.tsx` | ADR-0020 |
@@ -253,7 +253,7 @@ Each page → the endpoints it calls → the feature module behind it → the bo
 - `POST /webhooks/payment/:provider` → the payment **Provider** (ADR-0018).
 - `GET /public/units/:id/calendar.ics` → a subscribed **OTA** (ADR-0016).
 - `GET /public/properties/:slug/og` → a link-preview **Crawler**, routed by the Edge (ADR-0019).
-- `GET /` · `GET /health` → liveness (the `/` scaffold page pings `/health`).
+- `GET /` · `GET /health` → liveness probes (no FE consumer; the SPA `/` is now the landing page and calls no API).
 - `POST /channels/:id/sync` → **no consumer yet** - "Sync now" runs on the 30-min cron; the manual button is unbuilt.
 - `GET /auth/me` → **no consumer** - the SPA restores a session through `refresh`, which already returns it.
 

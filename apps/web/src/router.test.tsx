@@ -23,10 +23,16 @@ afterEach(() => {
 });
 
 describe("route tree", () => {
-  it("renders the home page at /", async () => {
+  it("renders the landing page at /", async () => {
     renderAt("/");
-    // The wordmark is the lowercase brand lockup (design-system.md §1).
-    expect(await screen.findByText("sambung")).toBeInTheDocument();
+    // The portfolio landing (#60 follow-up) - its hero is the home page's
+    // smoke check now that `/` is a real page, not the API-health scaffold.
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: /commission-free direct bookings/i,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("renders the property page at /p/$slug from the slug in the URL", async () => {
