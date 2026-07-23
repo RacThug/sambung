@@ -8,6 +8,7 @@ import { issuesToFieldErrors } from "../../lib/forms";
 import { isOwner } from "../../lib/role";
 import { TeamSection } from "../staff/team-section";
 import { FormField } from "@/components/form-field";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { useSettings, useUpdateSettings } from "./use-settings";
 
@@ -26,7 +27,7 @@ export function SettingsPage() {
 
   return (
     <section>
-      <h1 className="text-2xl font-bold">Settings</h1>
+      <PageHeader title="Settings" />
       <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
         Preferences that apply across every property in your account.
       </p>

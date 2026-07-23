@@ -13,6 +13,7 @@ import { formatIdr } from "../../lib/money";
 import { formatDate } from "../../lib/date";
 import { SourceBadge, StatusBadge } from "./booking-badges";
 import { bookingTitle } from "./booking-display";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "../../components/ui/button";
 import {
   Dialog,
@@ -88,15 +89,13 @@ function BookingDetail({ booking }: { booking: BookingDetail }) {
   return (
     <section className="mx-auto max-w-2xl">
       <BackLink />
+      <PageHeader title={title} />
 
       <div className="mt-4 rounded-lg border border-border bg-card p-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold text-foreground">{title}</h1>
-            <div className="mt-2 flex items-center gap-2">
-              <StatusBadge status={booking.status} />
-              <SourceBadge source={booking.source} />
-            </div>
+          <div className="flex items-center gap-2">
+            <StatusBadge status={booking.status} />
+            <SourceBadge source={booking.source} />
           </div>
           {booking.status === "pending_payment" && (
             <HoldCountdown holdExpiresAt={booking.holdExpiresAt} />

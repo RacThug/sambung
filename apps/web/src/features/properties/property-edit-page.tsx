@@ -15,6 +15,7 @@ import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { isOwner } from "../../lib/role";
 import { FormField } from "@/components/form-field";
+import { PageHeader } from "@/components/page-header";
 import { ChannelsSection } from "./channels-section";
 import { PhotosSection } from "./photos-section";
 import { UnitsSection } from "./units-section";
@@ -45,15 +46,19 @@ export function PropertyEditPage() {
 
   return (
     <section>
-      <div className="flex items-center gap-2">
-        <h1 className="text-2xl font-bold">{property.name}</h1>
-        {property.verified && <VerifiedBadge />}
-        {archived && (
-          <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-            Archived
-          </span>
-        )}
-      </div>
+      <PageHeader
+        title={property.name}
+        titleSuffix={
+          <>
+            {property.verified && <VerifiedBadge />}
+            {archived && (
+              <span className="rounded bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                Archived
+              </span>
+            )}
+          </>
+        }
+      />
       <PublicLink property={property} archived={archived} />
 
       {/* When retired, the "incomplete" nudge is moot - lead with the retirement
