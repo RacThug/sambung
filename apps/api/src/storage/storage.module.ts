@@ -24,14 +24,16 @@ export class StorageModule implements OnApplicationBootstrap {
   // Dev convenience: make a fresh `docker compose up` bucket usable without
   // manual steps. Failure is a warning, not a crash - the API stays usable
   // (photo uploads simply won't work until Garage is up).
+  //
+  // No origin is passed: the dev CORS policy is a constant, so concurrent boots
+  // against the one shared Garage cannot overwrite each other's answer (#182 -
+  // see applyDevBucketConfig for the measurement behind that).
   async onApplicationBootstrap(): Promise<void> {
     if (this.config.get<string>('STORAGE_BOOTSTRAP') !== 'true') return;
-    const origin =
-      this.config.get<string>('WEB_ORIGIN') ?? 'http://localhost:5173';
     try {
-      await this.storage.applyDevBucketConfig(origin);
+      await this.storage.applyDevBucketConfig();
       this.logger.log(
-        `Bucket CORS + website access applied (PUT from ${origin})`,
+        'Bucket CORS + website access applied (browser PUT from any dev origin)',
       );
     } catch (err) {
       this.logger.warn(
