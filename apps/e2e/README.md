@@ -68,16 +68,21 @@ Every derived value still has an individual override (`SAMBUNG_E2E_DB`,
 >
 > **The bucket CORS.** A browser photo upload PUTs straight to Garage
 > cross-origin, and a bucket's CORS policy is **global to the bucket** - one
-> policy, shared by every lane. So the dev bootstrap (`STORAGE_BOOTSTRAP`) writes
-> a policy that names **no origin at all** (`AllowedOrigins: ["*"]`, `PUT` only):
-> every API boot writes the same thing, so last-writer-wins has nothing to win
-> and a lane never locks another lane out of its own uploads. It used to write
-> `[WEB_ORIGIN]`, and whichever lane booted last silently 403'd the others'
+> policy, shared by every lane. So the dev bootstrap (`STORAGE_BOOTSTRAP`)
+> applies a policy that **allows any origin** (`AllowedOrigins: ["*"]`, `PUT`
+> only): every API boot writes the same thing, so last-writer-wins has nothing to
+> win and a lane never locks another lane out of its own uploads. It used to
+> write `[WEB_ORIGIN]`, and whichever lane booted last silently 403'd the others'
 > upload preflights (#182 - a lane no longer announces its origin at all). The
 > presigned URL, not CORS, is what authorises the write, and this is a localhost
-> dev bucket: production R2 CORS is set in the Cloudflare dashboard
-> (`docs/r2-cutover.md`), and `validateEnv` refuses `STORAGE_BOOTSTRAP=true` in
-> production, so this policy can never reach a real bucket.
+> dev bucket, so the widening costs nothing real here.
+>
+> It stays a **dev** policy by deploy discipline, not by construction: R2 rejects
+> this call over the S3 API anyway (production CORS is set in the Cloudflare
+> dashboard, `docs/r2-cutover.md`), but on the documented Garage-on-VPS fallback
+> the only thing holding it off is `validateEnv` refusing `STORAGE_BOOTSTRAP=true`
+> - which fires only when `NODE_ENV=production`, and nothing in this repo sets
+> that. Setting it is step one of the production env block.
 
 ---
 

@@ -18,7 +18,7 @@ import { uniqueName } from "../../lib/helpers";
  *    test genuinely starts as a stranger and drives the real signup form.
  *  - The photo upload is real: `setInputFiles` on the gallery input drives the
  *    app's presign -> PUT-to-Garage -> PATCH round-trip, the same path an owner's
- *    file picker takes. Garage is up in docker, and its bucket CORS names no
+ *    file picker takes. Garage is up in docker, and its bucket CORS allows any
  *    origin (#182) - so this flow uploads from whatever port its lane serves on.
  */
 test.use({ storageState: { cookies: [], origins: [] } });

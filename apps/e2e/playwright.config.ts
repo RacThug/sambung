@@ -119,8 +119,8 @@ export default defineConfig({
       // (Flow 2, #169) PUTs straight to Garage cross-origin, and Garage's bucket
       // CORS is global to the bucket, which every lane shares - so an
       // origin-per-lane policy meant the last API to boot locked every other
-      // lane out of its own uploads (#182). The dev bootstrap now writes an
-      // origin-independent policy, so a lane has nothing to announce.
+      // lane out of its own uploads (#182). The dev bootstrap now applies one
+      // policy that ALLOWS ANY ORIGIN, so a lane has nothing to announce.
       env: {
         ...process.env,
         DATABASE_URL: OWNER_DATABASE_URL,

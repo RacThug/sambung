@@ -25,9 +25,12 @@ export class StorageModule implements OnApplicationBootstrap {
   // manual steps. Failure is a warning, not a crash - the API stays usable
   // (photo uploads simply won't work until Garage is up).
   //
-  // No origin is passed: the dev CORS policy is a constant, so concurrent boots
-  // against the one shared Garage cannot overwrite each other's answer (#182 -
-  // see applyDevBucketConfig for the measurement behind that).
+  // No origin is passed. This is where WEB_ORIGIN used to be read, and reading
+  // it here is what made the shared bucket's one CORS policy depend on whichever
+  // API booted last (#182 - see applyDevBucketConfig for the measurement). The
+  // policy is now a constant that allows any origin, so concurrent boots cannot
+  // overwrite each other's answer; storage.module.spec.ts pins that this call
+  // stays argument-free.
   async onApplicationBootstrap(): Promise<void> {
     if (this.config.get<string>('STORAGE_BOOTSTRAP') !== 'true') return;
     try {

@@ -116,9 +116,13 @@ function describeFetchError(err: unknown): string {
 }
 
 /**
- * The browser origin that will PUT uploads. In prod that is the public site
- * (WEB_BASE_URL); in dev it is the Vite server (WEB_ORIGIN). No new env var -
- * the cutover already has to set WEB_BASE_URL for unrelated reasons (#127).
+ * The browser origin that will PUT uploads: the public site in prod, the Vite
+ * server in dev - both named by WEB_BASE_URL. No new env var; the cutover
+ * already has to set WEB_BASE_URL for unrelated reasons (#127).
+ *
+ * WEB_ORIGIN remains as a fallback for a run that sets only it. It left
+ * .env.example with #182, when the dev bucket policy stopped reading an origin -
+ * this script is now its only reader, so the default below is what dev uses.
  */
 function browserOrigin(env: NodeJS.ProcessEnv): string {
   const base = env.WEB_BASE_URL?.trim();
@@ -341,19 +345,25 @@ async function main(): Promise<number> {
         return;
       }
       const allowed = got.res.headers.get('access-control-allow-origin');
-      // A missing policy shows up as an ABSENT header - that is the case this
-      // probe exists for, and the one R2 produces before CORS is configured.
-      // A wildcard is a genuine pass (the browser will proceed) but is reported
-      // as such: it means the origin allowlist is not narrowing anything, which
-      // is worth seeing rather than reading as "my origin was matched".
+      // The verdict needs BOTH halves - the status AND the header - because
+      // they can disagree. Garage attaches `access-control-allow-origin: *` to
+      // its 403 REFUSALS, so reading the header alone reported a wrong-origin
+      // policy, and a bucket with NO policy at all, as a wildcard PASS: three
+      // states, one line (measured on the #182 review). A missing policy can
+      // also arrive as an ABSENT header - the shape R2 produces before CORS is
+      // configured. A wildcard on a 2xx IS a genuine pass (the browser will
+      // proceed) but is reported as such: the origin allowlist is not narrowing
+      // anything, which is worth seeing rather than reading as "my origin was
+      // matched".
+      const ok = got.res.ok && (allowed === origin || allowed === '*');
       record(
         name,
-        allowed === origin || allowed === '*' ? 'pass' : 'fail',
-        allowed === '*'
-          ? `preflight from ${origin} allowed by a WILDCARD policy (any origin)`
-          : allowed === origin
-            ? `preflight from ${origin} allowed`
-            : `preflight from ${origin} -> ${got.res.status}, ` +
+        ok ? 'pass' : 'fail',
+        ok
+          ? allowed === '*'
+            ? `preflight from ${origin} allowed by a WILDCARD policy (any origin)`
+            : `preflight from ${origin} allowed`
+          : `preflight from ${origin} -> ${got.res.status}, ` +
               `access-control-allow-origin: ${allowed ?? '(absent)'}. ` +
               'Browser uploads will fail even though this script can PUT. Configure bucket CORS.',
       );
