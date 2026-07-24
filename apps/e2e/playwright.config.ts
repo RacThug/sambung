@@ -114,12 +114,20 @@ export default defineConfig({
       // `confirmed` (fake webhook POST / reconcile-on-read) with no outbound
       // Midtrans call. `nest start` does not set NODE_ENV=production, so
       // validateEnv (which refuses `fake` only in prod) allows it here.
+      //
+      // WEB_ORIGIN is THIS lane's web origin. A browser photo upload (Flow 2,
+      // #169) PUTs straight to Garage cross-origin, and the dev bootstrap
+      // (STORAGE_BOOTSTRAP) applies the bucket's CORS for WEB_ORIGIN only. Left
+      // at apps/api/.env's :5173, a non-base lane (web :517x) is refused the
+      // preflight and every gallery upload fails - so derive it from the lane.
+      // Base lane is unchanged (WEB_BASE_URL is http://localhost:5173).
       env: {
         ...process.env,
         DATABASE_URL: OWNER_DATABASE_URL,
         APP_DATABASE_URL: APP_DATABASE_URL,
         PORT: API_PORT,
         PAYMENT_GATEWAY: "fake",
+        WEB_ORIGIN: WEB_BASE_URL,
       },
     },
     {

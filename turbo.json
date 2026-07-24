@@ -33,7 +33,13 @@
       // would be a lie about an external system. `^build` so @sambung/shared and
       // @sambung/db compile to dist before the API and web dev servers start.
       "dependsOn": ["^build"],
-      "cache": false
+      "cache": false,
+      // Turbo runs tasks in strict env mode, which FILTERS the environment down
+      // to declared vars - so without this the SAMBUNG_E2E_* lane overrides never
+      // reach the provisioner or Playwright, and `SAMBUNG_E2E_LANE=2 pnpm
+      // test:e2e` (the documented lane-isolation entry, #167) silently ran on the
+      // base lane. Pass the whole family through (cache:false, so hashing is moot).
+      "passThroughEnv": ["SAMBUNG_E2E_*"]
     }
   }
 }
