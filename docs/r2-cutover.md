@@ -122,9 +122,13 @@ Two things the CORS probe will tell you that are worth reading carefully:
 - **`(absent)`** — no CORS policy is configured. This is what R2 returns before
   step 2, and it is the whole reason the probe exists.
 - **`allowed by a WILDCARD policy (any origin)`** — a pass, but the origin
-  allowlist is not narrowing anything. Dev Garage answers this way regardless of
-  the rule applied to it, so seeing it against Garage is expected; seeing it
-  against R2 means the pasted policy has `"AllowedOrigins": ["*"]`.
+  allowlist is not narrowing anything. Against **dev Garage this is expected**:
+  `STORAGE_BOOTSTRAP` deliberately writes `"AllowedOrigins": ["*"]`, because one
+  bucket is shared by every dev/e2e stack and an origin-per-boot policy let the
+  last API to start lock the others out of their own uploads (#182). Against
+  **R2 it is a real finding** — the pasted policy has `"AllowedOrigins": ["*"]`
+  where it should name the site origin. Nothing in this repo can put it there:
+  `validateEnv` refuses `STORAGE_BOOTSTRAP=true` in production.
 
 > **Do not** verify by pointing `jest properties-photos` at production. That
 > suite registers tenants (`beforeAll` → `POST /api/auth/register`), so it

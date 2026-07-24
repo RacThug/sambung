@@ -115,19 +115,18 @@ export default defineConfig({
       // Midtrans call. `nest start` does not set NODE_ENV=production, so
       // validateEnv (which refuses `fake` only in prod) allows it here.
       //
-      // WEB_ORIGIN is THIS lane's web origin. A browser photo upload (Flow 2,
-      // #169) PUTs straight to Garage cross-origin, and the dev bootstrap
-      // (STORAGE_BOOTSTRAP) applies the bucket's CORS for WEB_ORIGIN only. Left
-      // at apps/api/.env's :5173, a non-base lane (web :517x) is refused the
-      // preflight and every gallery upload fails - so derive it from the lane.
-      // Base lane is unchanged (WEB_BASE_URL is http://localhost:5173).
+      // A lane deliberately does NOT pass WEB_ORIGIN. A browser photo upload
+      // (Flow 2, #169) PUTs straight to Garage cross-origin, and Garage's bucket
+      // CORS is global to the bucket, which every lane shares - so an
+      // origin-per-lane policy meant the last API to boot locked every other
+      // lane out of its own uploads (#182). The dev bootstrap now writes an
+      // origin-independent policy, so a lane has nothing to announce.
       env: {
         ...process.env,
         DATABASE_URL: OWNER_DATABASE_URL,
         APP_DATABASE_URL: APP_DATABASE_URL,
         PORT: API_PORT,
         PAYMENT_GATEWAY: "fake",
-        WEB_ORIGIN: WEB_BASE_URL,
       },
     },
     {

@@ -58,10 +58,26 @@ Every derived value still has an individual override (`SAMBUNG_E2E_DB`,
 `SAMBUNG_E2E_API_PORT`, `SAMBUNG_E2E_WEB_PORT`, `SAMBUNG_E2E_WEB_URL`,
 `SAMBUNG_E2E_API_PROXY_TARGET`). All of this lives in `setup/e2e-config.ts`.
 
-> Object storage (Garage) is **shared** across lanes - it is not lane-scoped. This
-> is safe: the seed's photo keys are deterministic and per-tenant with identical
-> bytes, each lane references only its own DB's keys, and the GC cron never runs in
-> e2e. Two lanes seeding the same tenant just overwrite identical objects.
+> Object storage (Garage) is **shared** across lanes - it is not lane-scoped, and
+> two things have to hold for that to be safe.
+>
+> **The objects.** The seed's photo keys are deterministic and per-tenant with
+> identical bytes, each lane references only its own DB's keys, and the GC cron
+> never runs in e2e. Two lanes seeding the same tenant just overwrite identical
+> objects.
+>
+> **The bucket CORS.** A browser photo upload PUTs straight to Garage
+> cross-origin, and a bucket's CORS policy is **global to the bucket** - one
+> policy, shared by every lane. So the dev bootstrap (`STORAGE_BOOTSTRAP`) writes
+> a policy that names **no origin at all** (`AllowedOrigins: ["*"]`, `PUT` only):
+> every API boot writes the same thing, so last-writer-wins has nothing to win
+> and a lane never locks another lane out of its own uploads. It used to write
+> `[WEB_ORIGIN]`, and whichever lane booted last silently 403'd the others'
+> upload preflights (#182 - a lane no longer announces its origin at all). The
+> presigned URL, not CORS, is what authorises the write, and this is a localhost
+> dev bucket: production R2 CORS is set in the Cloudflare dashboard
+> (`docs/r2-cutover.md`), and `validateEnv` refuses `STORAGE_BOOTSTRAP=true` in
+> production, so this policy can never reach a real bucket.
 
 ---
 
