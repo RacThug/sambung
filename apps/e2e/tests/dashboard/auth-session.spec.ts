@@ -81,6 +81,20 @@ test.describe("dashboard session: refresh, logout, already-authed", () => {
       page.getByRole("button", { name: "Account menu" }),
     ).toBeVisible();
     expect(new URL(page.url()).pathname).toBe("/app/calendar");
+
+    // The NEGATIVE half of "in memory only": with a live session on screen, web
+    // storage holds the language preference and NOTHING else - no access token,
+    // and no refresh token either (that one is an httpOnly cookie the page
+    // cannot read). An exact allowlist rather than a "no token" heuristic: a
+    // token smuggled into storage should fail HERE, and a new key on this
+    // surface should be a deliberate decision, not a silent one.
+    expect(
+      await page.evaluate(() =>
+        [window.localStorage, window.sessionStorage].flatMap((store) =>
+          Object.keys(store).map((key) => `${key}=${store.getItem(key) ?? ""}`),
+        ),
+      ),
+    ).toEqual(["sambung.lang=en"]);
   });
 
   test("logging out ends the session, and a protected route bounces again", async ({
@@ -138,18 +152,46 @@ test.describe("dashboard session: the workspace switch", () => {
     // The switcher lives at the top of the sidebar. Only rendered because this
     // account holds more than one seat.
     const workspace = page.getByLabel("Workspace");
+
+    // Hold the post-switch refetch OPEN. Without this, the interesting window -
+    // the moment between "the session is now Ubud" and "Ubud's rows have
+    // arrived" - is too short to observe, and every auto-retrying matcher simply
+    // converges on the same end state whether the switcher RESETS the cache or
+    // merely INVALIDATES it. `reset` drops the data (loading state); `invalidate`
+    // keeps rendering the previous tenant's rows while it refetches - which is
+    // exactly the failure ADR-0034 and workspace-switcher.tsx exist to prevent,
+    // so it must be the thing this test can actually see.
+    await page.route("**/api/properties", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await route.continue();
+    });
+
+    const switched = page.waitForResponse(
+      (res) => res.url().includes("/api/auth/session") && res.status() === 200,
+    );
     await workspace.selectOption({ label: "Ubud Retreats" });
+    await switched;
 
-    // Seat 2: a DIFFERENT owner's tenant. The list must show that tenant's
-    // property and no longer the first one's - the switcher resets the query
-    // cache rather than invalidating it, precisely so one tenant's rows can
-    // never render for a frame under another tenant's name.
-    await expect(page.getByText("Ubud Jungle Villa")).toBeVisible();
-    await expect(page.getByText("Seminyak Beach Villa")).toHaveCount(0);
-
-    // ...and the header agrees with the data.
+    // The header already reflects the new seat (the session swap and the cache
+    // drop happen in one commit), so this is the deterministic anchor for the
+    // sample below - not a wait for the data.
     await expect(
       workspace.getByRole("option", { name: "Ubud Retreats", selected: true }),
     ).toHaveCount(1);
+
+    // ONE non-retrying sample, taken while Ubud's rows are still in flight.
+    // Deliberately `evaluate` rather than a matcher: `toHaveCount(0)` would
+    // retry until the refetch landed and pass under BOTH implementations
+    // (measured - it does), which would make this assertion decorative.
+    expect(
+      await page.evaluate(() =>
+        document.body.innerText.includes("Seminyak Beach Villa"),
+      ),
+    ).toBe(false);
+
+    // Seat 2's end state, once the held refetch lands: a DIFFERENT owner's
+    // tenant, showing that tenant's property and not the first one's.
+    await expect(page.getByText("Ubud Jungle Villa")).toBeVisible();
+    await expect(page.getByText("Seminyak Beach Villa")).toHaveCount(0);
   });
 });
