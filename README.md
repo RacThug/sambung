@@ -2,10 +2,11 @@
 
 **Direct bookings for Bali accommodation owners, with the OTA calendars kept in sync.**
 
-*Sambung* is Indonesian for *to connect*. A small villa owner pays 15-20% commission on every
-OTA reservation, and the moment they take a booking of their own they have to remember to block
-those nights on Airbnb, Booking.com and Vrbo by hand. Sambung is the commission-free direct
-booking engine plus the lightweight channel manager that stops the double-booking.
+*Sambung* is Indonesian for *to connect*. A small villa owner lists on Airbnb, Booking.com and
+Vrbo, and the moment they take a booking of their own they have to remember to block those nights
+on every channel by hand. Sambung is a commission-free direct-booking engine and a lightweight
+channel manager in one: a booking channel of the owner's own that runs *alongside* the OTAs and
+keeps every calendar in sync, so a room sold in one place cannot be sold again in another.
 
 It is a portfolio and learning project, built solo. What it is really about is the five hard
 problems underneath a deceptively simple product: a booking race, interval arithmetic, an
@@ -108,11 +109,12 @@ with the same interval operators the constraint itself uses, so the read cannot 
 the write. Dates are half-open `[check_in, check_out)`, which makes a same-day changeover legal
 instead of a conflict. [`docs/db-design.md`](docs/db-design.md) §4
 
-**3. An iCal sync that survives a bad feed.** A 30-minute cron pulls every connected calendar
-and mirrors it into `booking`. Each `VEVENT` gets its own savepoint, so an event that overlaps a
-real booking skips instead of killing the cycle. "Healthy" means a whole, terminated
-`BEGIN...END:VCALENDAR`, because a truncated download parses cleanly and looks exactly like an
-empty calendar. Cancellations run only against a healthy feed carrying at least one event, so no
+**3. An iCal sync that survives a bad feed.** A 30-minute cron - or a **Sync now** button, for an
+owner who just changed something on Airbnb and won't wait - pulls every connected calendar and
+mirrors it into `booking`, both through one code path. Each `VEVENT` gets its own savepoint, so an
+event that overlaps a real booking skips instead of killing the cycle. "Healthy" means a whole,
+terminated `BEGIN...END:VCALENDAR`, because a truncated download parses cleanly and looks exactly
+like an empty calendar. Cancellations run only against a healthy feed carrying at least one event, so no
 network hiccup can mass-cancel real stays. The overlaps that were refused land in an owner inbox
 rather than a log file, and a dismissed conflict stays dismissed while a resolved one may
 reopen: a measurement can be re-taken, a judgement stands.
@@ -154,6 +156,8 @@ The full log is at the bottom of [`CLAUDE.md`](CLAUDE.md), and each entry links 
 | [0013](docs/adr/0013-the-picker-advises-the-server-decides.md) | The picker advises, the server decides. Booked nights are greyed rather than disabled, so there is only ever one definition of "taken" |
 | [0022](docs/adr/0022-the-paid-but-lapsed-inbox-marks-not-mutates.md) | The paid-but-lapsed inbox marks, it does not mutate the ledger |
 | [0028](docs/adr/0028-property-local-is-a-column-not-an-assumption.md) | Property-local is a column, not an assumption. A UTC-stamped OTA event has no date until you name a time zone |
+| [0032](docs/adr/0032-a-staff-scope-is-a-second-axis-in-rls.md) | A staff member sees only their assigned properties, enforced by a second axis in the RLS policy rather than a `WHERE` in thirty routes |
+| [0034](docs/adr/0034-one-identity-many-memberships.md) | One identity, many memberships. Owner and staff are what a membership *is*, so one person can manage two owners' villas on one login |
 
 ---
 
