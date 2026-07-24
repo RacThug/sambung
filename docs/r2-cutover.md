@@ -86,6 +86,12 @@ Then set `STORAGE_PUBLIC_BASE_URL` to that origin, **no trailing slash**.
 In the VPS env (never the repo — invariant: prod secrets live only there):
 
 ```dotenv
+# Set this FIRST. EVERY production guard in validate-env.ts is gated on it, and
+# nothing in this repo sets it for you - `start:prod` is a bare `node dist/main`
+# and there is no Dockerfile. Without it a prod process keeps dev behaviour
+# silently, including honouring STORAGE_BOOTSTRAP - which on the documented
+# Garage-on-VPS fallback would really rewrite the live bucket's CORS on boot.
+NODE_ENV="production"
 STORAGE_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
 STORAGE_REGION="auto"
 STORAGE_BUCKET="sambung-photos"
@@ -122,9 +128,19 @@ Two things the CORS probe will tell you that are worth reading carefully:
 - **`(absent)`** — no CORS policy is configured. This is what R2 returns before
   step 2, and it is the whole reason the probe exists.
 - **`allowed by a WILDCARD policy (any origin)`** — a pass, but the origin
-  allowlist is not narrowing anything. Dev Garage answers this way regardless of
-  the rule applied to it, so seeing it against Garage is expected; seeing it
-  against R2 means the pasted policy has `"AllowedOrigins": ["*"]`.
+  allowlist is not narrowing anything. Against **dev Garage this is expected**:
+  `STORAGE_BOOTSTRAP` deliberately applies `"AllowedOrigins": ["*"]`, because one
+  bucket is shared by every dev/e2e stack and an origin-per-boot policy let the
+  last API to start lock the others out of their own uploads (#182). Against
+  **R2 it means the pasted policy is `["*"]`** where it should name the site
+  origin - worth fixing in the dashboard, even though the probe passes.
+
+> Do not read the wildcard line as proof that a policy was applied. The verdict
+> reads the preflight **status** as well as the header, so a wrong-origin policy
+> and no policy at all both **FAIL** - but until the #182 review they did not:
+> Garage attaches `access-control-allow-origin: *` to its 403 refusals, so all
+> three states printed the same `[PASS] … WILDCARD` line. If you are reading an
+> older transcript, that line proves nothing about the bucket.
 
 > **Do not** verify by pointing `jest properties-photos` at production. That
 > suite registers tenants (`beforeAll` → `POST /api/auth/register`), so it

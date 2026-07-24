@@ -209,18 +209,58 @@ export class StorageService {
 
   /**
    * Dev-only bucket setup, applied idempotently on boot (STORAGE_BOOTSTRAP):
-   * CORS so the SPA origin may PUT presigned uploads, and website access so
-   * Garage's web endpoint serves photos anonymously. Prod (R2) is configured
-   * once in its dashboard instead.
+   * CORS so a browser may PUT presigned uploads, and website access so Garage's
+   * web endpoint serves photos anonymously. Prod (R2) is configured once in its
+   * dashboard instead.
+   *
+   * The policy ALLOWS ANY ORIGIN (`['*']`) - a constant, identical from every
+   * boot (#182). Bucket CORS is global to the bucket, and one Garage is shared
+   * by every stack pointed at it: a `pnpm dev`, `storage:doctor`, and each
+   * `SAMBUNG_E2E_LANE=<n>` e2e lane on its own web port. While the rule was
+   * `[WEB_ORIGIN]` each boot rewrote it to ITS OWN origin, so two concurrent
+   * lanes disagreed and whichever booted last silently 403'd the other's upload
+   * preflights. Writing the same policy from every boot is what makes
+   * last-writer-wins harmless: there is nothing left for two writers to disagree
+   * about, at any lane count, in any boot order.
+   *
+   * Enumerating the lane origins instead was measured against Garage and
+   * rejected. It does not implement S3 origin PATTERNS (`http://localhost:*`
+   * matches nothing), and for a rule listing several origins it answers a
+   * preflight with all of them comma-joined - an `Access-Control-Allow-Origin`
+   * value no browser accepts, so it would pass server-side probes and still fail
+   * in the browser. One rule per origin does work, but only by putting the e2e
+   * harness's port arithmetic in the API and capping how many lanes may run.
+   *
+   * A BUCKET PER LANE was the other way to stop the sharing (`STORAGE_BUCKET` is
+   * already env-driven, so it is the shape the DB and the ports use). Rejected
+   * as the bigger change for the smaller problem: it needs bucket creation and a
+   * key grant per lane in the Garage fixture, a matching per-lane
+   * `STORAGE_PUBLIC_BASE_URL` (Garage's web endpoint is addressed by bucket
+   * name), and it would REMOVE the deliberate sharing the e2e README documents -
+   * identical seed objects written once. This widens one dev policy instead.
+   *
+   * `*` is safe HERE and nowhere else: a localhost dev bucket, `PUT` only, where
+   * the presigned URL is the actual capability. CORS never authorised the write
+   * - it only decides which page's JS may use a URL it already holds.
+   *
+   * What keeps it off a real bucket, stated exactly: R2 supports neither call
+   * over the S3 API, so on the intended prod backend this fails as a warning and
+   * changes nothing. The one prod shape where it WOULD write is the documented
+   * Garage-on-VPS fallback (architecture §3.6) - and there the only thing
+   * stopping it is `validateEnv` refusing `STORAGE_BOOTSTRAP=true` (ADR-0029),
+   * which is itself gated on `NODE_ENV === 'production'`, a variable NOTHING in
+   * this repo sets (`start:prod` is a bare `node dist/main`; there is no
+   * Dockerfile). So it is a deploy-time obligation, not a property of the code:
+   * docs/r2-cutover.md sets `NODE_ENV` first in its production env block.
    */
-  async applyDevBucketConfig(allowedOrigin: string): Promise<void> {
+  async applyDevBucketConfig(): Promise<void> {
     await this.client.send(
       new PutBucketCorsCommand({
         Bucket: this.bucket,
         CORSConfiguration: {
           CORSRules: [
             {
-              AllowedOrigins: [allowedOrigin],
+              AllowedOrigins: ['*'],
               AllowedMethods: ['PUT'],
               AllowedHeaders: ['*'],
               ExposeHeaders: ['ETag'],
