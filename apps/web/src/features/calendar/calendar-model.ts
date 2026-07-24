@@ -16,6 +16,7 @@ import {
   type PropertyResponse,
   type UnitResponse,
 } from "@sambung/shared";
+import { addDays } from "../../lib/date";
 
 /** Legend order + label + colour token per source. The colour is a CSS var (the
  * #49 categorical palette in tailwind.css), referenced inline because the source
@@ -43,13 +44,12 @@ export const SOURCE_ORDER: BookingSource[] = [
 
 // ---- Dates (calendar dates, parsed at UTC - no DST drift) -------------------
 
-const MS_PER_DAY = 86_400_000;
-
-/** `YYYY-MM-DD` `n` days after `date` (n may be negative). */
-export function addDays(date: string, n: number): string {
-  const ms = Date.parse(`${date}T00:00:00Z`) + n * MS_PER_DAY;
-  return new Date(ms).toISOString().slice(0, 10);
-}
+// `addDays` used to be defined here too, byte-identical to `lib/date`'s. Two
+// copies of one rule is the drift this codebase keeps designing out, and it also
+// put a `.slice(0, 10)` in a feature file - the exact string that produced #188
+// three times over. Date arithmetic lives in `lib/date` now, and the guard test
+// keeps it there. Re-exported so the calendar's own imports stay local.
+export { addDays };
 
 /** The half-open window covering the calendar month that contains `today`
  * (`YYYY-MM-DD`): `[first-of-month, first-of-next-month)`, so every day of the

@@ -6,7 +6,16 @@ export interface InviteEmailData {
   invitedBy: string;
   propertyNames: string[];
   acceptUrl: string;
-  expiresAt: Date;
+  /**
+   * How long the link is good for, in days - NOT the expiry instant (#188).
+   *
+   * An email has no reader to ask for a timezone, so it cannot name a calendar
+   * day without guessing where the reader is: this used to render
+   * `expiresAt.toISOString().slice(0, 10)`, i.e. the UTC day, which is the day
+   * before for a recipient in WIB/WITA/WIT through the small hours. A duration is
+   * true in every zone, so there is nothing left to get wrong.
+   */
+  expiresInDays: number;
 }
 
 /**
@@ -24,7 +33,7 @@ export interface InviteEmailData {
  */
 export function renderInviteEmail(d: InviteEmailData): EmailMessage {
   const properties = d.propertyNames.map((n) => `  - ${n}`).join('\n');
-  const expires = d.expiresAt.toISOString().slice(0, 10);
+  const days = `${d.expiresInDays} day${d.expiresInDays === 1 ? '' : 's'}`;
   return {
     to: d.to,
     subject: `${d.invitedBy} invited you to help manage ${d.tenantName}`,
@@ -34,7 +43,7 @@ export function renderInviteEmail(d: InviteEmailData): EmailMessage {
       `staff member.\n\n` +
       `You'll be able to manage:\n${properties}\n\n` +
       `Set your password and get started:\n${d.acceptUrl}\n\n` +
-      `This link can be used once, and expires on ${expires}.\n` +
+      `This link can be used once, and expires in ${days}.\n` +
       `If you weren't expecting this, you can ignore it.\n`,
   };
 }

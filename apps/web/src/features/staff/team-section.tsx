@@ -8,7 +8,7 @@ import {
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { conflictOf, describeConflict } from "../../lib/conflict";
-import { formatDate } from "../../lib/date";
+import { formatInstant } from "../../lib/date";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { FormField } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
@@ -323,7 +323,7 @@ function InviteRow({ invite }: { invite: InviteDto }) {
         <p className="font-medium">{invite.email}</p>
         <p className="mt-0.5 text-sm text-muted-foreground">
           {invite.properties.map((p) => p.name).join(", ") || "No properties"} ·
-          expires {formatDate(invite.expiresAt.slice(0, 10))}
+          expires {formatInstant(invite.expiresAt)}
         </p>
       </div>
       <Button

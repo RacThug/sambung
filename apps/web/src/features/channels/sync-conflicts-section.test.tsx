@@ -76,6 +76,26 @@ describe("sync-conflict inbox section (#38)", () => {
     );
   });
 
+  it("shows when it was first seen in the reader's zone, with the time (#188)", async () => {
+    const tz = process.env.TZ;
+    process.env.TZ = "Asia/Makassar";
+    try {
+      stubFetch({
+        [LIST_KEY]: () => json([syncConflict()]),
+        [LAPSED_KEY]: () => json([]),
+      });
+      renderAt("/app/inbox");
+
+      // The fixture is midnight UTC = 08:00 in WITA. A card that sliced the
+      // instant to its UTC day could not render a time at all, so asserting the
+      // clock proves the whole moment reaches the formatter - not just its date.
+      // Separator left open (":" or "." by locale); the digits are not.
+      expect(await screen.findByText(/First seen .*08[.:]00/)).toBeInTheDocument();
+    } finally {
+      process.env.TZ = tz;
+    }
+  });
+
   it("dismisses an item and refetches so it drops from the list", async () => {
     let dismissed = false;
     const calls = stubFetch({

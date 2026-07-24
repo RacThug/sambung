@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { countNights, type SyncConflict } from "@sambung/shared";
 import { ApiError } from "../../lib/api-client";
-import { formatDate } from "../../lib/date";
+import { formatDate, formatInstant } from "../../lib/date";
 import { SourceBadge, StatusBadge } from "../bookings/booking-badges";
 import { Button } from "../../components/ui/button";
 import { useDismissConflict, useSyncConflicts } from "./use-sync-conflicts";
@@ -79,7 +79,7 @@ function ConflictRow({ item }: { item: SyncConflict }) {
             night{nights === 1 ? "" : "s"})
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            First seen {formatDate(item.firstDetectedAt.slice(0, 10))}
+            First seen {formatInstant(item.firstDetectedAt)}
           </p>
         </div>
 
