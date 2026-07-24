@@ -31,6 +31,14 @@ import { test, expect } from "../../fixtures/test";
  * conflict first (2 -> 1), payment second (1 -> 0). Everything they mutate
  * (`sync_conflict.status`, `payment.handled_at`) is re-seeded on the next run and
  * is read by no other flow.
+ *
+ * For the same reason this spec must stay in exactly ONE Playwright project.
+ * `describe.serial` orders tests within a project; it does nothing across them, so
+ * a second project matched to this file would run a second copy against the SAME
+ * seeded rows and the two would race the dismiss/handle. This is the identical
+ * hazard `playwright.config.ts` already calls out for `checkout-payment.spec.ts`
+ * (two engines contending for the same nights) - there the shared resource is a
+ * unit's dates, here it is a seeded row.
  */
 
 /** The sidebar's Inbox nav item. Its ACCESSIBLE NAME carries the badge, because
@@ -107,6 +115,28 @@ test.describe.serial("owner dashboard: the operations inbox", () => {
     await expect(
       blocking.getByRole("link", { name: /View booking/ }),
     ).toHaveAttribute("href", /^\/app\/bookings\/[0-9a-f-]{36}$/);
+
+    // TWO stays, not one. The seed shapes this clash as a PARTIAL overlap on
+    // purpose (packages/db/scripts/seed.ts): identical dates would hide a row that
+    // conflated the OTA's refused stay with the booking standing in its way, and
+    // the owner would be shown one range for a problem that has two. That the
+    // ranges OVERLAP is not re-asserted here - `blockingBookings` is derived
+    // server-side by the same `daterange &&` the exclusion constraint uses, so the
+    // blocking row existing at all IS the overlap.
+    //
+    // Compared as RENDERED strings rather than parsed dates: `formatDate` follows
+    // the viewer's locale (page-spec §2), so pinning a locale to parse them back
+    // would be testing the formatter, not the row.
+    const otaStayLine = await conflict
+      .getByRole("paragraph")
+      .filter({ hasText: "→" })
+      .innerText();
+    // Drop the "(3 nights)" suffix, leaving just "<check-in> → <check-out>".
+    const otaStay = otaStayLine.split(" (")[0]?.trim() ?? "";
+    expect(otaStay).toMatch(/\d.+→.+\d/);
+    const blockingText = (await blocking.innerText()).replace(/\s+/g, " ");
+    expect(blockingText).toMatch(/\d.+→.+\d/);
+    expect(blockingText).not.toContain(otaStay);
 
     // Dismiss is a JUDGEMENT (ADR-0027): it writes only status + closed_at, and
     // there is deliberately no "resolve" button - resolution is measured by the

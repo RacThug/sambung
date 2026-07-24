@@ -102,7 +102,11 @@ Every derived value still has an individual override (`SAMBUNG_E2E_DB`,
   slug, the demo logins). Read/browse tests lean on it. A test that **writes**
   creates its **own** data - a fresh far-future booking, a `uniqueName()` guest -
   so tests are independent, and leftovers are harmless (the next run re-seeds).
-  Never mutate Baseline rows.
+  Never mutate Baseline rows - with **one** documented exception: the inbox flow
+  (`tests/dashboard/inbox.spec.ts`) clears the two seeded inbox fixtures below,
+  because neither can be produced through the UI at runtime. It is serial, and it
+  touches nothing any other flow reads. Adding a second such flow needs the same
+  written justification.
 - **Parallel-safe writes need a unique (unit, date), not just a unique name.**
   The suite runs `fullyParallel`. A `uniqueName()` guest keeps a row *findable*,
   but two write-tests that pick the same unit + `futureIso(n)` would contend for
@@ -136,9 +140,17 @@ clean on the next run.
   (mirrored from the seed, which stores its sha256); build the URL from it. The
   invite is single-use - one accept scenario per run.
 - **A paid-but-lapsed payment** on Bali Breeze: a `paid` payment on an `expired`
-  booking with `handled_at` NULL - the `/app/inbox` item Flow 7 handles. This is
-  the only seeded row a flow **mutates** (marking it handled), and it touches no
-  row a read-only flow depends on.
+  booking with `handled_at` NULL - the `/app/inbox` item Flow 7 handles.
+
+Flow 7 also clears the **open `sync_conflict`** the demo seed has carried since
+#38 - a refused Airbnb import on the Whole Villa, shaped as a deliberately
+**partial** overlap with Wayan D.'s direct booking so the inbox has to show both
+ranges rather than conflate them.
+
+Those three are the **only** seeded rows any flow **mutates**: Flow 5 spends the
+invite, and Flow 7 clears the two inbox items (`payment.handled_at`,
+`sync_conflict.status`). No other flow reads those columns, and the next run's
+re-seed restores all three.
 
 ---
 
@@ -156,6 +168,7 @@ lib/
 tests/
   funnel/           availability -> checkout · i18n switch · checkout-payment (stubbed)
   dashboard/        manual-booking (owner walk-in) · staff-scope (RBAC)
+                    inbox (operations inbox: dismiss / handle, serial)
 playwright.config.ts
 ```
 
