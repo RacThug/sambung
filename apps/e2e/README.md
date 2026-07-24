@@ -133,6 +133,16 @@ Every derived value still has an individual override (`SAMBUNG_E2E_DB`,
   but two write-tests that pick the same unit + `futureIso(n)` would contend for
   the same nights and one would 409. So a new write-test must also claim a
   **unit + date-offset no other write-test uses**.
+- **Never wait on the real network.** No spec may spend an assertion's budget on
+  a resource we don't own - a DNS resolver, a third-party host, a wall clock.
+  Their duration is set by how busy the machine is, so the suite passes alone and
+  fails when two lanes run, which is how `retries: 0` starts lying. Outbound calls
+  are stubbed (`page.route` for the payment handoff) or made structurally
+  unnecessary: Flow 6 connects a **private-LAN** iCal URL, which the SSRF guard
+  refuses before opening a socket, reaching the same `error`-status branch with no
+  lookup at all. It used to use `example.invalid` and waited on NXDOMAIN - 96ms
+  when idle, but the smoke-fetch's full 8s ceiling once the machine was busy
+  enough to queue `getaddrinfo` (#194).
 - **Locators: accessibility-first.** Prefer `getByRole` / `getByLabel` /
   `getByText` over CSS or `data-testid` - they assert what the user perceives and
   survive refactors. Reach for `data-testid` only when semantics are genuinely
