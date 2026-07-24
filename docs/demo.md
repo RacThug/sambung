@@ -255,8 +255,8 @@ are about to talk over.
     **2** since Act 1. Under **Calendar conflicts**:
 
     *"Airbnb booking couldn't be imported"* · Seminyak Beach Villa - Whole Villa · the stay
-    dates · **First seen** a couple of days back, and under **Already booked here**, Wayan D.'s
-    confirmed direct booking on overlapping nights.
+    dates · **First seen** two days back, timestamped to the minute on your own clock, and under
+    **Already booked here**, Wayan D.'s confirmed direct booking on overlapping nights.
 
     > "Airbnb sold nights this owner had already sold direct, and been paid for. The import
     > tried to write it and the exclusion constraint refused, so the system did the one safe
