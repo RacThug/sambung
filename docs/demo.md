@@ -34,17 +34,19 @@ pnpm --filter @sambung/db db:reset       # drop, replay every migration, seed   
 pnpm dev                                 # web on :5173, api on :3000           (~10s to boot)
 ```
 
-`db:reset` prints the demo calendar it just built. Glance at it before you start talking:
+`db:reset` prints the demo state it just built. Glance at it before you start talking:
 
 ```
-Demo logins: owner@balibreeze.test / owner@ubudretreats.test / staff@balibreeze.test (Seminyak only) - password "sambung123"
+Seeded: 2 tenants, 3 properties, 4 units, 6 bookings, 2 payments, 1 sync conflict.
+Demo logins: owner@balibreeze.test / owner@ubudretreats.test / staff@balibreeze.test (Seminyak only, AND a second seat at Ubud Retreats - use the workspace switcher) - password "sambung123"
+Inbox demo (Bali Breeze /app/inbox): 1 open sync conflict + 1 paid-but-lapsed payment. Pending staff invite for newstaff@balibreeze.test (create-account accept path).
 Demo window (all future, half-open, all within a week):
-  Wayan D., paid direct  2026-07-22 -> 2026-07-25  (Whole Villa)
-  refused Airbnb import  2026-07-23 -> 2026-07-26  (the inbox conflict)
-  Komang S., live hold   2026-07-23 -> 2026-07-25  (Garden Room, 15 min)
-  maintenance block      2026-07-24 -> 2026-07-27  (Surf Loft)
-  imported from Airbnb   2026-07-27 -> 2026-07-29  (Whole Villa)
-  bookable gap           2026-07-25 -> 2026-07-27  (Whole Villa, 2 nights = its min stay; picker demo only)
+  Wayan D., paid direct  2026-07-25 -> 2026-07-28  (Whole Villa)
+  refused Airbnb import  2026-07-26 -> 2026-07-29  (the inbox conflict)
+  Komang S., live hold   2026-07-26 -> 2026-07-28  (Garden Room, 15 min)
+  maintenance block      2026-07-27 -> 2026-07-30  (Surf Loft)
+  imported from Airbnb   2026-07-30 -> 2026-08-01  (Whole Villa)
+  bookable gap           2026-07-28 -> 2026-07-30  (Whole Villa, 2 nights = its min stay; picker demo only)
 ```
 
 Those dates move with the calendar: they are anchored to *today*, never to fixed dates, so the
@@ -81,14 +83,16 @@ talking and clicking: the machine is never the thing you are waiting for. Budget
 | 1 | The owner adds a property | 60s |
 | 2 | The guest books and pays | 2m |
 | 3 | The dates block on an external calendar | 45s |
-| 4 | The double-sell that never happened | 60s |
+| 4 | The double-sell that never happened | 60s (+20s if you also take the paid-but-lapsed payment) |
 
 ---
 
 ## Act 1 - the owner adds a property (60s)
 
-1. Open **http://localhost:5173/login**. Sign in as **`owner@balibreeze.test`** /
-   **`sambung123`**.
+1. Open **http://localhost:5173/** - the public front door: the pitch, the five hard parts, and
+   a **View demo →** button into a seeded property. *Optional, 15s, and worth it when you are
+   presenting to a reviewer rather than to an owner.* Then **Log in** (top right) and sign in as
+   **`owner@balibreeze.test`** / **`sambung123`**.
 
 2. You land on **`/app/calendar`**, the unified calendar. One row per *unit* across every
    property. On the four seeded stays you should see all three bar colours - a direct booking,
@@ -97,14 +101,21 @@ talking and clicking: the machine is never the thing you are waiting for. Budget
    > "This is the owner's whole business on one screen. Every bar is a `booking` row. There is
    > no availability table anywhere in this system: free means no row overlaps you."
 
-   The view opens on the current calendar month, and the seeded stays start within six days, so
-   they are on it - unless you seeded in the last few days of a month, in which case `db:reset`
-   printed a NOTE and you click **›** once.
+   The shell is worth ten seconds of its own. The left **sidebar** carries the workspace name
+   and the nav grouped **Operate** (Calendar, Reservations, Inbox) and **Manage** (Properties,
+   Settings); the top bar carries the page title, that page's primary action, and the account
+   menu - your email, your role, **Log out**. The **2** on the **Inbox** badge is Act 4, already
+   waiting. (On a narrow window the sidebar folds into a drawer behind the ☰ button.)
 
-3. **Properties** in the top nav → **New property** → name it **`Uluwatu Cliff House`** →
-   **Create**.
+   The calendar opens on the current calendar month, and the seeded stays start within six days,
+   so they are on it - unless you seeded in the last few days of a month, in which case
+   `db:reset` printed a NOTE and you click **›** once.
 
-4. You land on the property's edit page. Point at the line under the title:
+3. **Properties** in the sidebar (under *Manage*) → **New property**, top right in the top bar →
+   name it **`Uluwatu Cliff House`** → **Create**.
+
+4. You land on the property's workbench. The name is in the top bar; point at the link line
+   directly below it, at the top of the page:
 
    > "Its public URL was minted the moment it was created, and it never moves again, even if
    > the name changes. This link is going into an Airbnb profile and a WhatsApp thread."
@@ -240,11 +251,12 @@ are about to talk over.
 
 ## Act 4 - the double-sell that never happened (60s)
 
-16. Open **Inbox** in the top nav (**`/app/inbox`**). Under **Calendar conflicts**:
+16. Open **Inbox** in the sidebar, under *Operate* (**`/app/inbox`**) - the badge that has read
+    **2** since Act 1. Under **Calendar conflicts**:
 
     *"Airbnb booking couldn't be imported"* · Seminyak Beach Villa - Whole Villa · the stay
-    dates · **First seen** with a date two days back, and under **Already booked here**,
-    Wayan D.'s confirmed direct booking on overlapping nights.
+    dates · **First seen** two days back, timestamped to the minute on your own clock, and under
+    **Already booked here**, Wayan D.'s confirmed direct booking on overlapping nights.
 
     > "Airbnb sold nights this owner had already sold direct, and been paid for. The import
     > tried to write it and the exclusion constraint refused, so the system did the one safe
@@ -260,17 +272,26 @@ are about to talk over.
     > this by itself. Dismiss is a judgement, so it stays dismissed. Anything the system
     > measures again can come back."
 
-17. Click **Dismiss** on the conflict. It leaves the inbox.
+17. Click **Dismiss** on the conflict. It leaves the inbox, and the sidebar badge drops to **1** -
+    because the inbox's other half still has something in it.
 
     Then, if you want the last beat: **View booking ›** under *Already booked here* opens the
     blocking reservation at `/app/bookings/<id>` - the stay that won, guest and all. That link
     navigates away from the inbox, so take it last, or use the browser back button to return.
 
-Below it sits the inbox's other half, **Payments needing attention**. The seed leaves it on
-**All clear**, deliberately: it fills when a guest pays *after* their hold lapsed, so the money is
-captured but the nights are no longer held. Marking one handled writes a single marker column and
-never touches the ledger, because "an operator dealt with this" is a different fact from what the
-money did.
+Below the conflicts sits **Payments needing attention**, and the seed leaves one there: **Rp
+3.600.000** from *Late Payer*, badged **Expired**, on the Garden Room.
+
+> "This is the case nobody designs for on the whiteboard. The guest's 15-minute hold lapsed, the
+> nights went back on sale, and *then* their payment settled. The money is captured and the dates
+> are gone. The system will not guess - it will not resurrect a booking whose nights may already
+> belong to someone else, and it will not quietly bin a real payment. It records both truthfully
+> and puts the case in front of a human."
+
+Click **Mark handled** if you want to close the loop: it writes one marker column and never
+touches the ledger, because "an operator dealt with this" is a different fact from what the money
+did. The row leaves the list because the list's filter stops matching it, not because anything
+about the payment changed. The badge is now gone.
 
 **That is the demo.** Owner added a property, guest booked and paid, the nights left the
 building as an OTA-consumable feed, and a real double-sell was caught by the database rather
@@ -287,6 +308,8 @@ than discovered by a guest at the door.
 | "Can they get their data out?" | **Reservations** → filter → **Export CSV**. Exact integer rupiah, no float, formula injection neutralised. |
 | "What happens to an unpaid hold?" | The seeded Garden Room hold expires 15 minutes after `db:reset`. Reload the calendar afterwards: the hatched bar is gone and the nights are bookable again. Cleared at two scopes, one inside the booking transaction and one on a cron. |
 | "Can I give my manager access to one villa?" | Sign in (private window) as `staff@balibreeze.test`, same password. They are assigned **Seminyak only**, so the calendar, the reservations list and **Properties** show Seminyak and not Canggu - and pasting Canggu's URL gives a 404, not a 403: within a tenant, an unassigned property simply does not exist for them. **Settings** shows the gallery cap read-only and no Team form. Same mechanism as the multi-tenancy answer above - a second axis in the same row-level security policies, so no endpoint had to be taught about it. |
+| "Can one person work for two owners?" | Still as `staff@balibreeze.test`: the top of their sidebar is a **workspace switcher**, not a fixed name, because that account holds two seats - staff at Bali Breeze Villas *and* staff at Ubud Retreats, a different owner's business. Switch, and the whole dashboard is the other tenant's (one property there, assigned). An identity and a membership are different things: the login is the person, the seat is the belonging. (The two owner accounts hold one seat each, so they see their workspace name as plain text.) |
+| "Is any of this tested through a browser?" | `pnpm test:e2e` - Playwright drives the real stack (web + api + Postgres) as a user: the availability picker into checkout, the language switch, a payment handoff with the provider stubbed at the network, an owner walk-in, and the staff scoping above. It runs against its own `sambung_e2e` database, so it never touches what you just seeded. `pnpm test` is the unit/integration tier under it. |
 | "How much does this cost to run?" | One ~$5/month VPS. No paid third-party service anywhere in the stack. |
 
 ## Deliberately not in this script
