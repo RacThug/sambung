@@ -93,8 +93,10 @@ In the VPS env (never the repo — invariant: prod secrets live only there):
 # validate-env.ts used to be gated on it while nothing in this repo set it
 # (`start:prod` is a bare `node dist/main`; there is no Dockerfile), so a prod
 # process silently kept dev behaviour. The guards now recognise a deployment from
-# WEB_BASE_URL / STORAGE_PUBLIC_BASE_URL naming a public host, which they must on
-# any real deployment. NODE_ENV stays the conventional declaration.
+# WEB_BASE_URL / STORAGE_PUBLIC_BASE_URL naming a publicly reachable host, which
+# they must on any WORKING deployment (loopback or a LAN address there is not a
+# deployment the app can serve - broken photos, checkout returning to localhost).
+# NODE_ENV stays the conventional declaration.
 NODE_ENV="production"
 STORAGE_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
 STORAGE_REGION="auto"

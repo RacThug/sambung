@@ -84,7 +84,19 @@ Every derived value still has an individual override (`SAMBUNG_E2E_DB`,
 > `NODE_ENV=production`, which nothing in this repo sets; since **#193** it fires
 > on any process that cannot prove it is a local sandbox - proof being that every
 > browser-facing origin it declares (`WEB_BASE_URL`, `STORAGE_PUBLIC_BASE_URL`) is
-> loopback, which is exactly what a lane declares and a deployment cannot.
+> private, which is exactly what a lane declares and a *working* deployment
+> cannot. (A deployment *can* declare private origins; it just has broken photos
+> and a checkout that returns payers to `localhost`. That residue is stated in
+> `deployment-env.ts` rather than papered over.)
+>
+> One consequence worth knowing before it surprises you: point `WEB_BASE_URL` at a
+> **public** origin and the API refuses to boot until `STORAGE_BOOTSTRAP` is
+> commented out. The tunnel pass in
+> [`docs/og-verification.md`](../../docs/og-verification.md) is the one workflow
+> that does this - and if a tunnel URL is left behind in `apps/api/.env`, the next
+> `pnpm test:e2e` fails at API startup for that reason. Loud and correct, but it
+> reads as a harness fault, and it is not. A LAN address (`192.168.x.x`) is
+> private, so serving the funnel to a phone over wifi changes nothing.
 
 ---
 

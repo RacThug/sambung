@@ -118,7 +118,23 @@ the base (`storage.service.ts`), so the stored keys are untouched.
 > Garage bucket is genuinely reachable from the public internet, and `STORAGE_BOOTSTRAP`
 > is the switch that rewrites a live bucket's CORS to allow any origin. Comment it out;
 > every earlier boot already configured the bucket. The refusal names the variable that
-> convinced it, so there is nothing to guess at. Restore both when the pass is done.
+> convinced it, so there is nothing to guess at.
+
+Two further consequences of the box being a deployment for the length of the pass.
+Neither is a defect, and both look like one:
+
+- **The dashboard may stop staying signed in.** The refresh cookie is `Secure` on a
+  deployment (#193), so while you browse the app at `http://localhost:5173` the browser
+  may refuse to store it. Chrome keeps it (`http://localhost` is a *trustworthy origin*
+  by spec), but WebKit is stricter, so clicking around in Safari mid-pass can look like a
+  broken session. Browse through the tunnel origin instead, or finish the pass first.
+  Nothing being measured here signs in, so no probe is affected.
+- **A leftover tunnel URL breaks the next `pnpm test:e2e`.** Tunnel hostnames die with
+  the container, but the value stays in `apps/api/.env` - and it still reads as a public
+  origin, so the API refuses to boot with the harness's `PAYMENT_GATEWAY=fake`. The
+  message names `WEB_BASE_URL`; it is not a harness fault.
+
+**Restore both values when the pass is done.**
 
 Re-measure against the public origin:
 
