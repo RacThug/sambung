@@ -24,8 +24,9 @@ import { PublicPaymentsController } from './public-payments.controller';
  * The Provider boundary (ADR-0015): PAYMENT_GATEWAY is bound by `createPaymentGateway`,
  * which reads the environment - the real MidtransGateway in prod/dev, and the
  * FakePaymentGateway only when `PAYMENT_GATEWAY=fake` (the e2e-only seam, #167).
- * That env value is refused in production by `validateEnv`, so the fake can never
- * bind on a live server. Tests still `.overrideProvider(PAYMENT_GATEWAY).useValue(new
+ * That env value is refused by `validateEnv` on any process that cannot prove it
+ * is a local sandbox (#193), so the fake cannot bind on a live server. Tests
+ * still `.overrideProvider(PAYMENT_GATEWAY).useValue(new
  * FakePaymentGateway())`, so no jest suite reaches live Midtrans either.
  *
  * BookingsModule is imported for BookingsRepository - the pay path AND the

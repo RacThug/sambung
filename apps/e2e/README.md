@@ -77,12 +77,14 @@ Every derived value still has an individual override (`SAMBUNG_E2E_DB`,
 > presigned URL, not CORS, is what authorises the write, and this is a localhost
 > dev bucket, so the widening costs nothing real here.
 >
-> It stays a **dev** policy by deploy discipline, not by construction: R2 rejects
+> It stays a **dev** policy by construction, not by deploy discipline: R2 rejects
 > this call over the S3 API anyway (production CORS is set in the Cloudflare
-> dashboard, `docs/r2-cutover.md`), but on the documented Garage-on-VPS fallback
-> the only thing holding it off is `validateEnv` refusing `STORAGE_BOOTSTRAP=true`
-> - which fires only when `NODE_ENV=production`, and nothing in this repo sets
-> that. Setting it is step one of the production env block.
+> dashboard, `docs/r2-cutover.md`), and on the documented Garage-on-VPS fallback
+> `validateEnv` refuses `STORAGE_BOOTSTRAP=true`. That refusal used to need
+> `NODE_ENV=production`, which nothing in this repo sets; since **#193** it fires
+> on any process that cannot prove it is a local sandbox - proof being that every
+> browser-facing origin it declares (`WEB_BASE_URL`, `STORAGE_PUBLIC_BASE_URL`) is
+> loopback, which is exactly what a lane declares and a deployment cannot.
 
 ---
 

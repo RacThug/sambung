@@ -246,12 +246,13 @@ export class StorageService {
    * What keeps it off a real bucket, stated exactly: R2 supports neither call
    * over the S3 API, so on the intended prod backend this fails as a warning and
    * changes nothing. The one prod shape where it WOULD write is the documented
-   * Garage-on-VPS fallback (architecture §3.6) - and there the only thing
-   * stopping it is `validateEnv` refusing `STORAGE_BOOTSTRAP=true` (ADR-0029),
-   * which is itself gated on `NODE_ENV === 'production'`, a variable NOTHING in
-   * this repo sets (`start:prod` is a bare `node dist/main`; there is no
-   * Dockerfile). So it is a deploy-time obligation, not a property of the code:
-   * docs/r2-cutover.md sets `NODE_ENV` first in its production env block.
+   * Garage-on-VPS fallback (architecture §3.6) - and there the thing stopping it
+   * is `validateEnv` refusing `STORAGE_BOOTSTRAP=true` (ADR-0029). That refusal
+   * used to be gated on `NODE_ENV === 'production'`, a variable NOTHING in this
+   * repo sets, so it was a deploy-time obligation rather than a property of the
+   * code. Since #193 it is derived instead from the browser-facing origins
+   * (`deployment-env.ts`): any box that sends a guest's browser to a public
+   * host refuses to boot with this on, NODE_ENV or not.
    */
   async applyDevBucketConfig(): Promise<void> {
     await this.client.send(
