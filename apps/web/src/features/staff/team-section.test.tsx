@@ -220,6 +220,35 @@ describe("team settings (§4.7, #57)", () => {
       expect(calls.some((c) => c.startsWith("DELETE"))).toBe(false);
     });
 
+    it("dates a pending invite's expiry in the reader's zone, with the time (#188)", async () => {
+      const tz = process.env.TZ;
+      process.env.TZ = "Asia/Makassar";
+      try {
+        stubFetch({
+          ...baseStubs,
+          "GET /api/auth/invites": () =>
+            json({
+              invites: [
+                {
+                  id: "dddddddd-0000-0000-0000-000000000001",
+                  email: "chef@villa.dev",
+                  expiresAt: "2026-07-29T00:00:00.000Z",
+                  createdAt: "2026-07-22T00:00:00.000Z",
+                  properties: [{ id: VILLA.id, name: VILLA.name }],
+                },
+              ],
+            }),
+        });
+        renderAt("/app/settings");
+
+        // Midnight UTC = 08:00 in WITA. A deadline is the case where a bare day
+        // is ambiguous even when the day is right, so the clock is the point.
+        expect(await screen.findByText(/expires .*08[.:]00/)).toBeInTheDocument();
+      } finally {
+        process.env.TZ = tz;
+      }
+    });
+
     it("revokes a pending invite", async () => {
       const calls = stubFetch({
         ...baseStubs,

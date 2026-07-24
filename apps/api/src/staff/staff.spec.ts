@@ -189,6 +189,11 @@ describe('Staff invites and property-scoped RBAC', () => {
       expect(sent).toHaveLength(before + 1);
       expect(sent[before].to).toBe(email);
       expect(sent[before].text).toContain('Villa One');
+      // The deadline is a DURATION, never a calendar day (#188): an email has no
+      // reader to ask for a timezone, and the UTC day it used to print is
+      // yesterday for a recipient in WIB/WITA/WIT through the small hours.
+      expect(sent[before].text).toContain('expires in 7 days');
+      expect(sent[before].text).not.toMatch(/expires on \d{4}-\d{2}-\d{2}/);
       const token = tokenFromLastEmail(before);
 
       // Preview first - what /invite/:token renders before asking for a password.

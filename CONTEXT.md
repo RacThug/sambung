@@ -282,6 +282,22 @@ half); Export publishes Sambung's confirmed stays *out* as an .ics a Channel rea
 Guest's name or a price - a Channel needs only which nights are busy.
 _Avoid_: sync (for one direction - Sync is the whole pass), feed (for the act)
 
+### Time
+
+**Calendar Date**:
+A day as people name it - `2026-07-22` - carrying no time of day and no timezone. A Stay's check-in and
+check-out are Calendar Dates: 22 July is 22 July for the guest, the owner and the OTA alike, and it never
+becomes the 21st because someone is reading it further west.
+_Avoid_: date (unqualified, where a Moment is meant), timestamp
+
+**Moment**:
+A single point in time at which something happened or will: a Conflict first detected, an Invite expiring,
+a payment settling. Which Calendar Date a Moment falls on depends on who is asking - one Moment is 22 July
+in Bali and still 21 July in Los Angeles - so a Moment named as a bare day is ambiguous by construction.
+Sambung reads a Moment on the reader's own clock; where there is no reader to ask, as in an email, it
+names a duration ("in 7 days") rather than guess a day.
+_Avoid_: date, timestamp (both hide which of the two is meant), time
+
 ### Delivery
 
 **The Edge**:

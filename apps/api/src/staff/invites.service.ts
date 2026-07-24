@@ -140,7 +140,9 @@ export class InvitesService {
           invitedBy: view.invitedBy,
           propertyNames: view.propertyNames,
           acceptUrl: inviteAcceptUrl(this.webBaseUrl(), token),
-          expiresAt,
+          // The TTL, not `expiresAt` - an email cannot know the reader's zone,
+          // so it names a duration rather than a calendar day (#188).
+          expiresInDays: INVITE_TTL_DAYS,
         }),
       );
     } catch (err) {
