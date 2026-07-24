@@ -134,15 +134,32 @@ Every derived value still has an individual override (`SAMBUNG_E2E_DB`,
   the same nights and one would 409. So a new write-test must also claim a
   **unit + date-offset no other write-test uses**.
 - **Never wait on the real network.** No spec may spend an assertion's budget on
-  a resource we don't own - a DNS resolver, a third-party host, a wall clock.
-  Their duration is set by how busy the machine is, so the suite passes alone and
-  fails when two lanes run, which is how `retries: 0` starts lying. Outbound calls
-  are stubbed (`page.route` for the payment handoff) or made structurally
-  unnecessary: Flow 6 connects a **private-LAN** iCal URL, which the SSRF guard
-  refuses before opening a socket, reaching the same `error`-status branch with no
-  lookup at all. It used to use `example.invalid` and waited on NXDOMAIN - 96ms
-  when idle, but the smoke-fetch's full 8s ceiling once the machine was busy
-  enough to queue `getaddrinfo` (#194).
+  a resource we don't own - a DNS resolver, a third-party host. Their duration is
+  set by how busy the machine is, so the suite passes alone and fails when two
+  lanes run, which is how `retries: 0` starts lying. Outbound calls are stubbed
+  (`page.route` for the payment handoff) or made structurally unnecessary: Flow 6
+  connects a **private-LAN** iCal URL, which the SSRF guard refuses before opening
+  a socket, reaching the same `error`-status branch with no lookup at all. It used
+  to use `example.invalid` and waited on NXDOMAIN - 96ms when idle, but the
+  smoke-fetch's full 8s ceiling once the machine was busy enough to queue
+  `getaddrinfo` (#194).
+
+  This is about budgets that **depend on host speed**, not about elapsed time as
+  such. A fixed delay you inject into something you control is fine and sometimes
+  necessary: `auth-session.spec.ts` holds a **mocked** `/api/properties` route
+  open for 3s on purpose, because the window it needs to observe (cache RESET vs
+  merely invalidated, ADR-0034) is otherwise too short to see. That delay is the
+  same 3s on any machine. A DNS resolver's is not.
+
+  **Known cost, and why it is structural.** Flow 6 was the only place in the repo
+  where `HttpIcalFetcher` issued a real outbound `fetch`; after #194 nothing does,
+  so undici-level realities (`redirect: 'manual'` semantics, `AbortSignal.timeout`)
+  are asserted only against mocks in `ical-fetcher.spec.ts`. Do **not** "restore"
+  that coverage by poking a hole in the guard - the AC of #194 forbids it, and it
+  cannot work anyway: a test-controlled HTTP server must live on loopback, which
+  the guard blocks *by design* (ADR-0016). Real-outbound coverage is therefore
+  impossible in-repo without weakening the thing it would be testing around. The
+  old coverage was an accident of picking a public-shaped hostname, not a design.
 - **Locators: accessibility-first.** Prefer `getByRole` / `getByLabel` /
   `getByText` over CSS or `data-testid` - they assert what the user perceives and
   survive refactors. Reach for `data-testid` only when semantics are genuinely
