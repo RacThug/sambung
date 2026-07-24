@@ -82,7 +82,7 @@ talking and clicking: the machine is never the thing you are waiting for. Budget
 |---|---|---|
 | 1 | The owner adds a property | 60s |
 | 2 | The guest books and pays | 2m |
-| 3 | The dates block on an external calendar | 45s |
+| 3 | The dates block on an external calendar | 60s |
 | 4 | The double-sell that never happened | 60s (+20s if you also take the paid-but-lapsed payment) |
 
 ---
@@ -194,7 +194,7 @@ are about to talk over.
 
 ---
 
-## Act 3 - the dates block on an external calendar (45s)
+## Act 3 - the dates block on an external calendar (60s)
 
 12. Back in the **owner window**, open **`/app/calendar`**. The new booking is on the Cliff
     Suite row. Click the bar to open **`/app/bookings/<id>`**: guest, phone, email, total.
@@ -243,7 +243,17 @@ are about to talk over.
     guard declining to *fetch* a private address. So a `localhost` feed can be connected here.
     It simply never syncs.
 
-    > "The import runs every 30 minutes, or on demand. Each event gets its own savepoint, so
+15b. Don't wait for the cron. Back on **`/app/calendar`**, click **Sync now** in the top bar. It
+    pulls every feed you have connected and reports the result beside the button - something like
+    *"2 feeds checked · 1 erroring"*. The seed ships one placeholder Airbnb feed pointing at a
+    URL that doesn't resolve, so it reports as erroring on purpose: that is the unreachable-feed
+    handling doing its job, not a demo bug. The feed you connected in step 15 is swept in the
+    same click. (Each feed also has its own **Sync now** on the Channels panel, for retrying one
+    in place while you read its error - but from the calendar, one click sweeps them all.)
+
+    > "The import runs every 30 minutes so an owner never has to think about it - but the moment
+    > they change something on Airbnb, they don't want to wait fifteen minutes to see it here, so
+    > it also runs on demand. Same code path either way: each event gets its own savepoint, so
     > one bad event skips instead of killing the cycle, and a truncated feed is detected and
     > changes nothing rather than mass-cancelling real stays."
 
