@@ -188,7 +188,7 @@ describe('validateEnv', () => {
           STORAGE_PUBLIC_BASE_URL:
             'http://sambung-photos.web.garage.localhost:3902',
         }),
-      ).toThrow(/must be an https, non-loopback origin/);
+      ).toThrow(/must be an https, publicly reachable origin/);
     });
 
     // The shape the whole issue turns on: Garage on the VPS (architecture

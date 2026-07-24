@@ -1,4 +1,5 @@
-import { deploymentEvidence, isLoopbackHost } from './deployment-env';
+import { isPrivateHost } from './common/private-host';
+import { deploymentEvidence } from './deployment-env';
 
 /**
  * Boot-time env guard. Called from main.ts before the app is built so a
@@ -42,13 +43,13 @@ export function validateEnv(env: NodeJS.ProcessEnv): void {
   // the one way back.
   const because =
     `\n(This process is treated as a deployment because ${evidence}. A local ` +
-    'sandbox is proven by declaring only loopback browser-facing origins - see ' +
+    'sandbox is proven by declaring only private browser-facing origins - see ' +
     'deployment-env.ts, #193.)';
 
   const webBaseUrl = env.WEB_BASE_URL?.trim() ?? '';
   if (!webBaseUrl) {
     throw new Error(
-      'WEB_BASE_URL must be set in production: it is the trusted public origin the ' +
+      'WEB_BASE_URL must be set on a deployment: it is the trusted public origin the ' +
         'OG canonical (og:url) and the payment finish URL are built from. Without it ' +
         'those fall back to the spoofable request Host (#127). Set WEB_BASE_URL to the ' +
         'public site base, e.g. https://sambung.example' +
@@ -67,7 +68,7 @@ export function validateEnv(env: NodeJS.ProcessEnv): void {
   // fallback if R2 is unacceptable is Garage ON THE VPS (architecture §3.6),
   // where `http://localhost:3900` is the CORRECT production endpoint. The
   // public base has no such exception - it is browser-facing, so it can never
-  // be loopback, and on an https site a plain-http URL is blocked as mixed
+  // be private, and on an https site a plain-http URL is blocked as mixed
   // content before it is even fetched.
   const publicBase = env.STORAGE_PUBLIC_BASE_URL?.trim() ?? '';
   if (publicBase) {
@@ -76,14 +77,14 @@ export function validateEnv(env: NodeJS.ProcessEnv): void {
       parsed = new URL(publicBase);
     } catch {
       throw new Error(
-        `STORAGE_PUBLIC_BASE_URL is not a valid URL in production: "${publicBase}". ` +
+        `STORAGE_PUBLIC_BASE_URL is not a valid URL: "${publicBase}". ` +
           'It is the origin browsers load photos from, e.g. https://photos.sambung.example' +
           because,
       );
     }
-    if (parsed.protocol !== 'https:' || isLoopbackHost(parsed.hostname)) {
+    if (parsed.protocol !== 'https:' || isPrivateHost(parsed.hostname)) {
       throw new Error(
-        `STORAGE_PUBLIC_BASE_URL must be an https, non-loopback origin in production: ` +
+        `STORAGE_PUBLIC_BASE_URL must be an https, publicly reachable origin on a deployment: ` +
           `got "${publicBase}". This is the dev (Garage) default left in place - every photo ` +
           'on the live site would render broken, silently. Set it to the R2 bucket custom ' +
           'domain (or the https origin proxying Garage). See docs/r2-cutover.md' +
@@ -101,7 +102,7 @@ export function validateEnv(env: NodeJS.ProcessEnv): void {
   // STORAGE_BOOTSTRAP below.
   if (env.PAYMENT_GATEWAY?.trim() === 'fake') {
     throw new Error(
-      'PAYMENT_GATEWAY must not be "fake" in production: it binds the ' +
+      'PAYMENT_GATEWAY must not be "fake" on a deployment: it binds the ' +
         'signature-free FakePaymentGateway (an e2e-only seam, #167), so a prod ' +
         'process would accept fabricated payment events and confirm bookings for ' +
         'free. Unset it - production uses the real MidtransGateway.' +
@@ -121,7 +122,7 @@ export function validateEnv(env: NodeJS.ProcessEnv): void {
   // bucket's CORS to allow any origin - and that is the case #193 exists for.
   if (env.STORAGE_BOOTSTRAP?.trim() === 'true') {
     throw new Error(
-      'STORAGE_BOOTSTRAP must not be "true" in production: it is the dev-only Garage ' +
+      'STORAGE_BOOTSTRAP must not be "true" on a deployment: it is the dev-only Garage ' +
         'path (bucket CORS + website access on boot), and R2 supports neither call over ' +
         'the S3 API - it would fail as a mere warning while CORS is left unconfigured. ' +
         'Unset it and configure CORS in the R2 dashboard. See docs/r2-cutover.md' +

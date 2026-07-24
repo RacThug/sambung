@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { isPrivateHost } from '../common/private-host';
 
 /**
  * The outbound iCal boundary (api-spec §7.1 smoke test, §8.5 testing seam).
@@ -93,6 +94,12 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  * LITERALS, not a hostname that resolves to a private IP (DNS rebinding); a
  * per-connection token plus connect-time IP checks / a full egress allowlist are
  * the documented hardening path (ADR-0016).
+ *
+ * The list itself is `common/private-host.ts`, shared with `deployment-env`
+ * (#193) - one definition of "the public internet can reach this host", asked
+ * from opposite directions. Consolidating it fixed a gap here: `url.hostname`
+ * keeps an IPv6 literal's BRACKETS, so the old bare `::1` comparison never
+ * matched and `https://[::1]/x.ics` was fetched.
  */
 @Injectable()
 export class HttpIcalFetcher implements IcalFetcher {
@@ -145,7 +152,7 @@ export class HttpIcalFetcher implements IcalFetcher {
       if (current.protocol !== 'https:') {
         return { ok: false, error: 'Feed URL must be https' };
       }
-      if (isBlockedHost(current.hostname)) {
+      if (isPrivateHost(current.hostname)) {
         return { ok: false, error: 'Feed host is not allowed' };
       }
 
@@ -212,27 +219,4 @@ async function readBounded(res: Response, maxBytes: number): Promise<string> {
     await reader.cancel().catch(() => undefined);
   }
   return out;
-}
-
-/**
- * Block obvious internal targets. Covers loopback, link-local (incl. the cloud
- * metadata address 169.254.169.254), and the RFC-1918 private ranges as host
- * LITERALS. A hostname that resolves to a private IP at fetch time slips past
- * this - closing that needs DNS resolution + connect-time IP checks, out of scope
- * for v1 (ADR-0016).
- */
-function isBlockedHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  if (host === 'localhost' || host.endsWith('.localhost')) return true;
-  // IPv6 loopback / unspecified (URL keeps the brackets off hostname).
-  if (host === '::1' || host === '::') return true;
-  // IPv4 literals only - a name like `airbnb.com` has non-numeric labels.
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  if (!m) return false;
-  const [a, b] = [Number(m[1]), Number(m[2])];
-  if (a === 127 || a === 0 || a === 10) return true; // loopback / this-host / private
-  if (a === 169 && b === 254) return true; // link-local + metadata
-  if (a === 192 && b === 168) return true; // private
-  if (a === 172 && b >= 16 && b <= 31) return true; // private
-  return false;
 }

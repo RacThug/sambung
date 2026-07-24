@@ -15,12 +15,23 @@
  * local sandbox. The proof is the set of origins it declares that a GUEST'S
  * BROWSER is sent to - `WEB_BASE_URL` (the public site) and
  * `STORAGE_PUBLIC_BASE_URL` (where photos load from). If every one of them is
- * loopback, no stranger is being sent anywhere real and this is a sandbox. If
- * any names a public host, or none is declared at all, it is a deployment.
+ * PRIVATE (`common/private-host.ts`), no stranger is being sent anywhere real
+ * and this is a sandbox. If any names a publicly reachable host, or none is
+ * declared at all, it is a deployment.
  *
- * Why those two and nothing else:
+ * PRIVATE, NOT MERELY NON-LOOPBACK, and the LAN case is why (#193 review).
+ * Serving Vite on `http://192.168.1.20:5173` to open the funnel on a real phone
+ * over wifi is routine on a mobile-first product, and reading that as a
+ * deployment refused to boot the API outright. It is also simply untrue: a LAN
+ * address is not the public internet, this repo ALREADY says so in the SSRF
+ * guard (ADR-0016 refuses to fetch RFC-1918), and every harm these guards
+ * prevent needs public reachability - a LAN box cannot receive a Midtrans
+ * webhook, cannot take money, and is not visited by a link-preview crawler. So
+ * the two readings had to agree, and only one of them was right.
  *
- * - They are browser-facing, so on a real deployment they CANNOT be loopback -
+ * Why those two vars and nothing else:
+ *
+ * - They are browser-facing, so on a real deployment they CANNOT be private -
  *   a stranger's phone does not resolve `localhost`. That is the same reasoning
  *   `validate-env` already used to justify guarding `STORAGE_PUBLIC_BASE_URL`
  *   while leaving `STORAGE_ENDPOINT` alone; this reuses it as the switch.
@@ -41,12 +52,14 @@
  * copied `.env`, whereas where the guests are actually being sent does not.
  *
  * THE RESIDUE, stated rather than glossed: a deployment that declares only
- * loopback browser origins - a `.env.example` copied wholesale onto a VPS -
+ * private browser origins - a `.env.example` copied wholesale onto a VPS -
  * still looks local, because nothing distinguishes it from a laptop. What
  * changes is that it is no longer SILENT: that deployment serves a broken
  * `<img>` for every photo and sends payers back to `localhost`, on day one. The
  * guarantee is "either the guard fires, or the misconfiguration is loud".
  */
+
+import { isPrivateHost } from './common/private-host';
 
 /** Env vars naming an origin a guest's browser is sent to. */
 const BROWSER_FACING_ORIGIN_VARS = [
@@ -80,7 +93,7 @@ export function deploymentEvidence(env: NodeJS.ProcessEnv): string | null {
     return 'no browser-facing origin is declared, so nothing proves this is a local sandbox';
   }
 
-  const reachable = declared.find(({ url }) => !isLoopbackHost(url.hostname));
+  const reachable = declared.find(({ url }) => !isPrivateHost(url.hostname));
   return reachable
     ? `${reachable.name} names the public origin ${reachable.url.origin}`
     : null;
@@ -91,7 +104,7 @@ export function deploymentEvidence(env: NodeJS.ProcessEnv): string | null {
  *
  * `new URL` alone is not the test: it ACCEPTS `localhost:5173` (scheme
  * `localhost:`, empty hostname), the exact shape of a WEB_BASE_URL typed
- * without a scheme - and an empty hostname is not loopback, so a naive parse
+ * without a scheme - and an empty hostname is not private, so a naive parse
  * reads a developer's typo as a public origin. Require a real host and a
  * browser scheme.
  */
@@ -109,15 +122,4 @@ function parseBrowserOrigin(value: string): URL | undefined {
 /** True unless this process proved it is a local sandbox. See above. */
 export function isDeployment(env: NodeJS.ProcessEnv): boolean {
   return deploymentEvidence(env) !== null;
-}
-
-/** Loopback in any of its spellings, incl. IPv6 and the RFC-6761 .localhost TLD. */
-export function isLoopbackHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  return (
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    host === '::1' ||
-    /^127\./.test(host)
-  );
 }

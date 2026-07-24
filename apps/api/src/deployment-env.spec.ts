@@ -47,6 +47,37 @@ const SHAPES: {
     deployment: false,
   },
   {
+    // The routine mobile-first check: serve Vite on the LAN and open the funnel
+    // on a real phone. A LAN address is not the public internet, so this must
+    // stay a sandbox - it used to refuse to boot the API entirely.
+    what: 'dev served on the LAN, funnel opened on a phone over wifi',
+    env: {
+      WEB_BASE_URL: 'http://192.168.1.20:5173',
+      STORAGE_PUBLIC_BASE_URL: 'http://192.168.1.20:3902',
+      STORAGE_BOOTSTRAP: 'true',
+    },
+    deployment: false,
+  },
+  {
+    what: 'dev bound to the unspecified address / a Docker host alias',
+    env: {
+      WEB_BASE_URL: 'http://0.0.0.0:5173',
+      STORAGE_PUBLIC_BASE_URL: 'http://host.docker.internal:3902',
+    },
+    deployment: false,
+  },
+  {
+    // The one reachable false NEGATIVE before #193's review: an unanchored
+    // `/^127\./` matched this attacker-controlled NAME, which would have turned
+    // every guard AND the cookie's Secure flag off on a real deployment.
+    what: 'a public name merely PREFIXED with a loopback literal',
+    env: {
+      WEB_BASE_URL: 'http://127.0.0.1.evil.com',
+      STORAGE_PUBLIC_BASE_URL: 'http://127.0.0.1.evil.com',
+    },
+    deployment: true,
+  },
+  {
     what: 'prod on R2, NODE_ENV declared (docs/r2-cutover.md)',
     env: {
       NODE_ENV: 'production',
