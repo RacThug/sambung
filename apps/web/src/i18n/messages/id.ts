@@ -12,7 +12,7 @@ export const id: Messages = {
   "landing.getStarted": "Mulai",
   "landing.heroTitle": "Pemesanan langsung tanpa komisi untuk penginapan di Bali.",
   "landing.heroBody":
-    "Terima pembayaran langsung dan jaga setiap kalender OTA tetap sinkron lewat iCal - jadi kamar yang terjual di Airbnb tidak bisa terjual lagi di sini. Dibuat untuk pemilik vila yang lelah membayar komisi 15% ke kanal.",
+    "Terima pembayaran langsung dan jaga setiap kalender OTA tetap sinkron lewat iCal - jadi kamar yang terjual di Airbnb tidak bisa terjual lagi di sini. Kanal pemesanan milik Anda sendiri, berjalan berdampingan dengan kanal yang sudah Anda pakai.",
   "landing.viewDemo": "Lihat demo langsung",
   "landing.hardTitle": "Lima bagian tersulit",
   "landing.hardBody":

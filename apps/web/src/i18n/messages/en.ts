@@ -18,7 +18,7 @@ export const en = {
   "landing.getStarted": "Get started",
   "landing.heroTitle": "Commission-free direct bookings for Bali stays.",
   "landing.heroBody":
-    "Take payments directly and keep every OTA calendar in sync over iCal - so a room sold on Airbnb can't be sold again here. Built for the villa owner tired of paying 15% to a channel.",
+    "Take payments directly and keep every OTA calendar in sync over iCal - so a room sold on Airbnb can't be sold again here. Your own booking channel, running alongside the ones you already list on.",
   "landing.viewDemo": "View a live demo",
   "landing.hardTitle": "The five hard parts",
   "landing.hardBody":
