@@ -13,6 +13,7 @@ import {
   type CreateSeed,
 } from "./manual-booking-dialog";
 import { SourceLegend } from "./source-legend";
+import { SyncNowButton } from "./sync-now-button";
 import { useCalendarData } from "./use-calendar";
 import { PageHeader } from "@/components/page-header";
 
@@ -79,7 +80,7 @@ export function CalendarPage() {
 
   return (
     <section>
-      <PageHeader title="Calendar" />
+      <PageHeader title="Calendar" action={<SyncNowButton />} />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="text-lg font-semibold text-foreground">

@@ -127,6 +127,73 @@ describe("unified calendar page", () => {
     ).toBeInTheDocument();
   });
 
+  // --- Sync now (#201) -------------------------------------------------------
+
+  it("sweeps every feed on demand and reports what the pull did", async () => {
+    const calls = stubFetch({
+      "GET /api/properties": () => json([propertyResponse()]),
+      "GET /api/units": () => json([unitResponse()]),
+      [BOOKINGS_KEY]: () => json([bookingRow()]),
+      "POST /api/channels/sync": () =>
+        json({
+          feeds: 3,
+          errored: 1,
+          imported: 2,
+          cancelled: 0,
+          conflicts: 1,
+        }),
+    });
+    renderAt(CAL_URL);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Sync now/ }));
+
+    // ONE request for all feeds - not a loop in the browser over each connection.
+    expect(
+      (await screen.findByText(/3 feeds checked/)).textContent,
+    ).toMatch(/2 imported/);
+    // A clash is the one outcome that needs the owner elsewhere, so it says where.
+    expect(screen.getByText(/1 clashed - see Inbox/)).toBeInTheDocument();
+    expect(
+      calls.filter((c) => c.startsWith("POST /api/channels/sync")),
+    ).toHaveLength(1);
+  });
+
+  it("says so plainly when no OTA calendar is connected yet", async () => {
+    stubFetch({
+      "GET /api/properties": () => json([propertyResponse()]),
+      "GET /api/units": () => json([unitResponse()]),
+      [BOOKINGS_KEY]: () => json([bookingRow()]),
+      "POST /api/channels/sync": () =>
+        json({ feeds: 0, errored: 0, imported: 0, cancelled: 0, conflicts: 0 }),
+    });
+    renderAt(CAL_URL);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Sync now/ }));
+
+    // "0 imported" would be true and useless - the real answer is that there is
+    // nothing to sync yet, which is a different next action for the owner.
+    expect(
+      await screen.findByText("No OTA calendars connected yet."),
+    ).toBeInTheDocument();
+  });
+
+  it("reports a failed sweep instead of looking like it worked", async () => {
+    stubFetch({
+      "GET /api/properties": () => json([propertyResponse()]),
+      "GET /api/units": () => json([unitResponse()]),
+      [BOOKINGS_KEY]: () => json([bookingRow()]),
+      "POST /api/channels/sync": () =>
+        json({ statusCode: 500, error: "Internal Server Error" }, 500),
+    });
+    renderAt(CAL_URL);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Sync now/ }));
+
+    expect(
+      await screen.findByText("Sync failed. Please try again."),
+    ).toBeInTheDocument();
+  });
+
   it("links a booking bar to its detail page (#50)", async () => {
     stubFetch({
       "GET /api/properties": () => json([propertyResponse()]),

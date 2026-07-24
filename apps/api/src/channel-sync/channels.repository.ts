@@ -106,6 +106,24 @@ export class ChannelsRepository {
     );
   }
 
+  /**
+   * Every connection the CALLER can see, stable order (#201). No unit filter and
+   * no property filter: RLS answers "which ones" on both axes at once - the
+   * tenant, and for staff their assigned properties only (ADR-0032) - so the
+   * fan-out sync cannot reach a feed its caller could not open individually.
+   * The explicit `tenant_id` stays as the second layer, per invariant #2.
+   */
+  findAllVisible(): Promise<ChannelConnection[]> {
+    const tenantId = this.tenant.tenantId;
+    return this.db.run((tx) =>
+      tx
+        .select()
+        .from(channelConnection)
+        .where(eq(channelConnection.tenantId, tenantId))
+        .orderBy(asc(channelConnection.createdAt), asc(channelConnection.id)),
+    );
+  }
+
   async findById(id: string): Promise<ChannelConnection | null> {
     const tenantId = this.tenant.tenantId;
     const rows = await this.db.run((tx) =>

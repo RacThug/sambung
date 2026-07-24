@@ -11,6 +11,7 @@ import type {
   AvailabilityResponse,
   ChannelConnectionResponse,
   PropertyResponse,
+  SyncAllResponse,
   SyncConnectionResponse,
   UnitResponse,
 } from '@sambung/shared';
@@ -608,5 +609,142 @@ describe('iCal import (#56)', () => {
       .set('Authorization', `Bearer ${tokenA}`)
       .send({ timeZone: 'Mars/Olympus_Mons' })
       .expect(400);
+  });
+
+  // --- Sync ALL (api-spec §7.5, #201) --------------------------------------
+  // The calendar's button: one click sweeps every feed the caller can see, so an
+  // owner never waits out the 30-min cron and never tours their units to say so.
+
+  const syncAll = (token = tokenA) =>
+    request(server())
+      .post('/api/channels/sync')
+      .set('Authorization', `Bearer ${token}`);
+
+  describe('POST /channels/sync', () => {
+    /**
+     * Every case here runs as its OWN tenant. The totals are the point of this
+     * endpoint, and tenant A carries a connection per test from the whole file
+     * above - so a shared tenant makes an exact assertion impossible (the first
+     * draft read `errored: 16`, correctly: those feeds are no longer staged).
+     */
+    async function freshOwner(): Promise<string> {
+      const owner = await registerTenant('import-syncall');
+      createdTenantIds.push(owner.tenant.id);
+      return owner.accessToken;
+    }
+
+    it('pulls every connected feed and sums what happened', async () => {
+      const token = await freshOwner();
+      const one = await connectUnit(token);
+      const two = await connectUnit(token);
+      fake.setFeed(
+        one.feedUrl,
+        feedWith([
+          { uid: 'all-1', start: daysFromToday(40), end: daysFromToday(43) },
+        ]),
+      );
+      fake.setFeed(
+        two.feedUrl,
+        feedWith([
+          { uid: 'all-2', start: daysFromToday(45), end: daysFromToday(47) },
+        ]),
+      );
+
+      const body = bodyOf<SyncAllResponse>(await syncAll(token).expect(200));
+
+      // Both feeds pulled in ONE request, both bookings landed. Exact totals -
+      // this tenant has exactly the two connections the test made.
+      expect(body).toEqual({
+        feeds: 2,
+        errored: 0,
+        imported: 2,
+        cancelled: 0,
+        conflicts: 0,
+      });
+      expect(await importedBookings(one.connId)).toHaveLength(1);
+      expect(await importedBookings(two.connId)).toHaveLength(1);
+    });
+
+    it('counts a broken feed and still finishes the healthy ones', async () => {
+      const token = await freshOwner();
+      const healthy = await connectUnit(token);
+      const broken = await connectUnit(token);
+      fake.setFeed(
+        healthy.feedUrl,
+        feedWith([
+          { uid: 'mixed-ok', start: daysFromToday(50), end: daysFromToday(52) },
+        ]),
+      );
+      fake.setFeedError(broken.feedUrl, 'Feed is unreachable');
+
+      const body = bodyOf<SyncAllResponse>(await syncAll(token).expect(200));
+
+      // One dead OTA must not hide the results of the others, and must not fail
+      // the click: the healthy feed imported, the broken one is a number the
+      // owner can chase on the property workbench (which names WHICH feed).
+      expect(body).toEqual({
+        feeds: 2,
+        errored: 1,
+        imported: 1,
+        cancelled: 0,
+        conflicts: 0,
+      });
+      expect(await importedBookings(healthy.connId)).toHaveLength(1);
+      expect(await importedBookings(broken.connId)).toHaveLength(0);
+    });
+
+    it('never touches another tenant’s feeds', async () => {
+      const mineToken = await freshOwner();
+      const theirsToken = await freshOwner();
+      const mine = await connectUnit(mineToken);
+      const theirs = await connectUnit(theirsToken);
+      fake.setFeed(
+        mine.feedUrl,
+        feedWith([
+          { uid: 'iso-mine', start: daysFromToday(60), end: daysFromToday(62) },
+        ]),
+      );
+      fake.setFeed(
+        theirs.feedUrl,
+        feedWith([
+          {
+            uid: 'iso-theirs',
+            start: daysFromToday(60),
+            end: daysFromToday(62),
+          },
+        ]),
+      );
+      fake.calls.length = 0;
+
+      await syncAll(mineToken).expect(200);
+
+      // Not "B imported nothing" (which a shared UID could fake) but the stronger
+      // claim: B's URL was never fetched at all. Scope is RLS's answer, so a
+      // caller cannot reach a feed they could not open one at a time.
+      expect(fake.calls).toContain(mine.feedUrl);
+      expect(fake.calls).not.toContain(theirs.feedUrl);
+      expect(await importedBookings(theirs.connId)).toHaveLength(0);
+    });
+
+    it('answers cleanly for a tenant with no connections at all', async () => {
+      // Nothing wired: `feeds: 0` is a real answer ("connect an OTA first"), not
+      // an error and not an empty success that reads as "synced".
+      const body = bodyOf<SyncAllResponse>(
+        await syncAll(await freshOwner()).expect(200),
+      );
+      expect(body).toEqual({
+        feeds: 0,
+        errored: 0,
+        imported: 0,
+        cancelled: 0,
+        conflicts: 0,
+      });
+    });
+
+    it('refuses a body, like every other verb-subresource', async () => {
+      // #152: a route that reads no body says so, rather than accepting and
+      // ignoring one.
+      await syncAll().send({ unitId: 'nope' }).expect(400);
+    });
   });
 });

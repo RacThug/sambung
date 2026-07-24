@@ -14,6 +14,7 @@ import {
   type ChannelConnectionResponse,
   type CreateChannelConnectionRequest,
   type DisconnectChannelResponse,
+  type SyncAllResponse,
   type SyncConnectionResponse,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
@@ -65,6 +66,18 @@ export class ChannelsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<DisconnectChannelResponse> {
     return this.channels.disconnect(id);
+  }
+
+  // "Sync now" for EVERY feed the caller can see (api-spec §7.5, #201) - the
+  // calendar's button, so an owner need not visit each unit to escape the 30-min
+  // cron. Declared before `:id/sync` for readability; they cannot collide (one
+  // path segment versus two). Which feeds is RLS's answer, so there is nothing to
+  // pass and nothing to authorise beyond being signed in.
+  @Post('sync')
+  @HttpCode(200)
+  @NoBody()
+  syncAll(): Promise<SyncAllResponse> {
+    return this.channels.syncAll();
   }
 
   // "Sync now" (api-spec §7.3, #31/#56): force this connection's import off the

@@ -198,7 +198,8 @@ Grouped by module. Machine/edge routes (no page) are last. `api #n` points into 
 | `GET /units/:unitId/channels` | Connections + sync health for a Unit. | authed · scoped | api #29 |
 | `POST /units/:unitId/channels` | Connect an OTA iCal feed (smoke-fetched once). | authed · scoped | api #28 · ADR-0016 |
 | `DELETE /channels/:id` | Disconnect (keeps imported bookings; reports how many). | authed · scoped | api #30 |
-| `POST /channels/:id/sync` | Sync now. *(No FE consumer yet - the button is not wired.)* | authed · scoped | api #31 · ADR-0025 |
+| `POST /channels/:id/sync` | Sync now, one feed. | authed · scoped | api #31 · ADR-0025 |
+| `POST /channels/sync` | Sync now, every feed the caller can see. | authed · scoped | api #201 · ADR-0025 |
 | `GET /sync-conflicts` | The Sync-conflict inbox list. | authed · scoped | api #32 · ADR-0027 |
 | `POST /sync-conflicts/:id/dismiss` | Dismiss a conflict (the Owner's judgement). | authed · scoped | api #33 · ADR-0027 |
 
@@ -240,11 +241,11 @@ Each page → the endpoints it calls → the feature module behind it → the bo
 | `/register` | `POST /auth/register` | `auth/register-page.tsx` | - |
 | `/invite/$token` | `GET /auth/invites/token/:token` · `POST /auth/invites/accept` | `auth/accept-invite-page.tsx` | ADR-0033 · ADR-0034 |
 | `/app` (shell) | `POST /auth/refresh` · `POST /auth/logout` · `POST /auth/session` | `dashboard/{app-shell, workspace-switcher}`, `lib/auth` | ADR-0034 |
-| `/app/calendar` | `GET /properties` · `GET /units` · `GET /bookings` · `POST /bookings` | `calendar/*`, `calendar/manual-booking-dialog` | ADR-0010 · ADR-0011 |
+| `/app/calendar` | `GET /properties` · `GET /units` · `GET /bookings` · `POST /bookings` · `POST /channels/sync` | `calendar/*`, `calendar/manual-booking-dialog` | ADR-0010 · ADR-0011 · ADR-0025 |
 | `/app/reservations` | `GET /properties` · `GET /units` · `GET /bookings` · `GET /bookings/export.csv` | `reservations/*` | ADR-0010 |
 | `/app/inbox` | `GET /sync-conflicts` · `POST /sync-conflicts/:id/dismiss` · `GET /payments/lapsed` · `POST /payments/:id/handle` | `dashboard/inbox-page`, `channels/*`, `payments/*` | ADR-0027 · ADR-0022 |
 | `/app/properties` | `GET /properties` · `POST /properties` | `properties/properties-page.tsx` | ADR-0002 |
-| `/app/properties/$propertyId` | `GET/PATCH/DELETE /properties/:id` · `…/photos/presign` · `PATCH …/photos` · `POST …/archive`·`/unarchive` · `GET/POST /properties/:propertyId/units` · `PATCH/DELETE /units/:id` · `POST /units/:id/archive`·`/unarchive` · `GET/POST /units/:unitId/channels` · `DELETE /channels/:id` | `properties/{property-edit-page, photos-section, units-section, channels-section}` | ADR-0002 · ADR-0005 · ADR-0016 |
+| `/app/properties/$propertyId` | `GET/PATCH/DELETE /properties/:id` · `…/photos/presign` · `PATCH …/photos` · `POST …/archive`·`/unarchive` · `GET/POST /properties/:propertyId/units` · `PATCH/DELETE /units/:id` · `POST /units/:id/archive`·`/unarchive` · `GET/POST /units/:unitId/channels` · `DELETE /channels/:id` · `POST /channels/:id/sync` | `properties/{property-edit-page, photos-section, units-section, channels-section}` | ADR-0002 · ADR-0005 · ADR-0016 |
 | `/app/bookings/$bookingId` | `GET /bookings/:id` · `POST /bookings/:id/cancel` | `bookings/booking-detail-page.tsx` | ADR-0011 |
 | `/app/settings` | `GET/PATCH /settings` · `GET /staff` · `PATCH/DELETE /staff/:id` · `GET/POST/DELETE /auth/invites` | `settings/*`, `staff/team-section.tsx` | ADR-0030 · ADR-0032 · ADR-0033 |
 
@@ -254,7 +255,6 @@ Each page → the endpoints it calls → the feature module behind it → the bo
 - `GET /public/units/:id/calendar.ics` → a subscribed **OTA** (ADR-0016).
 - `GET /public/properties/:slug/og` → a link-preview **Crawler**, routed by the Edge (ADR-0019).
 - `GET /` · `GET /health` → liveness probes (no FE consumer; the SPA `/` is now the landing page and calls no API).
-- `POST /channels/:id/sync` → **no consumer yet** - "Sync now" runs on the 30-min cron; the manual button is unbuilt.
 - `GET /auth/me` → **no consumer** - the SPA restores a session through `refresh`, which already returns it.
 
 ---
