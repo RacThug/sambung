@@ -77,12 +77,26 @@ Every derived value still has an individual override (`SAMBUNG_E2E_DB`,
 > presigned URL, not CORS, is what authorises the write, and this is a localhost
 > dev bucket, so the widening costs nothing real here.
 >
-> It stays a **dev** policy by deploy discipline, not by construction: R2 rejects
+> It stays a **dev** policy by construction, not by deploy discipline: R2 rejects
 > this call over the S3 API anyway (production CORS is set in the Cloudflare
-> dashboard, `docs/r2-cutover.md`), but on the documented Garage-on-VPS fallback
-> the only thing holding it off is `validateEnv` refusing `STORAGE_BOOTSTRAP=true`
-> - which fires only when `NODE_ENV=production`, and nothing in this repo sets
-> that. Setting it is step one of the production env block.
+> dashboard, `docs/r2-cutover.md`), and on the documented Garage-on-VPS fallback
+> `validateEnv` refuses `STORAGE_BOOTSTRAP=true`. That refusal used to need
+> `NODE_ENV=production`, which nothing in this repo sets; since **#193** it fires
+> on any process that cannot prove it is a local sandbox - proof being that every
+> browser-facing origin it declares (`WEB_BASE_URL`, `STORAGE_PUBLIC_BASE_URL`) is
+> private, which is exactly what a lane declares and a *working* deployment
+> cannot. (A deployment *can* declare private origins; it just has broken photos
+> and a checkout that returns payers to `localhost`. That residue is stated in
+> `deployment-env.ts` rather than papered over.)
+>
+> One consequence worth knowing before it surprises you: point `WEB_BASE_URL` at a
+> **public** origin and the API refuses to boot until `STORAGE_BOOTSTRAP` is
+> commented out. The tunnel pass in
+> [`docs/og-verification.md`](../../docs/og-verification.md) is the one workflow
+> that does this - and if a tunnel URL is left behind in `apps/api/.env`, the next
+> `pnpm test:e2e` fails at API startup for that reason. Loud and correct, but it
+> reads as a harness fault, and it is not. A LAN address (`192.168.x.x`) is
+> private, so serving the funnel to a phone over wifi changes nothing.
 
 ---
 

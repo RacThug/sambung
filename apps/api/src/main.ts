@@ -7,9 +7,12 @@ import { AppModule } from './app.module';
 import { validateEnv } from './validate-env';
 
 async function bootstrap() {
-  // Fail fast on a security-relevant misconfiguration BEFORE building the app: in
-  // production WEB_BASE_URL must be set, or the OG canonical and payment finish
-  // URL fall back to the spoofable request Host (#127). No-op in dev/test.
+  // Fail fast on a security-relevant misconfiguration BEFORE building the app:
+  // on a deployment WEB_BASE_URL must be set, or the OG canonical and payment
+  // finish URL fall back to the spoofable request Host (#127). "A deployment"
+  // is derived from the browser-facing origins rather than NODE_ENV, which
+  // nothing in this repo sets (deployment-env.ts, #193) - so this is a no-op on
+  // any box whose declared origins are all loopback: dev, and every e2e lane.
   validateEnv(process.env);
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule);

@@ -1,7 +1,7 @@
 # ADR-0029: A cutover is verified by a probe, not by the test suite
 
 - **Date**: 2026-07-21
-- **Status**: Accepted
+- **Status**: Accepted (amended 2026-07-24 by #193 - see "Two production-only boot guards" below: the guards are no longer keyed on `NODE_ENV`)
 - **Issue**: #68 (deferred from #39)
 - **Builds on**: ADR-0017 (the orphaned-photo sweep, which is this decision's backstop), architecture §3.6 (S3-compatible storage, backend swapped by env)
 
@@ -34,6 +34,8 @@ Three parts.
 **2. Content-length is reported as a FINDING, not a failure.** It is the one answer that cannot be looked up, and either answer is safe to cut over on — so the probe measures it and `docs/r2-cutover.md` records it, rather than blocking.
 
 **3. Two production-only boot guards** in `validateEnv`: `STORAGE_PUBLIC_BASE_URL` must be https and non-loopback, and `STORAGE_BOOTSTRAP` must not be `true`.
+
+> **Amended 2026-07-24 (#193).** "Production-only" originally meant `NODE_ENV === 'production'` - a variable **nothing in this repo sets**, so both guards were inert on a real deployment unless an operator remembered one env var with no other visible effect. They now fire whenever the process cannot **prove** it is a local sandbox, the proof being that every browser-facing origin it declares (`WEB_BASE_URL`, `STORAGE_PUBLIC_BASE_URL`) is loopback. `NODE_ENV=production` remains sufficient but is no longer necessary. The asymmetry argued below - guard the browser-facing value, never `STORAGE_ENDPOINT` - is what made that derivation available: the same value that "can never be loopback in production" is also the one that says whether this *is* production.
 
 The manual residue — create bucket, add card, paste CORS JSON, bind custom domain — is irreducibly a human with a dashboard, and lives in `docs/r2-cutover.md` beside `deploy/Caddyfile` rather than in a closed issue.
 

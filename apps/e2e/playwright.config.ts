@@ -118,8 +118,11 @@ export default defineConfig({
       // PAYMENT_GATEWAY=fake binds the deterministic, signature-free
       // FakePaymentGateway (#167 part b), so a spec can drive a booking to
       // `confirmed` (fake webhook POST / reconcile-on-read) with no outbound
-      // Midtrans call. `nest start` does not set NODE_ENV=production, so
-      // validateEnv (which refuses `fake` only in prod) allows it here.
+      // Midtrans call. validateEnv refuses `fake` on anything but a proven
+      // local sandbox (#193), and allows it here because every browser-facing
+      // origin a lane declares - WEB_BASE_URL, STORAGE_PUBLIC_BASE_URL - is
+      // loopback. Point either at a public host and the API stops booting with
+      // this set: intended, and not something a lane can trip over.
       //
       // A lane deliberately does NOT pass WEB_ORIGIN. A browser photo upload
       // (Flow 2, #169) PUTs straight to Garage cross-origin, and Garage's bucket

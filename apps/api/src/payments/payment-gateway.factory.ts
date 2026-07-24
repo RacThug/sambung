@@ -16,10 +16,14 @@ import type { PaymentGateway } from './payment-gateway';
  * ("a fake wired into prod would be a foot-gun") and swapped it only in jest via
  * `.overrideProvider`. That mechanism cannot reach a REAL running API process -
  * which is exactly what Playwright boots - so a browser-drivable seam has to be an
- * env switch. The foot-gun ADR-0015 named is closed STRUCTURALLY, not by
- * discipline: `validateEnv` refuses to boot a production process with
- * `PAYMENT_GATEWAY=fake` (the same fail-fast shape ADR-0029 uses for
- * STORAGE_BOOTSTRAP). Only the literal `fake` selects the fake; every other value
+ * env switch. The foot-gun ADR-0015 named is closed by `validateEnv` refusing to
+ * boot with `PAYMENT_GATEWAY=fake` (the same fail-fast shape ADR-0029 uses for
+ * STORAGE_BOOTSTRAP). That refusal originally required `NODE_ENV=production`,
+ * which nothing in this repo sets - so the "structural, not discipline" claim
+ * rested on a variable an operator had to remember. Since #193 the guard fires
+ * whenever the process cannot prove it is a local sandbox (`deployment-env.ts`),
+ * so any box that sends a guest's browser to a public host refuses to boot with
+ * the fake bound. Only the literal `fake` selects the fake; every other value
  * (and unset) is the real gateway - fail safe, not fail open. Binding the fake is
  * announced with a WARN so an unexpected fake in any log is loud.
  *

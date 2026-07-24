@@ -66,7 +66,9 @@ R2 → your bucket → **Settings → CORS Policy → Add**:
 > `STORAGE_BOOTSTRAP` stays **unset** in prod. It is the dev-only Garage path
 > (`PutBucketCors` + `PutBucketWebsite` on boot), and R2 supports neither call
 > over the S3 API — it would fail as a mere log warning while CORS stayed
-> unconfigured. The API now **refuses to boot** in production if it is `true`.
+> unconfigured. The API **refuses to boot** with it `true` on anything it cannot
+> tell is a local sandbox (#193), so this holds whether or not `NODE_ENV` is set,
+> including on the Garage-on-VPS fallback, where the call really would succeed.
 
 ## 3. Enable public access (dashboard)
 
@@ -78,19 +80,23 @@ Then set `STORAGE_PUBLIC_BASE_URL` to that origin, **no trailing slash**.
 
 > The API never fetches this URL, so a wrong value has *no* server-side symptom
 > — it produces a broken `<img>` in a guest's browser and nothing else. The API
-> now refuses to boot in production if it is http or a loopback host (the
-> half-swapped-env case), and §4 fetches it for real.
+> refuses to boot on a deployment if it is http or a loopback host (the
+> half-swapped-env case), and §4 fetches it for real. It is also one of the two
+> values the app reads to know it *is* a deployment (#193).
 
 ## 4. Point the env at R2 and run the probe
 
 In the VPS env (never the repo — invariant: prod secrets live only there):
 
 ```dotenv
-# Set this FIRST. EVERY production guard in validate-env.ts is gated on it, and
-# nothing in this repo sets it for you - `start:prod` is a bare `node dist/main`
-# and there is no Dockerfile. Without it a prod process keeps dev behaviour
-# silently, including honouring STORAGE_BOOTSTRAP - which on the documented
-# Garage-on-VPS fallback would really rewrite the live bucket's CORS on boot.
+# Still set this - but forgetting it is no longer fatal (#193). Every guard in
+# validate-env.ts used to be gated on it while nothing in this repo set it
+# (`start:prod` is a bare `node dist/main`; there is no Dockerfile), so a prod
+# process silently kept dev behaviour. The guards now recognise a deployment from
+# WEB_BASE_URL / STORAGE_PUBLIC_BASE_URL naming a publicly reachable host, which
+# they must on any WORKING deployment (loopback or a LAN address there is not a
+# deployment the app can serve - broken photos, checkout returning to localhost).
+# NODE_ENV stays the conventional declaration.
 NODE_ENV="production"
 STORAGE_ENDPOINT="https://<account-id>.r2.cloudflarestorage.com"
 STORAGE_REGION="auto"

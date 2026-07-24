@@ -90,6 +90,16 @@ describe('HttpIcalFetcher', () => {
       'https://10.0.0.5/x.ics',
       'https://192.168.1.1/x.ics',
       'https://172.16.0.9/x.ics',
+      // IPv6. `url.hostname` keeps the BRACKETS (measured), so a guard
+      // comparing against a bare `::1` never matched and these were fetched
+      // (#193 review, found while consolidating the predicate).
+      'https://[::1]/x.ics',
+      'https://[::]/x.ics',
+      'https://[fe80::1]/x.ics', // link-local
+      'https://[fd00::1]/x.ics', // unique local
+      // Private-use special names (ICANN `.internal`, mDNS `.local`).
+      'https://host.docker.internal/x.ics',
+      'https://nas.local/x.ics',
     ]) {
       const r = await fetcher.probe(url);
       expect(r.ok).toBe(false);
