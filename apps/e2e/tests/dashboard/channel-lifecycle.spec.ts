@@ -16,10 +16,11 @@ import { futureIso, uniqueName } from "../../lib/helpers";
  * so the pooled owner cookie would make registration impossible.
  *
  * Four scenarios, one lifecycle, one login:
- *   1. Connect a reachable-shaped but UNREACHABLE feed -> it still connects, with
- *      `error` status (a down feed is a legible problem, not a failed request).
- *      Deterministic with no network fixture: `example.invalid` is a reserved TLD
- *      (RFC 6761) that never resolves, so the smoke-fetch fails fast.
+ *   1. Connect a feed the server CANNOT fetch -> it still connects, with `error`
+ *      status (a down feed is a legible problem, not a failed request), and the
+ *      reason is shown. Deterministic with no network fixture and no clock: the
+ *      URL is a private-LAN address, which the SSRF guard refuses BEFORE opening
+ *      a socket (ADR-0016). See the connect step for why that is the same branch.
  *   2. The export `.ics` is valid RFC-5545 for the Unit's confirmed bookings and
  *      carries NO PII - proven load-bearing by first booking a walk-in that DOES
  *      carry a name/phone/email/price, then asserting none of it reaches the feed
@@ -59,7 +60,14 @@ test.describe("owner dashboard: channel connection lifecycle", () => {
     const windowFrom = futureIso(59);
     const windowTo = futureIso(63);
 
-    const icalFeedUrl = "https://example.invalid/cal.ics";
+    // A feed the server cannot fetch. A private-LAN address is what an owner
+    // plausibly pastes (a NAS, a router-hosted file) - and the SSRF guard refuses
+    // it by host LITERAL, with no DNS lookup and no connection attempt (#194).
+    const icalFeedUrl = "https://192.168.1.50/calendar.ics";
+    // The server's own reason for that refusal, rendered verbatim by the panel.
+    // Source of truth: HttpIcalFetcher's blocked-host branch (apps/api), pinned
+    // there by ical-fetcher.spec.ts so a reword fails in jest first.
+    const icalRefusalReason = "Feed host is not allowed";
 
     // --- Isolation: register our OWN owner + tenant (page-spec §3.4, FR-AUTH-1).
     await page.goto("/register");
@@ -131,9 +139,24 @@ test.describe("owner dashboard: channel connection lifecycle", () => {
     // so "Connect" never also matches the "Disconnect" a live connection renders.
     await page.getByLabel("iCal URL").fill(icalFeedUrl);
     await page.getByRole("button", { name: "Connect", exact: true }).click();
-    // `example.invalid` never resolves, so the smoke-fetch fails and the row lands
-    // with the error status - the connection is created regardless (SYNC-3).
-    await expect(page.getByText("Sync error")).toBeVisible({ timeout: 20_000 });
+    // The smoke-fetch fails and the row lands with the error status - the
+    // connection is created regardless (SYNC-3).
+    //
+    // WHY a blocked host rather than an unresolvable name (#194): `probe` is
+    // documented to never throw - an unfetchable feed is a VALUE, `{ok: false}` -
+    // and `connect` maps ANY `ok: false` to `lastStatus: 'error'` with the row
+    // created. The guard's refusal IS that value, so this is the same branch,
+    // reached with no DNS lookup, no socket and no timeout. The previous URL
+    // (`example.invalid`) had to wait for the HOST's resolver to give up: measured
+    // at 96ms idle but the smoke-fetch's full 8s ceiling whenever the machine was
+    // busy enough to queue `getaddrinfo`, which blew this assertion's budget when
+    // two lanes ran at once. Nothing here waits on a resource we don't own.
+    await expect(page.getByText("Sync error")).toBeVisible();
+    // ...and the owner is told WHY. This also keeps the guard honest: weaken the
+    // private-host block and the server would really dial 192.168.1.50, the reason
+    // would become "Feed is unreachable", and this line goes red (the badge alone
+    // would not - it would just get slow again).
+    await expect(page.getByText(icalRefusalReason)).toBeVisible();
 
     // === Scenario 2: the export `.ics` is valid RFC-5545 and PII-free (SYNC-2).
     // Public feed - no auth (the unguessable unit id is the capability, ADR-0016),
