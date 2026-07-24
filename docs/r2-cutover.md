@@ -133,11 +133,11 @@ Two things the CORS probe will tell you that are worth reading carefully:
   bucket is shared by every dev/e2e stack and an origin-per-boot policy let the
   last API to start lock the others out of their own uploads (#182). Against
   **R2 it means the pasted policy is `["*"]`** where it should name the site
-  origin — worth fixing in the dashboard, even though the probe passes.
+  origin - worth fixing in the dashboard, even though the probe passes.
 
 > Do not read the wildcard line as proof that a policy was applied. The verdict
 > reads the preflight **status** as well as the header, so a wrong-origin policy
-> and no policy at all both **FAIL** — but until the #182 review they did not:
+> and no policy at all both **FAIL** - but until the #182 review they did not:
 > Garage attaches `access-control-allow-origin: *` to its 403 refusals, so all
 > three states printed the same `[PASS] … WILDCARD` line. If you are reading an
 > older transcript, that line proves nothing about the bucket.
