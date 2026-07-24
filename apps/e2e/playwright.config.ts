@@ -66,13 +66,19 @@ export default defineConfig({
     },
 
     // The same funnel on Mobile Safari / WebKit - real iOS guests (the README's
-    // first expansion). Scoped to the READ specs only: the checkout-payment spec
-    // WRITES a hold, and running the same write on two engines in parallel would
-    // make both contend for the same nights (the unique-(unit, offset) rule). The
-    // payment handoff is engine-agnostic, so chromium alone covers it.
+    // first expansion). Scoped to the READ specs only, and the rule is about
+    // WRITES, not about which spec: checkout-payment and guest-booking both
+    // create a hold, and running the same write on two engines in parallel would
+    // make both contend for the same nights (the unique-(unit, offset) rule), so
+    // both stay chromium-only - the payment handoff is engine-agnostic anyway.
+    //
+    // i18n-persistence is listed EXPLICITLY because `i18n` does not match it:
+    // the alternation is followed by `\.spec\.ts`, so "i18n" fails on the "-" in
+    // "i18n-persistence.spec.ts". It belongs here more than most - localStorage
+    // is precisely where WebKit diverges, and that spec is what asserts it.
     {
       name: "funnel-mobile-safari",
-      testMatch: /tests\/funnel\/(availability|i18n)\.spec\.ts/,
+      testMatch: /tests\/funnel\/(availability|i18n-persistence|i18n)\.spec\.ts/,
       use: { ...devices["iPhone 13"] },
     },
 

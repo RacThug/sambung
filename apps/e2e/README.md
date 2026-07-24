@@ -187,9 +187,18 @@ fixtures/
 lib/
   helpers.ts        futureIso(), uniqueName()
 tests/
-  funnel/           availability -> checkout · i18n switch · checkout-payment (stubbed)
+  funnel/           availability -> checkout · i18n (the switch re-renders)
+                    i18n-persistence (the choice survives a document load)
+                    checkout-payment (stubbed handoff) · guest-booking (Flow 1:
+                    book -> pay -> confirmed, incl. the localized 409)
   dashboard/        manual-booking (owner walk-in) · staff-scope (RBAC)
-                    inbox (operations inbox: dismiss / handle, serial)
+                    property-onboarding (Flow 2: register -> photo -> publishable)
+                    calendar-booking-ops (Flow 3: walk-in / block / cancel / 409)
+                    reservations (Flow 4: URL filters + CSV export)
+                    staff-invite-scope (Flow 5: invite -> accept -> 404-not-403)
+                    channel-lifecycle (Flow 6: connect / export .ics / disconnect)
+                    inbox (Flow 7: dismiss / handle, serial)
+                    auth-session (Flow 8: guard, refresh, logout, workspace switch)
 playwright.config.ts
 ```
 
