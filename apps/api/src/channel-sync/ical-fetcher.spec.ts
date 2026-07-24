@@ -93,9 +93,24 @@ describe('HttpIcalFetcher', () => {
     ]) {
       const r = await fetcher.probe(url);
       expect(r.ok).toBe(false);
-      expect(r.error).toMatch(/not allowed/i);
+      // The EXACT string, not a pattern: the e2e channel-lifecycle flow renders
+      // and asserts it (#194), and jest is the fast place for a reword to fail.
+      expect(r.error).toBe('Feed host is not allowed');
     }
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  // The property #194's e2e flow leans on: a blocked host is refused as a VALUE,
+  // in bounded time, with ZERO network I/O - so that flow's `error` status never
+  // waits on the host's DNS resolver. `not.toHaveBeenCalled()` above is the
+  // zero-I/O half; this is the "and it does not await anything" half.
+  it('refuses a blocked host without ever awaiting the network', async () => {
+    // A fetch that never settles: reaching it would hang this test forever, so
+    // resolving at all proves the guard answered before dialling.
+    global.fetch = jest.fn().mockReturnValue(new Promise(() => undefined));
+    await expect(
+      fetcher.probe('https://192.168.1.50/calendar.ics'),
+    ).resolves.toEqual({ ok: false, error: 'Feed host is not allowed' });
   });
 
   it('reports error when the feed is unreachable', async () => {
