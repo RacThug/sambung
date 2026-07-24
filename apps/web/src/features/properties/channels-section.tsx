@@ -10,6 +10,7 @@ import {
   type CreateChannelConnectionRequest,
   type DisconnectChannelResponse,
   type PropertyResponse,
+  type SyncConnectionResponse,
   type SyncStatus,
   type UnitResponse,
 } from "@sambung/shared";
@@ -194,6 +195,29 @@ function ConnectionRow({
   const queryClient = useQueryClient();
   const [kept, setKept] = useState<number | null>(null);
 
+  /**
+   * "Sync now" for THIS feed (#201). The calendar has a button that sweeps every
+   * feed at once; this one exists because when a feed is erroring, the owner is
+   * already here reading `lastError` and needs to retry the one they just fixed -
+   * and the answer they need ("still unreachable") is per-feed, not a total.
+   *
+   * Invalidates the connection list (its `lastStatus`/`lastSyncedAt` just moved)
+   * plus bookings and conflicts, the two things a successful pull can change.
+   */
+  const sync = useMutation({
+    mutationFn: () =>
+      api.post<SyncConnectionResponse>(`/channels/${conn.id}/sync`),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["units", unitId, "channels"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["bookings"] }),
+        queryClient.invalidateQueries({ queryKey: ["sync-conflicts"] }),
+      ]);
+    },
+  });
+
   const disconnect = useMutation({
     mutationFn: () =>
       api.delete<DisconnectChannelResponse>(`/channels/${conn.id}`),
@@ -235,6 +259,16 @@ function ConnectionRow({
           )}
         </div>
         {!readOnly && (
+          <div className="flex items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={sync.isPending}
+              onClick={() => sync.mutate()}
+            >
+              {sync.isPending ? "Syncing…" : "Sync now"}
+            </Button>
           <Button
             type="button"
             variant="ghost"
@@ -253,6 +287,7 @@ function ConnectionRow({
           >
             {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
           </Button>
+          </div>
         )}
       </div>
       <p className="mt-1 break-all text-xs text-muted-foreground">
@@ -270,6 +305,21 @@ function ConnectionRow({
       {disconnect.isError && (
         <p className="mt-1 text-xs text-destructive">
           Disconnect failed - please try again.
+        </p>
+      )}
+      {/* What THIS pull did. A healthy feed with 0 imported is the common case and
+          says so, rather than leaving the owner unsure the click landed. The
+          badge above carries the health; this line carries the outcome. */}
+      {sync.isSuccess && sync.data && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Synced. {sync.data.imported} imported
+          {sync.data.cancelled > 0 && `, ${sync.data.cancelled} cancelled`}
+          {sync.data.conflicts > 0 && `, ${sync.data.conflicts} clashed`}.
+        </p>
+      )}
+      {sync.isError && (
+        <p className="mt-1 text-xs text-destructive">
+          Sync failed - please try again.
         </p>
       )}
     </li>

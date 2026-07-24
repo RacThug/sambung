@@ -141,3 +141,28 @@ export const syncConnectionResponseSchema = z.object({
 export type SyncConnectionResponse = z.infer<
   typeof syncConnectionResponseSchema
 >;
+
+/**
+ * The 200 for `POST /channels/sync` - "Sync now" for every feed the caller can
+ * see, from the calendar (api-spec §7.5). Same synchronous pull as the
+ * per-connection route above (ADR-0025: no queue on one VPS), just fanned over
+ * the caller's connections, so this is a SUM rather than one feed's health.
+ *
+ * `feeds` is how many were attempted, and it is reported rather than derived so
+ * "nothing happened" can be told apart from "nothing to do": `feeds: 0` means no
+ * OTA calendar is connected yet, while `feeds: 3, imported: 0` means three healthy
+ * feeds had nothing new. `errored` counts feeds that came back unhealthy - the
+ * owner still needs to know WHICH, so the per-feed status on the property
+ * workbench stays the place that answers that.
+ *
+ * Scope note: "every feed the caller can see" is RLS's answer, not a parameter -
+ * for staff, that is their assigned properties only (ADR-0032's second axis).
+ */
+export const syncAllResponseSchema = z.object({
+  feeds: z.number().int().nonnegative(),
+  errored: z.number().int().nonnegative(),
+  imported: z.number().int().nonnegative(),
+  cancelled: z.number().int().nonnegative(),
+  conflicts: z.number().int().nonnegative(),
+});
+export type SyncAllResponse = z.infer<typeof syncAllResponseSchema>;

@@ -1,10 +1,12 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   channelConnectionResponseSchema,
+  syncAllResponseSchema,
   syncConnectionResponseSchema,
   type ChannelConnectionResponse,
   type CreateChannelConnectionRequest,
   type DisconnectChannelResponse,
+  type SyncAllResponse,
   type SyncConnectionResponse,
 } from '@sambung/shared';
 import type { ChannelConnection } from '@sambung/db';
@@ -25,6 +27,8 @@ import { IcalImportService } from './ical-import.service';
  */
 @Injectable()
 export class ChannelsService {
+  private readonly logger = new Logger(ChannelsService.name);
+
   constructor(
     private readonly repo: ChannelsRepository,
     private readonly db: TenantDbService,
@@ -132,6 +136,53 @@ export class ChannelsService {
       cancelled: outcome.cancelled,
       conflicts: outcome.conflicts,
     });
+  }
+
+  /**
+   * "Sync now" for every feed the caller can see (api-spec §7.5, #201) - the
+   * calendar's version of the button above, for an owner who does not want to
+   * wait out the 30-min cron and should not have to visit each unit to say so.
+   *
+   * Reuses `syncConnection` per feed rather than growing a second import path:
+   * one definition of what a sync IS (ADR-0025), so the fan-out cannot drift from
+   * the cron or from the per-feed button. Which feeds is RLS's answer (see
+   * `findAllVisible`), never a parameter - a caller cannot name someone else's.
+   *
+   * SEQUENTIAL, deliberately. Each pull is an outbound fetch of a third party's
+   * .ics; firing N at once turns one owner's click into a burst against Airbnb
+   * and buys nothing a villa-sized account can feel. It also keeps the summary
+   * honest: a feed that throws is COUNTED as errored and the loop continues, so
+   * one dead OTA cannot hide the results of the others - the same "a doubtful
+   * feed changes nothing, the cycle survives" bias as the import itself.
+   */
+  async syncAll(): Promise<SyncAllResponse> {
+    const connections = await this.repo.findAllVisible();
+    const total = {
+      feeds: connections.length,
+      errored: 0,
+      imported: 0,
+      cancelled: 0,
+      conflicts: 0,
+    };
+
+    for (const conn of connections) {
+      try {
+        const outcome = await this.importer.syncConnection(conn);
+        if (outcome.status === 'error') total.errored += 1;
+        total.imported += outcome.imported;
+        total.cancelled += outcome.cancelled;
+        total.conflicts += outcome.conflicts;
+      } catch (err) {
+        // syncConnection already records `last_status`/`last_error` on the row, so
+        // the property workbench can say WHICH feed and WHY. Here it is one number
+        // and a log line - never a 500, or one bad feed would fail the whole click.
+        total.errored += 1;
+        this.logger.error(
+          `Sync-all: connection ${conn.id} threw: ${String(err)}`,
+        );
+      }
+    }
+    return syncAllResponseSchema.parse(total);
   }
 
   private toResponse(

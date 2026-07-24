@@ -180,6 +180,61 @@ describe("channels section (§4.5, #55)", () => {
     );
   });
 
+  it("retries one feed on demand and reports what that pull did (#201)", async () => {
+    const conn = channelConnectionResponse();
+    const calls = stubEditPage(
+      {
+        [`POST /api/channels/${conn.id}/sync`]: () =>
+          json({
+            lastStatus: "ok",
+            lastSyncedAt: "2027-03-01T02:00:00.000Z",
+            lastError: null,
+            imported: 2,
+            cancelled: 1,
+            conflicts: 0,
+          }),
+      },
+      [conn],
+    );
+    renderAt(editUrl);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Sync now" }));
+
+    // Per-feed, not the calendar's total: this is the view an owner is on when a
+    // feed is erroring, so the answer has to be about THIS feed.
+    expect(
+      await screen.findByText(/2 imported, 1 cancelled/),
+    ).toBeInTheDocument();
+    expect(
+      calls.filter((c) => c.startsWith(`POST /api/channels/${conn.id}/sync`)),
+    ).toHaveLength(1);
+    // The list is refetched, because lastStatus/lastSyncedAt just moved.
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c.startsWith(`GET /api/units/${unitId}/channels`))
+          .length,
+      ).toBeGreaterThan(1),
+    );
+  });
+
+  it("hides Sync now on an archived unit, like every other write", async () => {
+    // Read-only means read-only: an archived unit keeps serving its export feed
+    // (ADR-0016) but offers no button that would write.
+    stubFetch({
+      [`GET /api/properties/${propertyId}`]: () => json(propertyResponse()),
+      [`GET /api/properties/${propertyId}/units`]: () =>
+        json([unitResponse({ archivedAt: "2027-01-01T00:00:00.000Z" })]),
+      [`GET /api/units/${unitId}/channels`]: () =>
+        json([channelConnectionResponse()]),
+    });
+    renderAt(editUrl);
+
+    expect(await screen.findByText(/Export calendar/)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Sync now" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not disconnect when the confirm is dismissed", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
     const conn = channelConnectionResponse();
