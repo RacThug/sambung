@@ -34,8 +34,11 @@ export function SettingsPage() {
 
       <div className="mt-6 rounded-lg border border-border bg-card p-6">
         <h2 className="text-lg font-semibold">Photos</h2>
+        {/* Muted, not destructive: a failed read is not a refused action
+            (divergence D8, design-system §2). The save error below stays
+            destructive, because that one IS a refusal. */}
         {query.isError && (
-          <p className="mt-2 text-sm text-destructive">
+          <p className="mt-2 text-sm text-muted-foreground">
             We couldn’t load your settings. Please try again.
           </p>
         )}

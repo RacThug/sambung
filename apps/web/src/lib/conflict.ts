@@ -5,6 +5,7 @@ import {
   type InviteRefusalReason,
 } from "@sambung/shared";
 import { ApiError } from "./api-client";
+import { primaryRefusalReason } from "./refusal";
 
 /**
  * The web's half of the 409 contract (#82, api-spec §8.2).
@@ -71,22 +72,25 @@ export function describeConflict(body: ConflictBody): string {
 }
 
 /**
- * One sentence for a blocked stay, chosen by the most decisive reason. A dead
- * unit (archived / unavailable) sends the user elsewhere, so it wins over an
- * overlap ("try other dates"); capacity and min-stay are the owner's policy.
- * Finer branching (re-quote vs back-to-search) is the caller's to do off
- * `body.reasons`; this is the readable fallback.
+ * One sentence for a blocked stay, chosen by the most decisive reason. The RANKING
+ * is shared with the funnel's localized twin (`lib/refusal.ts`) so the two cannot
+ * disagree about which reason leads; only the words are ours. Finer branching
+ * (re-quote vs back-to-search) is the caller's to do off `body.reasons`.
  */
 function describeRefusal(reasons: readonly BookingRefusalReason[]): string {
-  if (reasons.includes("archived") || reasons.includes("unavailable"))
-    return "This unit is no longer available for new bookings.";
-  if (reasons.includes("overlap"))
-    return "Those dates were just taken. Refresh and try again.";
-  if (reasons.includes("max_guests"))
-    return "That's more guests than this unit can host.";
-  if (reasons.includes("min_stay"))
-    return "That stay is shorter than this unit's minimum.";
-  return "Those dates can't be booked.";
+  switch (primaryRefusalReason(reasons)) {
+    case "archived":
+    case "unavailable":
+      return "This unit is no longer available for new bookings.";
+    case "overlap":
+      return "Those dates were just taken. Refresh and try again.";
+    case "max_guests":
+      return "That's more guests than this unit can host.";
+    case "min_stay":
+      return "That stay is shorter than this unit's minimum.";
+    default:
+      return "Those dates can't be booked.";
+  }
 }
 
 /**

@@ -45,12 +45,22 @@ export function LoginPage() {
   }
 
   // 401 is "wrong email or password" - never say which (no account oracle).
+  //
+  // 403 is a DIFFERENT answer and needs different words: the password was correct
+  // and the account holds no memberships, because every seat was removed (api-spec
+  // §3.2). It is not an oracle - only a correct password reaches it - and the whole
+  // reason the API distinguishes it is so the person is not sent to reset a
+  // password that already works. Until now the page collapsed it into the generic
+  // line and threw that distinction away.
+  const status = login.error instanceof ApiError ? login.error.status : null;
   const submitError =
-    login.error instanceof ApiError && login.error.status === 401
+    status === 401
       ? t("auth.invalidCredentials")
-      : login.error
-        ? t("auth.genericError")
-        : null;
+      : status === 403
+        ? t("auth.noWorkspace")
+        : login.error
+          ? t("auth.genericError")
+          : null;
 
   return (
     <main className="mx-auto max-w-sm p-8">

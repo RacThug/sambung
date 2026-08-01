@@ -46,6 +46,11 @@ const unit = (over: Partial<UnitResponse> = {}): UnitResponse => ({
   maxGuests: 2,
   minStay: 1,
   archivedAt: null,
+  // Effective-archived is the SERVER's answer now (ADR-0005), so a fixture has to
+  // state it. Defaulting it from the unit's own flag keeps the common case honest;
+  // an explicit `archived: true` with `archivedAt: null` is how you model the case
+  // the two fields exist to tell apart - a live unit under a retired property.
+  archived: Boolean(over.archivedAt),
   createdAt: "2026-01-01T00:00:00Z",
   ...over,
 });
@@ -187,7 +192,9 @@ describe("buildCalendar", () => {
   it("treats a unit under an archived property as effectively archived", () => {
     const groups = buildCalendar({
       properties: [prop({ id: "p1", archivedAt: "2026-07-01T00:00:00Z" })],
-      units: [unit({ id: "u1", propertyId: "p1", archivedAt: null })],
+      // The server reports it archived (its property is), while its OWN flag is
+      // null - exactly the divergence `archived` vs `archivedAt` encodes.
+      units: [unit({ id: "u1", propertyId: "p1", archivedAt: null, archived: true })],
       bookings: [], // empty + effectively archived -> dropped
     });
     expect(groups).toEqual([]);
@@ -204,7 +211,8 @@ describe("buildCalendar", () => {
       units: [
         unit({ id: "uB", propertyId: "pB", name: "b" }),
         unit({ id: "uA", propertyId: "pA", name: "a" }),
-        unit({ id: "uZ", propertyId: "pEmpty", name: "z" }), // archived+empty -> gone
+        // Under the archived "Zeta": server-derived archived, own flag null.
+        unit({ id: "uZ", propertyId: "pEmpty", name: "z", archived: true }),
       ],
       bookings: [],
     });

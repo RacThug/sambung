@@ -8,7 +8,7 @@ import {
 import type { Unit } from '@sambung/db';
 import { unitHasBookings } from '../common/db-error/conflicts';
 import { TenantDbService } from '../db/tenant-db.service';
-import { UnitsRepository } from './units.repository';
+import { UnitsRepository, type UnitRow } from './units.repository';
 
 @Injectable()
 export class UnitsService {
@@ -26,8 +26,9 @@ export class UnitsService {
   /**
    * Every Unit in the tenant, flat (GET /units, #49). No ownership check to run:
    * the query names no id the caller must own - RLS + the tenant_id WHERE already
-   * confine it to their own Units. Each carries its own `archivedAt`; the calendar
-   * derives effective-archived by joining with GET /properties (ADR-0010).
+   * confine it to their own Units. Each row carries BOTH its own `archivedAt` and
+   * the derived effective `archived` (ADR-0005) - the calendar used to compute the
+   * second from the first plus GET /properties, in three places.
    */
   async listAll(): Promise<UnitResponse[]> {
     const rows = await this.repo.findAll();
@@ -147,7 +148,7 @@ export class UnitsService {
    * Tenant-scoped fetch; 404 (not 403) when the id is unknown OR belongs to
    * another tenant - existence is hidden. (api-spec §1 tenancy)
    */
-  private async getOwnedOrThrow(id: string): Promise<Unit> {
+  private async getOwnedOrThrow(id: string): Promise<UnitRow> {
     const row = await this.repo.findById(id);
     if (!row) {
       throw new NotFoundException('Unit not found');
@@ -155,10 +156,13 @@ export class UnitsService {
     return row;
   }
 
-  private toResponse(row: Unit): UnitResponse {
-    const { basePriceIdr, createdAt, archivedAt, ...columns } = row;
+  private toResponse(row: UnitRow): UnitResponse {
+    const { basePriceIdr, createdAt, archivedAt, archived, ...columns } = row;
     return {
       ...columns,
+      // Effective-archived, derived in the join (ADR-0005). `archivedAt` beside it
+      // is this Unit's OWN flag - see the schema's note on why both ride.
+      archived,
       // The one place a bigint column becomes a JSON number (api-spec §8.4).
       // Returning the raw BigInt would throw TypeError inside JSON.stringify.
       basePriceIdr: toRupiah(basePriceIdr),

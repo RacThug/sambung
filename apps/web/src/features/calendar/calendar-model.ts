@@ -10,7 +10,6 @@
  */
 import {
   countNights,
-  isArchived,
   type BookingRow,
   type BookingSource,
   type PropertyResponse,
@@ -139,8 +138,9 @@ export function barSpan(
 
 export interface CalendarRow {
   unit: UnitResponse;
-  /** Effective-archived: the Unit's own flag OR its Property's (ADR-0005),
-   * derived here from the two lists (ADR-0010 - not a server flag). */
+  /** Effective-archived: the Unit's own flag OR its Property's (ADR-0005), now
+   * derived SERVER-side and carried on `UnitResponse.archived`. Kept as a row
+   * field because the row rule below reads it twice. */
   archived: boolean;
   bookings: BookingRow[];
 }
@@ -194,12 +194,14 @@ export function buildCalendar(input: {
 
   const groups: CalendarGroup[] = [];
   for (const property of [...visible].sort(byName)) {
-    const propertyArchived = isArchived(property);
     const units = (unitsByProperty.get(property.id) ?? []).sort(byName);
     const rows: CalendarRow[] = [];
     for (const unit of units) {
       const bookings = byUnit.get(unit.id) ?? [];
-      const archived = isArchived(unit) || propertyArchived;
+      // Server-derived (ADR-0005): this used to be `isArchived(unit) ||
+      // isArchived(property)` here, and the same expression again in the Units and
+      // Channels sections. `GET /units` now answers it once.
+      const archived = unit.archived;
       // Archived-and-empty is retired noise; drop it. Active, or archived-with-a-
       // booking, stays.
       if (archived && bookings.length === 0) continue;

@@ -33,6 +33,20 @@ export const bookingConfirmationResponseSchema = z.object({
   unitName: z.string(),
   totalPriceIdr: rupiahSchema.nullable(),
   amountPaidIdr: rupiahSchema,
+  /**
+   * What is still owed at the property: `totalPriceIdr - amountPaidIdr`, or null
+   * when the booking carries no price (a Block, which a guest cannot reach).
+   *
+   * Stated rather than left to be inferred. The page rendered this by subtracting
+   * the two fields above, which was correct but put money arithmetic in the
+   * browser, and it is the server that knows what "paid" means - today the sum of
+   * settled payments, tomorrow possibly net of a refund. Sending the answer keeps
+   * that definition in one place (MIGRATION-REPORT.md §3.C).
+   *
+   * Never negative: an overpayment clamps to 0 rather than rendering as a credit
+   * the product has no concept of.
+   */
+  balanceIdr: rupiahSchema.nullable(),
   waLink: z.string().url().nullable(),
 });
 export type BookingConfirmationResponse = z.infer<

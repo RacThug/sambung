@@ -143,12 +143,15 @@ test.describe.serial("owner dashboard: the operations inbox", () => {
     // next sync, never asserted by the UI.
     await conflict.getByRole("button", { name: "Dismiss" }).click();
 
-    // The section renders nothing at all once its queue is empty, so its heading
-    // going away IS the item leaving the inbox. The payments section is still
-    // there, which proves we are looking at a loaded page and not an empty one.
+    // The section now KEEPS its heading and says "No conflicts" (divergence D3,
+    // resolved 2026-08-02). It used to render nothing at all once the queue
+    // emptied - which also meant a FAILED read looked identical to a quiet one, on
+    // the page whose whole job is surfacing what needs attention. So the all-clear
+    // appearing, not the heading vanishing, is now the item leaving the inbox.
     await expect(
       page.getByRole("heading", { name: "Calendar conflicts" }),
-    ).toHaveCount(0);
+    ).toBeVisible();
+    await expect(page.getByText("No conflicts")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Payments needing attention" }),
     ).toBeVisible();

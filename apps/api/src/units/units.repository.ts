@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, eq, sql } from 'drizzle-orm';
+import { and, asc, count, eq, getTableColumns, sql } from 'drizzle-orm';
 import { booking, property, unit, type Unit } from '@sambung/db';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
@@ -18,12 +18,43 @@ import { TenantDbService } from '../db/tenant-db.service';
 // calling PropertiesService. Repositories query tables, not modules - the same
 // way properties.repository reaches into `unit` for pricedUnitCount - so units
 // depends on properties for nothing and there is no cycle to engineer around.
+/**
+ * A Unit row plus its EFFECTIVE retirement state - the Unit's own `archived_at` OR
+ * its Property's (ADR-0005).
+ *
+ * The derivation used to be the client's: `GET /units` and `GET /properties` each
+ * carried their own `archivedAt` and the composing view OR-ed them. That was
+ * api-spec §4.6's documented design, and the page-spec migration measured what it
+ * cost - the same two-nullable-timestamps rule written out in three feature files,
+ * driving six separate UI decisions, with nothing checking the copies agreed.
+ *
+ * So the server answers it once. The Unit's own `archivedAt` stays on the wire
+ * beside it: they are different questions, and the archive/unarchive verb acts on
+ * the Unit's own flag while the UI reads the effective one.
+ */
+export type UnitRow = Unit & { archived: boolean };
+
 @Injectable()
 export class UnitsRepository {
   constructor(
     private readonly db: TenantDbService,
     private readonly tenant: TenantContext,
   ) {}
+
+  /**
+   * Every Unit column plus the derived `archived`, joined to the parent Property.
+   *
+   * An INNER join, not a LEFT one: `unit_property_tenant_fk` makes a Unit without a
+   * Property unrepresentable (#40), so a left join would only be inventing a NULL
+   * branch that the schema forbids - and it would silently return `archived: false`
+   * for a row that cannot exist rather than failing loudly if one ever did.
+   */
+  private unitColumns() {
+    return {
+      ...getTableColumns(unit),
+      archived: sql<boolean>`(${unit.archivedAt} is not null or ${property.archivedAt} is not null)`,
+    };
+  }
 
   /** True when the property exists AND belongs to the caller's tenant. */
   async propertyExists(propertyId: string): Promise<boolean> {
@@ -40,12 +71,13 @@ export class UnitsRepository {
     return rows.length > 0;
   }
 
-  findByProperty(propertyId: string): Promise<Unit[]> {
+  findByProperty(propertyId: string): Promise<UnitRow[]> {
     const tenantId = this.tenant.tenantId;
     return this.db.run((tx) =>
       tx
-        .select()
+        .select(this.unitColumns())
         .from(unit)
+        .innerJoin(property, eq(property.id, unit.propertyId))
         .where(
           and(eq(unit.propertyId, propertyId), eq(unit.tenantId, tenantId)),
         )
@@ -61,60 +93,96 @@ export class UnitsRepository {
   /**
    * Every Unit in the caller's tenant, ordered stably. The flat list the unified
    * calendar composes its rows from (ADR-0010), and that #50's manual-block dialog
-   * and #51's filters reuse. Effective-archived (the Unit's own flag OR its
-   * Property's, ADR-0005) is DERIVED client-side by joining this with
-   * GET /properties - both responses carry their own `archivedAt`, so the server
-   * pre-computing it would duplicate what the composing view already holds.
+   * and #51's filters reuse. Each row carries the derived `archived` - see UnitRow.
    */
-  findAll(): Promise<Unit[]> {
+  findAll(): Promise<UnitRow[]> {
     const tenantId = this.tenant.tenantId;
     return this.db.run((tx) =>
       tx
-        .select()
+        .select(this.unitColumns())
         .from(unit)
+        .innerJoin(property, eq(property.id, unit.propertyId))
         .where(eq(unit.tenantId, tenantId))
         .orderBy(asc(unit.createdAt), asc(unit.id)),
     );
   }
 
-  async findById(id: string): Promise<Unit | null> {
+  async findById(id: string): Promise<UnitRow | null> {
     const tenantId = this.tenant.tenantId;
     const rows = await this.db.run((tx) =>
       tx
-        .select()
+        .select(this.unitColumns())
         .from(unit)
+        .innerJoin(property, eq(property.id, unit.propertyId))
         .where(and(eq(unit.id, id), eq(unit.tenantId, tenantId)))
         .limit(1),
     );
     return rows[0] ?? null;
   }
 
+  /**
+   * Write, then re-read through the joined select, in ONE transaction.
+   *
+   * `.returning()` cannot answer `archived`: it hands back the row that was
+   * written, and the effective flag also depends on the parent Property. Composing
+   * the two inside a single `db.run` is what keeps the answer atomic - a second,
+   * standalone read could observe a Property archived in between and describe a
+   * Unit that never existed in that state.
+   */
+  private async writeThenRead(
+    id: string,
+    write: (
+      tx: Parameters<Parameters<TenantDbService['run']>[0]>[0],
+    ) => Promise<unknown>,
+  ): Promise<UnitRow | null> {
+    return this.db.run(async (tx) => {
+      await write(tx);
+      const rows = await tx
+        .select(this.unitColumns())
+        .from(unit)
+        .innerJoin(property, eq(property.id, unit.propertyId))
+        .where(and(eq(unit.id, id), eq(unit.tenantId, this.tenant.tenantId)))
+        .limit(1);
+      return rows[0] ?? null;
+    });
+  }
+
   async create(
     values: Omit<typeof unit.$inferInsert, 'tenantId'>,
-  ): Promise<Unit> {
+  ): Promise<UnitRow> {
     const tenantId = this.tenant.tenantId;
-    const [row] = await this.db.run((tx) =>
-      tx
+    return this.db.run(async (tx) => {
+      const [created] = await tx
         .insert(unit)
         .values({ ...values, tenantId })
-        .returning(),
-    );
-    return row;
+        .returning({ id: unit.id });
+      const rows = await tx
+        .select(this.unitColumns())
+        .from(unit)
+        .innerJoin(property, eq(property.id, unit.propertyId))
+        .where(and(eq(unit.id, created.id), eq(unit.tenantId, tenantId)))
+        .limit(1);
+      return rows[0];
+    });
   }
 
   async update(
     id: string,
     patch: Partial<Omit<typeof unit.$inferInsert, 'tenantId' | 'propertyId'>>,
-  ): Promise<Unit | null> {
+  ): Promise<UnitRow | null> {
     const tenantId = this.tenant.tenantId;
-    const [row] = await this.db.run((tx) =>
-      tx
+    // The UPDATE's own row count is what decides 404 vs found - re-reading alone
+    // would report "found" for a row the WHERE never matched.
+    let updated = 0;
+    const row = await this.writeThenRead(id, async (tx) => {
+      const rows = await tx
         .update(unit)
         .set(patch)
         .where(and(eq(unit.id, id), eq(unit.tenantId, tenantId)))
-        .returning(),
-    );
-    return row ?? null;
+        .returning({ id: unit.id });
+      updated = rows.length;
+    });
+    return updated > 0 ? row : null;
   }
 
   /**
@@ -126,10 +194,11 @@ export class UnitsRepository {
    * clears it. No FOR UPDATE lock - a single-row flag write has no cascade-away
    * race, and an in-flight booking is honoured, not raced (ADR-0005).
    */
-  async setArchived(id: string, archived: boolean): Promise<Unit | null> {
+  async setArchived(id: string, archived: boolean): Promise<UnitRow | null> {
     const tenantId = this.tenant.tenantId;
-    const [row] = await this.db.run((tx) =>
-      tx
+    let updated = 0;
+    const row = await this.writeThenRead(id, async (tx) => {
+      const rows = await tx
         .update(unit)
         .set({
           archivedAt: archived
@@ -137,9 +206,10 @@ export class UnitsRepository {
             : null,
         })
         .where(and(eq(unit.id, id), eq(unit.tenantId, tenantId)))
-        .returning(),
-    );
-    return row ?? null;
+        .returning({ id: unit.id });
+      updated = rows.length;
+    });
+    return updated > 0 ? row : null;
   }
 
   /**

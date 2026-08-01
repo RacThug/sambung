@@ -122,18 +122,32 @@ describe("sync-conflict inbox section (#38)", () => {
     );
   });
 
-  it("stays out of the way entirely when there are no conflicts", async () => {
+  it("says so when there are no conflicts, rather than vanishing", async () => {
+    // Was: "stays out of the way entirely". The section used to `return null` for
+    // loading, empty AND error alike, so a failed read was indistinguishable from
+    // a quiet one - on the page whose whole job is surfacing what needs attention
+    // (divergences D3/D5). It now renders its heading and an explicit all-clear.
+    stubFetch({ "GET /api/sync-conflicts": () => json([]) });
+    renderAt("/app/inbox");
+
+    expect(
+      await screen.findByRole("heading", { name: "Calendar conflicts" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("No conflicts")).toBeInTheDocument();
+  });
+
+  it("surfaces a failed read instead of looking empty", async () => {
     stubFetch({
-      [LIST_KEY]: () => json([]),
-      [LAPSED_KEY]: () => json([]),
+      "GET /api/sync-conflicts": () => new Response("nope", { status: 500 }),
     });
     renderAt("/app/inbox");
 
-    // The payments section still renders its own all-clear; the conflicts section
-    // renders nothing at all rather than a second "all clear" for a problem the
-    // owner may never have had.
-    expect(await screen.findByText("All clear")).toBeInTheDocument();
-    expect(screen.queryByText("Calendar conflicts")).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/couldn.t load your calendar conflicts/i),
+    ).toBeInTheDocument();
+    // The all-clear must NOT appear: "we could not ask" and "there is nothing"
+    // are different answers.
+    expect(screen.queryByText("No conflicts")).not.toBeInTheDocument();
   });
 
   it("offers no way to mark a conflict resolved (only the next sync decides that)", async () => {

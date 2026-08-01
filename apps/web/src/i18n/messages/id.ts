@@ -142,6 +142,7 @@ export const id: Messages = {
   "auth.signingIn": "Masuk…",
   "auth.signIn": "Masuk",
   "auth.invalidCredentials": "Email atau kata sandi salah",
+  "auth.noWorkspace": "Akun Anda sudah tidak berada di tim mana pun. Minta pemilik akun mengundang Anda lagi.",
   "auth.genericError": "Terjadi kesalahan - silakan coba lagi",
   "auth.newToSambung": "Baru di Sambung?",
   "auth.createAccount": "Buat akun",

@@ -154,6 +154,7 @@ export const en = {
   "auth.signingIn": "Signing in…",
   "auth.signIn": "Sign in",
   "auth.invalidCredentials": "Invalid email or password",
+  "auth.noWorkspace": "Your account is no longer on any team. Ask an account owner to invite you again.",
   "auth.genericError": "Something went wrong - please try again",
   "auth.newToSambung": "New to Sambung?",
   "auth.createAccount": "Create an account",

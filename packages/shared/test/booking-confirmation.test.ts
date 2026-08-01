@@ -85,6 +85,7 @@ describe("bookingConfirmationResponseSchema", () => {
     unitName: "Garden Room 1",
     totalPriceIdr: 4_000_000,
     amountPaidIdr: 1_200_000,
+    balanceIdr: 2_800_000,
     waLink: "https://wa.me/6281234567890?text=hi",
   };
 
@@ -100,6 +101,7 @@ describe("bookingConfirmationResponseSchema", () => {
       bookingConfirmationResponseSchema.parse({
         ...valid,
         totalPriceIdr: null,
+        balanceIdr: null,
         waLink: null,
       }),
     ).not.toThrow();

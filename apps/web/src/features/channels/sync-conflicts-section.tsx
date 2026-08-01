@@ -4,6 +4,7 @@ import { ApiError } from "../../lib/api-client";
 import { formatDate, formatInstant } from "../../lib/date";
 import { SourceBadge, StatusBadge } from "../bookings/booking-badges";
 import { Button } from "../../components/ui/button";
+import { ListState } from "@/components/list-state";
 import { useDismissConflict, useSyncConflicts } from "./use-sync-conflicts";
 
 const CHANNEL_LABELS: Record<SyncConflict["channel"], string> = {
@@ -28,10 +29,10 @@ const CHANNEL_LABELS: Record<SyncConflict["channel"], string> = {
 export function SyncConflictsSection() {
   const query = useSyncConflicts();
 
-  // Nothing to do and nothing loaded yet: stay silent rather than render an
-  // "all clear" for a section the owner may never have needed.
-  if (query.isError || !query.data || query.data.length === 0) return null;
-
+  // This section used to `return null` for loading, empty AND error alike, so a
+  // failed read was invisible - on the page whose entire job is surfacing things
+  // that need attention, and directly above a sibling that renders all three
+  // (divergence D3/D5). It now matches that sibling.
   return (
     <section>
       <h2 className="text-lg font-semibold text-foreground">
@@ -42,11 +43,33 @@ export function SyncConflictsSection() {
         couldn’t be imported. Decide which booking stands, cancel the other, and
         the next sync clears this by itself.
       </p>
-      <ul className="mt-4 space-y-3">
-        {query.data.map((item) => (
-          <ConflictRow key={item.id} item={item} />
-        ))}
-      </ul>
+
+      <div className="mt-4">
+        <ListState
+          query={query}
+          errorText="We couldn’t load your calendar conflicts. Please try again."
+        >
+          {(conflicts) =>
+            conflicts.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border p-12 text-center">
+                <h3 className="text-lg font-semibold text-foreground">
+                  No conflicts
+                </h3>
+                <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                  Your calendars agree. A channel selling nights you have already
+                  booked shows up here so you can decide which booking stands.
+                </p>
+              </div>
+            ) : (
+              <ul className="space-y-3">
+                {conflicts.map((item) => (
+                  <ConflictRow key={item.id} item={item} />
+                ))}
+              </ul>
+            )
+          }
+        </ListState>
+      </div>
     </section>
   );
 }

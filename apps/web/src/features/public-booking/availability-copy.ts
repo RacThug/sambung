@@ -10,12 +10,13 @@
  * (`assertNever`), the same guard the conflict copy uses.
  */
 import {
+  lastNightOf,
   type AvailabilityReason,
   type BlockedRange,
   type BookingRefusalReason,
 } from "@sambung/shared";
 import type { I18n } from "@/i18n/context";
-import { addDays } from "../../lib/date";
+import { primaryRefusalReason } from "../../lib/refusal";
 
 /** One line per picker refusal reason (`AvailabilityReason`: min_stay | overlap),
  * localized from the slug + the unit's own numbers. `min_stay` needs the minimum;
@@ -40,27 +41,34 @@ export function describeReason(
  * 2026" (the checkout day, `to`, is excluded because it is free). Half-open math,
  * human words. */
 export function describeBlockedNights(i18n: I18n, range: BlockedRange): string {
-  const lastNight = addDays(range.to, -1);
+  const lastNight = lastNightOf(range);
   if (lastNight === range.from) return i18n.fmtDate(range.from);
   return `${i18n.fmtDate(range.from)} - ${i18n.fmtDate(lastNight)}`;
 }
 
 /**
- * The checkout create-409 refusal copy (`BookingRefusalReason`), localized. Mirrors
- * `lib/conflict.ts`'s `describeRefusal` but owns the funnel's translations: a dead
- * unit (archived / unavailable) sends the guest elsewhere, so it wins over an
- * overlap ("try other dates"); capacity and min-stay are the owner's policy.
+ * The checkout create-409 refusal copy (`BookingRefusalReason`), localized. The
+ * RANKING comes from `lib/refusal.ts`, shared with the dashboard's English twin in
+ * `lib/conflict.ts`, so the two surfaces cannot disagree about which reason leads;
+ * the funnel owns only its own translations.
  */
 export function describeRefusal(
   i18n: I18n,
   reasons: readonly BookingRefusalReason[],
 ): string {
-  if (reasons.includes("archived") || reasons.includes("unavailable"))
-    return i18n.t("conflict.unavailable");
-  if (reasons.includes("overlap")) return i18n.t("conflict.overlap");
-  if (reasons.includes("max_guests")) return i18n.t("conflict.maxGuests");
-  if (reasons.includes("min_stay")) return i18n.t("conflict.minStay");
-  return i18n.t("conflict.generic");
+  switch (primaryRefusalReason(reasons)) {
+    case "archived":
+    case "unavailable":
+      return i18n.t("conflict.unavailable");
+    case "overlap":
+      return i18n.t("conflict.overlap");
+    case "max_guests":
+      return i18n.t("conflict.maxGuests");
+    case "min_stay":
+      return i18n.t("conflict.minStay");
+    default:
+      return i18n.t("conflict.generic");
+  }
 }
 
 function assertNever(x: never): never {

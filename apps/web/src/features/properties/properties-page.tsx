@@ -10,6 +10,7 @@ import { api, ApiError } from "../../lib/api-client";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { isOwner } from "../../lib/role";
 import { FormField } from "@/components/form-field";
+import { ListError, ListSkeleton } from "@/components/list-state";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { VerifiedBadge } from "./verified-badge";
@@ -22,16 +23,13 @@ import { VerifiedBadge } from "./verified-badge";
 // server (RLS, ADR-0032 - nothing here filters), and creating one is owner-only,
 // so the "New property" affordance is hidden rather than offered and refused.
 export function PropertiesPage() {
-  const { data: properties, isLoading } = useQuery({
+  const query = useQuery({
     queryKey: ["properties"],
     queryFn: () => api.get<PropertyResponse[]>("/properties"),
   });
+  const properties = query.data;
   const [dialogOpen, setDialogOpen] = useState(false);
   const owner = isOwner();
-
-  if (isLoading) {
-    return <p className="text-muted-foreground">Loading properties…</p>;
-  }
 
   return (
     <section>
@@ -45,6 +43,16 @@ export function PropertiesPage() {
           ) : undefined
         }
       />
+
+      {query.isError && (
+        <ListError>
+          We couldn’t load your properties. Please try again.
+        </ListError>
+      )}
+
+      {!query.isError && properties === undefined && (
+        <ListSkeleton className="mt-6 h-48" />
+      )}
 
       {properties && properties.length === 0 && (
         <div className="mt-12 rounded-lg border border-dashed border-input p-12 text-center">

@@ -67,11 +67,22 @@ export function CalendarPage() {
 
   const { properties, units, bookings } = useCalendarData(window, propertyId);
 
+  /**
+   * Patch the search object, never replace it (divergence D9). The replacing form
+   * worked only because every handler remembered to thread `propertyId` through by
+   * hand; a fourth control added carelessly would have cleared the property filter
+   * as a side effect of paging a month. `undefined` still removes a key, so "Today"
+   * can drop the window explicitly.
+   */
   const go = (next: {
     from?: string;
     to?: string;
     propertyId?: string;
-  }) => void navigate({ to: "/app/calendar", search: next });
+  }) =>
+    void navigate({
+      to: "/app/calendar",
+      search: (prev) => ({ ...prev, ...next }),
+    });
 
   const stepMonth = (delta: number) => {
     const w = shiftMonth(window, delta);
@@ -97,7 +108,7 @@ export function CalendarPage() {
             </button>
             <button
               type="button"
-              onClick={() => go({ propertyId })}
+              onClick={() => go({ from: undefined, to: undefined })}
               className="rounded-md border border-input px-2 py-1 text-sm font-medium text-foreground hover:bg-muted"
             >
               Today
@@ -118,11 +129,7 @@ export function CalendarPage() {
           <select
             value={propertyId ?? ""}
             onChange={(e) =>
-              go({
-                from: window.from,
-                to: window.to,
-                propertyId: e.target.value || undefined,
-              })
+              go({ propertyId: e.target.value || undefined })
             }
             className="rounded-md border border-input bg-card px-2 py-1.5 text-sm text-foreground"
           >

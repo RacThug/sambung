@@ -12,8 +12,7 @@
  * guest in Bali and one in Los Angeles each see their own today.
  */
 import type { DateRange } from "react-day-picker";
-import type { BlockedRange } from "@sambung/shared";
-import { addDays } from "../../lib/date";
+import { lastNightOf, type BlockedRange } from "@sambung/shared";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
@@ -60,7 +59,7 @@ export function monthWindow(month: Date): { from: string; to: string } {
 export function blockedMatchers(ranges: readonly BlockedRange[]): DateRange[] {
   return ranges.map((r) => ({
     from: isoToDate(r.from),
-    to: isoToDate(addDays(r.to, -1)),
+    to: isoToDate(lastNightOf(r)),
   }));
 }
 

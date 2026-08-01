@@ -129,12 +129,14 @@ function Confirmed({
         <Row label={t("confirm.paidOnline")}>
           {formatIdr(booking.amountPaidIdr)}
         </Row>
-        {booking.totalPriceIdr !== null &&
-          booking.totalPriceIdr > booking.amountPaidIdr && (
-            <Row label={t("confirm.balanceAtProperty")}>
-              {formatIdr(booking.totalPriceIdr - booking.amountPaidIdr)}
-            </Row>
-          )}
+        {/* The server states the balance now (api-spec §6.3) - the page used to
+            subtract two fields itself, which put money arithmetic in the browser
+            and a second opinion about what "paid" means. */}
+        {booking.balanceIdr !== null && booking.balanceIdr > 0 && (
+          <Row label={t("confirm.balanceAtProperty")}>
+            {formatIdr(booking.balanceIdr)}
+          </Row>
+        )}
       </dl>
 
       {booking.waLink && (

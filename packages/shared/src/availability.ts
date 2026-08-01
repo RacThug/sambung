@@ -56,6 +56,28 @@ export function meetsMinStay(nights: number, minStay: number): boolean {
   return nights >= minStay;
 }
 
+/**
+ * The last night a half-open `[from, to)` range actually occupies - `to` minus one
+ * day, because the check-out day is not a night (db-design §4.2, the Changeover
+ * rule). `['2026-08-10', '2026-08-13')` occupies the 10th, 11th and 12th, so this
+ * returns `2026-08-12`; a one-night range collapses to its own `from`.
+ *
+ * It lives beside `countNights` because it is the same fact asked the other way,
+ * and it lives HERE rather than in a component because it was written twice in the
+ * funnel and both copies were the client re-deriving the half-open model: the
+ * picker turned blocked ranges into react-day-picker's INCLUSIVE matchers, and the
+ * copy module turned them into "10 Aug - 12 Aug" for a human. Same rule, two
+ * spellings, nothing checking they agreed.
+ *
+ * Parsed at UTC like every other date helper here - these are calendar dates, so a
+ * DST boundary must not move one.
+ */
+export function lastNightOf(range: { from: string; to: string }): string {
+  return new Date(Date.parse(`${range.to}T00:00:00Z`) - MS_PER_NIGHT)
+    .toISOString()
+    .slice(0, 10);
+}
+
 /** Why a stay is not bookable. Machine-readable slugs only; the SPA renders the
  * copy from the slug + minStay/blockedRanges (api-spec §5.1). */
 export const availabilityReasonSchema = z.enum(["overlap", "min_stay"]);

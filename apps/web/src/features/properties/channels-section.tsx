@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   channelSchema,
   createChannelConnectionRequestSchema,
-  isArchived,
   type Channel,
   type ChannelConnectionResponse,
   type CreateChannelConnectionRequest,
@@ -19,6 +18,7 @@ import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ListSkeleton } from "@/components/list-state";
 
 /**
  * Channels on the property workbench (page-spec §4.5, api #28/#29/#30/#34, #55).
@@ -35,11 +35,11 @@ import { Input } from "@/components/ui/input";
 export function ChannelsSection({ property }: { property: PropertyResponse }) {
   // Same query key as UnitsSection - TanStack Query dedupes, so this doesn't
   // double-fetch the units already loaded above.
-  const { data: units, isLoading } = useQuery({
+  const unitsQuery = useQuery({
     queryKey: ["properties", property.id, "units"],
     queryFn: () => api.get<UnitResponse[]>(`/properties/${property.id}/units`),
   });
-  const propertyArchived = isArchived(property);
+  const units = unitsQuery.data;
 
   return (
     <div className="mt-6 rounded-lg border border-border bg-card p-6">
@@ -49,20 +49,20 @@ export function ChannelsSection({ property }: { property: PropertyResponse }) {
         Booking.com or Vrbo so they stop selling nights booked here.
       </p>
 
-      {isLoading ? (
-        <p className="mt-4 text-sm text-muted-foreground">Loading channels…</p>
-      ) : !units || units.length === 0 ? (
+      {unitsQuery.isError ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          We couldn’t load these channels. Please try again.
+        </p>
+      ) : units === undefined ? (
+        <ListSkeleton className="mt-4 h-32" />
+      ) : units.length === 0 ? (
         <p className="mt-4 text-sm text-muted-foreground">
           Add a unit first - channels are connected per unit.
         </p>
       ) : (
         <div className="mt-4 space-y-4">
           {units.map((unit) => (
-            <UnitChannels
-              key={unit.id}
-              unit={unit}
-              propertyArchived={propertyArchived}
-            />
+            <UnitChannels key={unit.id} unit={unit} />
           ))}
         </div>
       )}
@@ -76,24 +76,21 @@ const CHANNEL_LABELS: Record<Channel, string> = {
   vrbo: "Vrbo",
 };
 
-function UnitChannels({
-  unit,
-  propertyArchived,
-}: {
-  unit: UnitResponse;
-  propertyArchived: boolean;
-}) {
+function UnitChannels({ unit }: { unit: UnitResponse }) {
   // A self-archived unit under a live property, or any unit under an archived
   // property, is effectively archived (ADR-0005): no new connections, but the
   // export link stays live because the feed itself is archive-blind (ADR-0016) -
   // an OTA that already subscribed must keep being told these nights are busy.
-  const effectiveArchived = isArchived(unit) || propertyArchived;
+  // Server-derived since the page-spec migration (ADR-0005): the section no
+  // longer needs the parent's flag threaded in to work this out.
+  const effectiveArchived = unit.archived;
 
-  const { data: connections, isLoading } = useQuery({
+  const connectionsQuery = useQuery({
     queryKey: ["units", unit.id, "channels"],
     queryFn: () =>
       api.get<ChannelConnectionResponse[]>(`/units/${unit.id}/channels`),
   });
+  const connections = connectionsQuery.data;
 
   return (
     <div className="rounded-md border border-border p-4">
@@ -108,8 +105,12 @@ function UnitChannels({
 
       <ExportUrl unitId={unit.id} />
 
-      {isLoading ? (
-        <p className="mt-3 text-sm text-muted-foreground">Loading…</p>
+      {connectionsQuery.isError ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          We couldn’t load this unit’s channels. Please try again.
+        </p>
+      ) : connections === undefined ? (
+        <ListSkeleton className="mt-3 h-12" />
       ) : (
         <ul className="mt-3 space-y-2">
           {connections?.map((conn) => (

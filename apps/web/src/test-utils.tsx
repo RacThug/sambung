@@ -155,6 +155,11 @@ export function unitResponse(
     maxGuests: 2,
     minStay: 1,
     archivedAt: null,
+    // Effective-archived (ADR-0005). Defaults to the unit's own flag so a test
+    // that only sets `archivedAt` still gets a coherent row; override it directly
+    // to model a live unit under an ARCHIVED property, which is the case the two
+    // fields exist to tell apart.
+    archived: Boolean(rest.archivedAt),
     createdAt: "2026-07-01T00:00:00.000Z",
     ...rest,
     basePriceIdr: rupiahSchema.parse(basePriceIdr),
