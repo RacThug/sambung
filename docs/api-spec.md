@@ -53,40 +53,41 @@ Sources: `direct | airbnb | booking_com | vrbo | manual_block`. Transitions outs
 | 3 | `POST /auth/refresh` | Rotate access token via cookie | **Built** | AUTH-1 |
 | 4 | `POST /auth/logout` | Clear refresh cookie | **Built** | AUTH-1 |
 | 5 | `GET /auth/me` | Current session | **Built** | AUTH-1 |
-| 6 | `POST /auth/invites` (+ accept) | Invite staff scoped to properties | M5 | AUTH-2 |
+| 6 | `POST /auth/invites` (+ accept) | Invite staff scoped to properties | **Built** (#57) | AUTH-2 |
 | 7 | `GET /properties` | List my properties | **Built** | PROP-1 |
 | 8 | `GET /properties/:id` | One property | **Built** | PROP-1 |
-| 9 | `POST /properties` | Create property | M1 | PROP-1 |
-| 10 | `PATCH /properties/:id` | Update (incl. `licenseNo` → badge) | M1 | PROP-1/3 |
-| 11 | `DELETE /properties/:id` | Delete (guarded) | M1 | PROP-1 |
+| 9 | `POST /properties` | Create property | **Built** | PROP-1 |
+| 10 | `PATCH /properties/:id` | Update (incl. `licenseNo` → badge) | **Built** | PROP-1/3 |
+| 11 | `DELETE /properties/:id` | Delete (guarded) | **Built** | PROP-1 |
 | 12 | `POST /properties/:id/photos/presign` | Presigned photo upload | **Built** | PROP-1 |
 | 13 | `PATCH /properties/:id/photos` | Persist/reorder photo keys | **Built** | PROP-1 |
 | 14 | `POST /properties/:id/units` | Create unit | **Built** | PROP-2 |
 | 15 | `GET /properties/:id/units` | List units | **Built** | PROP-2 |
 | 16 | `PATCH /units/:id` · `DELETE /units/:id` | Update/delete unit (guarded) | **Built** | PROP-2 |
-| 17 | `GET /units/:id/calendar?from&to` | Owner calendar (all sources) | M2 | CAL-3 |
-| 18 | `GET /bookings?from&to&propertyId&status&source` | Reservations list/filter | M2 | - |
+| 17 | ~~`GET /units/:id/calendar?from&to`~~ | Owner calendar - **dropped**, folded into #18 (see §5.2) | **Dropped** | CAL-3 |
+| 18 | `GET /bookings?from&to&propertyId&status&source` | Reservations list/filter | **Built** (#49) | - |
 | 19 | `GET /bookings/export.csv?…` | CSV export (same filters) | **Built** (#59) | - |
-| 20 | `POST /bookings` | Manual block / walk-in | M2 | CAL-1 |
-| 21 | `POST /bookings/:id/cancel` | Cancel (FSM) | M2 | - |
+| 20 | `POST /bookings` | Manual block / walk-in | **Built** (#50) | CAL-1 |
+| 21 | `POST /bookings/:id/cancel` | Cancel (FSM) | **Built** (#50) | - |
 | 22 | `GET /public/properties/:slug` | Public property page data | **Built** | PROP-1 |
-| 23 | `GET /public/units/:id/availability?from&to` | Availability + quote | M2 | CAL-1/2 |
-| 24 | `POST /public/bookings` | Guest booking → hold | M2 | BOOK-1 |
-| 25 | `GET /public/bookings/:id` | Confirmation-page status (reconciles) | M3 | PAY-1 |
-| 26 | `POST /public/bookings/:id/pay` | Create sandbox payment session | M3 | PAY-1 |
-| 27 | `POST /webhooks/payment/:provider` | Idempotent payment webhook | M3 | PAY-2 |
-| 28 | `POST /units/:id/channels` | Connect an OTA iCal | M4 | SYNC-1 |
-| 29 | `GET /units/:id/channels` | Connections + sync status | M4 | SYNC-3 |
-| 30 | `DELETE /channels/:id` | Disconnect | M4 | SYNC-1 |
-| 31 | `POST /channels/:id/sync` | Force "Sync now" | **Built** (#56) | SYNC-1 |
+| 23 | `GET /public/units/:id/availability?from&to` | Availability + quote | **Built** (#47) | CAL-1/2 |
+| 24 | `POST /public/bookings` | Guest booking → hold | **Built** (#48) | BOOK-1 |
+| 25 | `GET /public/bookings/:id` | Confirmation-page status (reconciles) | **Built** (#54) | PAY-1 |
+| 26 | `POST /public/bookings/:id/pay` | Create sandbox payment session | **Built** (#52) | PAY-1 |
+| 27 | `POST /webhooks/payment/:provider` | Idempotent payment webhook | **Built** (#53) | PAY-2 |
+| 28 | `POST /units/:id/channels` | Connect an OTA iCal | **Built** (#55) | SYNC-1 |
+| 29 | `GET /units/:id/channels` | Connections + sync status | **Built** (#55) | SYNC-3 |
+| 30 | `DELETE /channels/:id` | Disconnect | **Built** (#55) | SYNC-1 |
+| 31 | `POST /channels/:id/sync` | Force "Sync now", one feed | **Built** (#56) | SYNC-1 |
 | 32 | `GET /sync-conflicts?status=open` | Conflict inbox | **Built** (#38) | SYNC-3 |
 | 33 | `POST /sync-conflicts/:id/dismiss` | Dismiss a conflict | **Built** (#38) | SYNC-3 |
-| 34 | `GET /public/units/:id/calendar.ics` | iCal export feed | M4 | SYNC-2 |
-| 35 | `GET /bookings/:id` | Booking detail (owner, full disclosure) | M2 | - |
+| 34 | `GET /public/units/:id/calendar.ics` | iCal export feed | **Built** (#55) | SYNC-2 |
+| 35 | `GET /bookings/:id` | Booking detail (owner, full disclosure) | **Built** (#50) | - |
 | 36 | `GET /payments/lapsed` | Paid-but-lapsed inbox (owner) | **Built** (#120) | PAY-2 |
 | 37 | `POST /payments/:id/handle` | Mark a lapsed payment handled | **Built** (#120) | PAY-2 |
 | 38 | `GET /settings` | Tenant settings (gallery cap) | **Built** (#67) | PROP-1 |
 | 39 | `PATCH /settings` | Update settings (owner only) | **Built** (#67) | PROP-1 |
+| 40 | `POST /channels/sync` | "Sync now" for every feed the caller can see | **Built** (#201) | SYNC-1 |
 
 Notifications (FR-NOTIF-1/2) have **no endpoints**: email fires on the `confirmed` transition (webhook handler); the WhatsApp `wa.me` deeplink is a field on #25's response.
 
@@ -161,7 +162,11 @@ Shared types: `packages/shared/src/photo.ts` (`presignPhotoRequestSchema`, `pres
 
 ### 4.6 Units - **Built** (#45)
 `POST /properties/:id/units` → 201, `GET /properties/:id/units` → 200 (`createdAt` asc, **includes archived** - it's the owner's history), `PATCH /units/:id` → 200, `DELETE /units/:id` → 204 (guarded, §4.4), `POST /units/:id/archive` → 200, `POST /units/:id/unarchive` → 200 (§4.8).
-`GET /units` → 200 (auth) - **Built** (#49): a flat, tenant-wide list of every unit (archived included), `createdAt` asc. The unified calendar composes its row skeleton from this + `GET /properties` + `GET /bookings` ([ADR-0010](adr/0010-the-calendar-is-composed-not-served.md)); #50's manual-block dialog and #51's filters reuse it. Effective-archived (the unit's own flag OR its property's) is DERIVED client-side from this joined with `GET /properties` - both carry their own `archivedAt` - not a server flag. Same `unitResponseSchema` as the nested list.
+`GET /units` → 200 (auth) - **Built** (#49): a flat, tenant-wide list of every unit (archived included), `createdAt` asc. The unified calendar composes its row skeleton from this + `GET /properties` + `GET /bookings` ([ADR-0010](adr/0010-the-calendar-is-composed-not-served.md)); #50's manual-block dialog and #51's filters reuse it. Same `unitResponseSchema` as the nested list.
+
+**Effective-archived is a SERVER-derived field**, `archived: boolean`, on every `UnitResponse` from every unit-returning route. It is the unit's own `archived_at` OR its property's (§4.8, [ADR-0005](adr/0005-archived-is-derived-not-cascaded.md)), computed by the join the read already performs. `archivedAt` rides beside it and stays the unit's OWN flag - archive/unarchive act on that, and the two diverge for a live unit under a retired property.
+
+> **Amended.** This previously specified the opposite: "effective-archived is DERIVED client-side from this joined with `GET /properties` - both carry their own `archivedAt` - not a server flag." That held while one view composed it. By the time the page specs were written the same two-nullable-timestamps rule appeared in three feature files driving six UI decisions, with nothing checking the copies agreed (`docs/pages/MIGRATION-REPORT.md` §3.A). Deriving it once, where the join already exists, is the same read-can't-disagree-with-write rule the rest of this spec runs on. The client still holds `archivedAt` for the one question that is genuinely about the unit itself.
 Shared types: `packages/shared/src/unit.ts` (`createUnitRequestSchema`, `updateUnitRequestSchema`, `unitResponseSchema`, `isSellable`, `isArchived`).
 
 Fields: `name`, `basePriceIdr` (int, `0 ≤ price ≤ 1,000,000,000`; a 0 price is storable but keeps the property unpublishable - §4.3), `maxGuests` (int ≥ 1, default 2), `minStay` (nights, int ≥ 1, default 1). The DB CHECKs mirror these bounds - a bypassed app check still cannot store garbage. The nightly-rate ceiling is a domain bound (no real rate approaches a billion rupiah) that also keeps `basePriceIdr × nights` from overflowing the §5.1 availability quote - `unit_base_price_max`, added after the #47 review found a write-accepted price × a long window could 500 the no-auth endpoint. Every field is mutable: a booking snapshots its own `totalPriceIdr`, and `minStay` applies when booking, so neither is retroactive. `404` for another tenant's property or unit id (indistinguishable from unknown).
@@ -173,7 +178,7 @@ Fields: `name`, `basePriceIdr` (int, `0 ≤ price ≤ 1,000,000,000`; a 0 price 
 ### 4.7 `GET /public/properties/:slug` → 200 - **Built** (#46, no auth)
 Shared types: `packages/shared/src/public-property.ts` (`publicPropertyResponseSchema`).
 
-`PublicPropertyResponse = { slug, name, address, description, verified, photos: [{ url }], units: [{ id, name, basePriceIdr, maxGuests, minStay }] }`. `404` for an unknown slug **or an archived property** - the two are indistinguishable, by design (§4.8). Archived *units* are filtered out of the `units` array; a live property with a mix shows only its active units.
+`PublicPropertyResponse = { slug, name, address, description, verified, depositPct, photos: [{ url }], units: [{ id, name, basePriceIdr, maxGuests, minStay }] }`. `depositPct` rides here because the checkout previews "deposit due now" before the redirect rather than letting the guest meet a smaller charge cold on the Provider page - a payment term, like the unit price beside it ([ADR-0015](adr/0015-a-payment-session-is-one-reused-row.md)). `404` for an unknown slug **or an archived property** - the two are indistinguishable, by design (§4.8). Archived *units* are filtered out of the `units` array; a live property with a mix shows only its active units.
 
 **A malformed slug is a `404`, not the `400` §1 mandates for a malformed UUID.** A string that can't match `SLUG_PATTERN` can't exist in the column (`property_slug_format` guarantees it), so "no such page" is the true answer, not a euphemism - and it's what a guest with a mistyped link needs to read. §1's actual principle, refuse before touching the database, is upheld: `SlugParamPipe` rejects at the boundary. This is not optional politeness - taking the slug raw made `%00` a NUL byte, an unmapped `22021`, and a **500 on the one route with no auth in front of it** (found in review of #46).
 
@@ -248,8 +253,17 @@ Response:
 
 **The interval math is the DB's.** Overlap and clipping run in Postgres with the *same* `daterange(check_in, check_out, '[)') && / *` operators as the `booking_no_overlap` exclusion constraint (db-design §4.2/4.3), so the read can never say "free" for a stay the write would reject; `nights`/price/min-stay/coalesce are pure functions in `@sambung/shared`. `AvailabilityService.quote()` is the single interval authority - §5.3's in-transaction re-check calls the same service and joins its transaction (#72), so the read and the write share one definition of "overlap".
 
-### 5.2 `GET /units/:id/calendar?from&to` → 200 (auth) - owner calendar (FR-CAL-3)
-Same shape but full-fat: each range carries `bookingId, source, status, guestName?`, so the dashboard can color-code direct/airbnb/manual and show holds.
+### 5.2 `GET /units/:id/calendar?from&to` - **Dropped** (never built)
+
+This endpoint was specified for the owner calendar and **no controller ever served it**. §5.5's
+`GET /bookings` answers the same question for every Unit at once, and the unified calendar composes its
+rows from that plus the flat Unit and Property lists ([ADR-0010](adr/0010-the-calendar-is-composed-not-served.md)) - so a
+per-unit variant would have been a second booking-read path drifting from the first, which is the thing
+that ADR forbids.
+
+The number is retained rather than reused: `api #n` is cited across `page-spec.md` and `sitemap.md`, and
+renumbering to reclaim one slot would invalidate every reference below it. Recorded as dropped, and
+found by `docs-doctor` (ADR-0038) rather than by a reader.
 
 ### 5.3 `POST /public/bookings` → 201 (no auth) - the guest funnel (FR-BOOK-1) - **Built** (#48, boss fight #1)
 Body: `{ unitId, checkIn, checkOut, guestName, guestPhone, guestEmail?, guestCount }` (validated in `@sambung/shared`; `unitId` is in the body, and `PublicScope.enterFromUnitId` resolves the tenant from it). **No price field** - the server recomputes `totalPriceIdr`, the client quote is advisory. `guestPhone` is required and plausibility-checked because WhatsApp is M3's confirmation channel; the old free-text `guestContact` was split into `guest_phone`/`guest_email` and `guest_count` added (migration 0007, ADR-0009 PR).
@@ -276,7 +290,7 @@ Reservation list for the dashboard - THE one booking-read path, shared by the un
 FSM-guarded as **one atomic UPDATE**: `SET status='cancelled' WHERE id=$id AND status IN ('pending_payment','confirmed')` (the FSM lives in the `WHERE`, mirroring the archive verb-subresource). One row updated → 200; zero rows → a follow-up existence check in the same transaction picks the error: unknown / cross-tenant id → **404** (404-over-403), an already-terminal booking → **409** `code: "booking_not_cancellable"` with the terminal `status` (`cancelled` / `expired`) as data (§8.2, ADR-0012). Cancelling frees the dates instantly (the row drops out of the exclusion constraint's WHERE). It is the universal *free-these-dates* verb - it lifts a Block and a walk-in exactly as it cancels a guest booking. Response: `{ status: "cancelled", refund }` where `refund` = `"manual"` if a `paid` payment exists (owner refunds out-of-band; v1 has no refund API), else `"none"`. At M2 there are no payments, so `refund` is always `"none"`; the field is wired now so M3 doesn't retrofit it.
 
 ### 5.7 `GET /bookings/:id` → 200 (auth) - booking detail (#50)
-The deep-linkable read behind `/app/bookings/:id` (page-spec §4.3) and the calendar's detail drawer. `GET /bookings` (§5.5) is a *list* with no identity filter, and a detail page must survive a cold cache (a bookmarked or forwarded link), so the honest shape is a single-resource GET, not an id smuggled into the list filters. Tenant-scoped by RLS: an unknown or cross-tenant id → **404** (404-over-403). Returns the full owner-facing row - `bookingRowSchema` plus `guestPhone`, `guestEmail`, and display names (`propertyName`, `unitName`) - richer than the list row because this is the one place the Owner inspects a single reservation in full (owner disclosure, the opposite of §5.1's public clip; ADR-0010). Payment fields join at M3.
+The deep-linkable read behind `/app/bookings/:id` (page-spec §4.3) and the calendar's detail drawer. `GET /bookings` (§5.5) is a *list* with no identity filter, and a detail page must survive a cold cache (a bookmarked or forwarded link), so the honest shape is a single-resource GET, not an id smuggled into the list filters. Tenant-scoped by RLS: an unknown or cross-tenant id → **404** (404-over-403). Returns the full owner-facing row - `bookingRowSchema` plus `guestPhone`, `guestEmail`, `propertyId`, and display names (`propertyName`, `unitName`) - richer than the list row because this is the one place the Owner inspects a single reservation in full (owner disclosure, the opposite of §5.1's public clip; ADR-0010). Payment fields join at M3.
 
 ---
 
@@ -296,7 +310,7 @@ Provider delivers **at-least-once**; this endpoint must be duplicate-proof and r
 Always 200 for well-formed, verified duplicates - providers retry non-2xx forever.
 
 ### 6.3 `GET /public/bookings/:id` → 200 (no auth) - confirmation page
-`{ status, checkIn, checkOut, propertyName, unitName, totalPriceIdr, amountPaidIdr, waLink }` - `waLink` is the prefilled `wa.me` deeplink (FR-NOTIF-2). **Reconciles on read** (risk R3): if status is `pending_payment`, the handler queries the provider's status API before answering, so a lost webhook still confirms here. Unguessable UUID is the v1 access control; no PII beyond what the guest themselves entered.
+`{ status, checkIn, checkOut, propertyName, unitName, totalPriceIdr, amountPaidIdr, balanceIdr, waLink }` - `waLink` is the prefilled `wa.me` deeplink (FR-NOTIF-2). `balanceIdr` is what is still owed at the property (`totalPriceIdr - amountPaidIdr`, clamped at 0, null when the booking carries no price): stated by the server rather than subtracted by the page, because what "paid" means is the server's definition to change. **Reconciles on read** (risk R3): if status is `pending_payment`, the handler queries the provider's status API before answering, so a lost webhook still confirms here. Unguessable UUID is the v1 access control; no PII beyond what the guest themselves entered.
 
 ### 6.4 Paid-but-lapsed inbox (auth) - **Built** (#120, [ADR-0022](adr/0022-the-paid-but-lapsed-inbox-marks-not-mutates.md))
 The owner-facing surface for the **late-settlement** case §6.2 handles safely but silently (ADR-0018): a guest settles AFTER their hold lapsed (swept to `expired`) or the booking was cancelled, so `payment.status = paid` while `booking.status IN (expired, cancelled)` and the booking is never resurrected. A `WARN` is not a workflow, so:
@@ -317,6 +331,21 @@ Connections with `lastSyncedAt, lastStatus: never|ok|error, lastError?` (FR-SYNC
 "Sync now": force this connection's import off the 30-min cron, **immediately**. Runs **synchronously** and returns the connection's post-sync health + a summary - `SyncConnectionResponse = { lastStatus: never|ok|error, lastSyncedAt, lastError, imported, cancelled, conflicts }` (`conflicts` = VEVENTs refused as double-sells and filed in the inbox, #38) - not `202 { queued: true }`: there is no job queue on a single VPS (Redis/BullMQ = a heavy dep), so the honest contract is the result, not a promise ([ADR-0025](adr/0025-a-healthy-feed-reconciles-a-doubtful-one-does-nothing.md)). Unknown/foreign id → 404 (resolved under the owner's RLS scope first, existence hidden). Same reconcile core as the cron (architecture flow B): fetch **outside** the txn → parse → one txn with a **savepoint per VEVENT** (an overlap `23P01` skips that event, never crashes the cycle - the #38 seam) → upsert by `externalUid` → absent-UID cancellation **only on a healthy feed with ≥ 1 event** (`imported`/`cancelled` count what this pull did; both 0 on an unhealthy feed). A VEVENT's dates are resolved in the **property's** time zone (§4.3 `timeZone`, #145, [ADR-0028](adr/0028-property-local-is-a-column-not-an-assumption.md)): only a UTC-stamped `DATE-TIME` is converted - `VALUE=DATE`, floating, and `TZID` values are already property-local and are taken verbatim. A `TZID` naming some *other* zone is taken verbatim too and logged, never guessed at.
 
 **"Healthy" is a whole, terminated calendar.** A non-2xx / unreachable / timeout pull, or a body that is not a terminated `BEGIN:VCALENDAR … END:VCALENDAR` (truncation loses the `END`), is **unhealthy** → `lastStatus: 'error'`, zero writes. A healthy-but-empty calendar stamps `ok` but cancels nothing (empty is indistinguishable from truncated-to-zero - never mass-cancel real bookings).
+
+### 7.3a `POST /channels/sync` → 200 (auth) - **Built** (#201, api #40)
+
+"Sync now" for **every feed the caller can see** - the calendar's primary action. The same synchronous
+pull as §7.3 (no queue on one VPS, ADR-0025), fanned server-side over the caller's connections, so the
+answer is a SUM rather than one feed's health: `SyncAllResponse = { feeds, errored, imported, cancelled, conflicts }`.
+
+`feeds` is reported rather than derived so "nothing happened" can be told apart from "nothing to do":
+`feeds: 0` means no OTA calendar is connected yet, while `feeds: 3, imported: 0` means three healthy
+feeds had nothing new. `errored` counts feeds that came back unhealthy; **which** ones is still §7.2's
+answer, on the property workbench.
+
+Server-side fan-out, not a loop in the browser: one request means one aggregate answer, sequential
+outbound fetches, and no N-requests-per-click against a third party. "Every feed the caller can see" is
+RLS's answer, not a parameter - for staff that is their assigned Properties only (ADR-0032).
 
 ### 7.4 `DELETE /channels/:id` → 200 (auth) - **Built** (#55)
 Disconnects. Already-imported bookings are **kept** (they may reflect real stays) but stop being reconciled - the `booking.channel_connection_id` FK is `set null`, so they survive with their source/status intact; the response body `{ importedBookingsKept }` counts them (measured before the delete) so the owner can clean up deliberately. Safer than auto-cancelling reality. Returns 200 (not 204) because it carries that body. Unknown/foreign id → 404.

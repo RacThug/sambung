@@ -33,6 +33,14 @@ if ! pnpm typecheck; then
 	echo "✋ typecheck failed — fix it, or bypass with: git push --no-verify"
 	exit 1
 fi
+
+# docs-doctor: page specs vs the code (ADR-0038). Reads four plain-text trees,
+# opens no socket and no database, so it costs a second and belongs here rather
+# than in the Docker-gated `pnpm test`.
+if ! pnpm docs:doctor; then
+	echo "✋ docs:doctor failed — fix the page spec, or bypass with: git push --no-verify"
+	exit 1
+fi
 echo "✓ pre-push checks passed."
 
 exit 0

@@ -11,7 +11,8 @@ subsystem it's working on before proposing changes.
 | [`architecture.md`](./architecture.md) | …wiring FE↔BE, adding a module, or moving data across the stack | FE/BE split, module layout, data flows, the API boundary |
 | [`sitemap.md`](./sitemap.md) | …getting oriented: which routes exist and how they wire together | Every SPA page **and** API endpoint, a route-tree diagram, FE↔API traceability; code-verified so it can't drift (ADR-0036) |
 | [`api-spec.md`](./api-spec.md) | …adding or changing an endpoint | Every REST endpoint M0-M5: path, shapes, behavior, errors, conventions |
-| [`page-spec.md`](./page-spec.md) | …adding or changing a page/route | Every SPA page: purpose, route + URL state, endpoints consumed, states |
+| [`page-spec.md`](./page-spec.md) | …adding or changing a page/route | Every SPA page: purpose, route + URL state, endpoints consumed, states. **`status: legacy`** - it documents pages already built; new work starts in `pages/` |
+| [`pages/`](./pages/README.md) | …building a **new** page, or specifying one | Per-page specs, written **before** building a page (unlike `page-spec.md`, which documents pages already built): the template every spec follows, plus the shared dashboard list pattern a spec only writes deltas against |
 | [`design-system.md`](./design-system.md) | …building or styling any UI | Brand (palette, type, wordmark), semantic tokens, the two-surface component doctrine (ADR-0007) |
 | [`demo.md`](./demo.md) | …showing the product to somebody | The five-minute scripted walkthrough (PRD §8 / G5): prerequisites, four acts with exact URLs and labels, encores, what is deliberately out of scope |
 | [`r2-cutover.md`](./r2-cutover.md) | …pointing production photo storage at Cloudflare R2 (or Garage on the VPS) | The dashboard steps, the `storage:doctor` probe that verifies them, and what R2 does *not* document (ADR-0029) |

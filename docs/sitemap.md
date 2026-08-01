@@ -199,7 +199,7 @@ Grouped by module. Machine/edge routes (no page) are last. `api #n` points into 
 | `POST /units/:unitId/channels` | Connect an OTA iCal feed (smoke-fetched once). | authed · scoped | api #28 · ADR-0016 |
 | `DELETE /channels/:id` | Disconnect (keeps imported bookings; reports how many). | authed · scoped | api #30 |
 | `POST /channels/:id/sync` | Sync now, one feed. | authed · scoped | api #31 · ADR-0025 |
-| `POST /channels/sync` | Sync now, every feed the caller can see. | authed · scoped | api #201 · ADR-0025 |
+| `POST /channels/sync` | Sync now, every feed the caller can see. | authed · scoped | api #40 · ADR-0025 |
 | `GET /sync-conflicts` | The Sync-conflict inbox list. | authed · scoped | api #32 · ADR-0027 |
 | `POST /sync-conflicts/:id/dismiss` | Dismiss a conflict (the Owner's judgement). | authed · scoped | api #33 · ADR-0027 |
 
