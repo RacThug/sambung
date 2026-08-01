@@ -133,6 +133,7 @@ export const zh: Messages = {
   "auth.signingIn": "登录中…",
   "auth.signIn": "登录",
   "auth.invalidCredentials": "邮箱或密码错误",
+  "auth.noWorkspace": "您的账户已不属于任何团队。请让账户所有者重新邀请您。",
   "auth.genericError": "出了点问题 - 请重试",
   "auth.newToSambung": "初次使用 Sambung？",
   "auth.createAccount": "创建账户",

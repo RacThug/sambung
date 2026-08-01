@@ -146,8 +146,11 @@ describe("AppShell", () => {
     renderAt("/app/properties");
 
     const heading = await screen.findByRole("heading", { name: "Properties" });
+    // Awaited, not synchronous: the header now portals in on the FIRST commit,
+    // before the properties read lands (divergence D1 - the page used to withhold
+    // its own header while loading, so this assertion used to pass by accident).
     expect(
-      screen.getByRole("button", { name: "New property" }),
+      await screen.findByRole("button", { name: "New property" }),
     ).toBeInTheDocument();
     // It lives in the top bar (portaled), not inside the page content.
     expect(document.querySelector("main")?.contains(heading)).toBe(false);

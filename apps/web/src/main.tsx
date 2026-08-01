@@ -11,14 +11,12 @@ import "@fontsource/fraunces/400.css";
 import "@fontsource/fraunces/600.css";
 import { queryClient } from "./lib/query";
 import { router } from "./router";
-import { Toaster } from "@/components/ui/sonner";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
-      <Toaster />
     </QueryClientProvider>
   </StrictMode>,
 );

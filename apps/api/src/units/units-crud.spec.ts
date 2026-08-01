@@ -445,4 +445,77 @@ describe('Unit CRUD', () => {
       ).rejects.toThrow(/must be called inside TenantDbService\.run/);
     });
   });
+  /**
+   * `archived` is EFFECTIVE retirement - the Unit's own flag OR its Property's
+   * (ADR-0005) - derived by the join every Unit read performs, and `archivedAt`
+   * beside it is the Unit's OWN flag. The two diverge in exactly one situation, and
+   * that situation is the whole reason the field moved server-side: three feature
+   * files in apps/web used to compute this, and nothing checked they agreed
+   * (MIGRATION-REPORT.md §3.A).
+   */
+  describe('effective archived (ADR-0005)', () => {
+    it('is false for a live unit under a live property', async () => {
+      const created = await createUnit({ name: 'Live', basePriceIdr: 100_000 });
+      expect(created.archived).toBe(false);
+      expect(created.archivedAt).toBeNull();
+    });
+
+    it("is true from the unit's OWN flag, and archive/unarchive round-trips", async () => {
+      const created = await createUnit({ name: 'Self', basePriceIdr: 100_000 });
+
+      const archived = bodyOf<UnitResponse>(
+        await request(server())
+          .post(`/api/units/${created.id}/archive`)
+          .set('Authorization', `Bearer ${tokenA}`)
+          .expect(200),
+      );
+      expect(archived.archived).toBe(true);
+      expect(archived.archivedAt).not.toBeNull();
+
+      const restored = bodyOf<UnitResponse>(
+        await request(server())
+          .post(`/api/units/${created.id}/unarchive`)
+          .set('Authorization', `Bearer ${tokenA}`)
+          .expect(200),
+      );
+      expect(restored.archived).toBe(false);
+      expect(restored.archivedAt).toBeNull();
+    });
+
+    it("is true from the PROPERTY's flag while the unit's own stays null", async () => {
+      const prop = await createProperty(tokenA, 'Retired Villa');
+      const created = await createUnit(
+        { name: 'Inherits', basePriceIdr: 100_000 },
+        prop.id,
+      );
+      expect(created.archived).toBe(false);
+
+      await request(server())
+        .post(`/api/properties/${prop.id}/archive`)
+        .set('Authorization', `Bearer ${tokenA}`)
+        .expect(200);
+
+      // The divergence: effective true, own flag still null. A client deriving
+      // from `archivedAt` alone would call this unit live.
+      const [viaProperty] = bodyOf<UnitResponse[]>(
+        await request(server())
+          .get(`/api/properties/${prop.id}/units`)
+          .set('Authorization', `Bearer ${tokenA}`)
+          .expect(200),
+      );
+      expect(viaProperty.archived).toBe(true);
+      expect(viaProperty.archivedAt).toBeNull();
+
+      // Same answer on the flat list the calendar reads - one derivation, two
+      // endpoints, so the two views cannot disagree.
+      const flat = bodyOf<UnitResponse[]>(
+        await request(server())
+          .get('/api/units')
+          .set('Authorization', `Bearer ${tokenA}`)
+          .expect(200),
+      ).find((u) => u.id === created.id);
+      expect(flat?.archived).toBe(true);
+      expect(flat?.archivedAt).toBeNull();
+    });
+  });
 });

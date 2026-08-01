@@ -13,6 +13,7 @@ import { reservationsSearchSchema } from "./features/reservations/reservations-s
 import { ensureSession } from "./lib/auth";
 import { I18nProvider } from "@/i18n/provider";
 import { PublicShell } from "@/components/public-shell";
+import { RouteError, RouteNotFound } from "@/components/route-fallbacks";
 
 // Two faces, one SPA: public funnel + auth-guarded dashboard (architecture.md
 // §4.2). The two surfaces are also two BUNDLES (#125, ADR-0023): every route's
@@ -260,7 +261,18 @@ export const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export const router = createRouter({ routeTree });
+/**
+ * The two global fallbacks page-spec §2 promised and this router never set
+ * (divergence D6): a render-time throw used to reach a blank screen, and an
+ * unmatched path matched nothing. Declared once at the router rather than per
+ * route - they are the last resort behind every per-page state, so a page that
+ * handles its own failed read never reaches them.
+ */
+export const router = createRouter({
+  routeTree,
+  defaultErrorComponent: RouteError,
+  defaultNotFoundComponent: RouteNotFound,
+});
 
 // Registers this router's route tree with TanStack Router's types, so every
 // <Link>, useParams, and useSearch across the app is checked against real routes.

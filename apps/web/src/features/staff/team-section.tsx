@@ -11,6 +11,7 @@ import { conflictOf, describeConflict } from "../../lib/conflict";
 import { formatInstant } from "../../lib/date";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { FormField } from "@/components/form-field";
+import { ListSkeleton } from "@/components/list-state";
 import { Button } from "@/components/ui/button";
 import {
   useCreateInvite,
@@ -55,35 +56,49 @@ export function TeamSection() {
       <h3 className="mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
         Staff
       </h3>
-      {staff.isLoading && (
-        <div className="mt-3 h-16 animate-pulse rounded-md bg-muted/40" />
-      )}
-      {staff.data?.length === 0 && (
+      {/* A failed roster read used to render the EMPTY line - "Nobody yet" for a
+          team that exists (divergence D5). Error first, then the gate on data. */}
+      {staff.isError ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          We couldn’t load your team. Please try again.
+        </p>
+      ) : staff.data === undefined ? (
+        <ListSkeleton className="mt-3 h-16" />
+      ) : staff.data.length === 0 ? (
         <p className="mt-3 text-sm text-muted-foreground">
           Nobody yet. Invite someone above.
         </p>
+      ) : (
+        <ul className="mt-3 space-y-3">
+          {staff.data.map((member) => (
+            <StaffRow
+              key={member.id}
+              member={member}
+              properties={properties.data ?? []}
+            />
+          ))}
+        </ul>
       )}
-      <ul className="mt-3 space-y-3">
-        {staff.data?.map((member) => (
-          <StaffRow
-            key={member.id}
-            member={member}
-            properties={properties.data ?? []}
-          />
-        ))}
-      </ul>
 
-      {invites.data && invites.data.length > 0 && (
-        <>
-          <h3 className="mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Pending invites
-          </h3>
-          <ul className="mt-3 space-y-3">
-            {invites.data.map((invite) => (
-              <InviteRow key={invite.id} invite={invite} />
-            ))}
-          </ul>
-        </>
+      <h3 className="mt-8 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        Pending invites
+      </h3>
+      {invites.isError ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          We couldn’t load pending invites. Please try again.
+        </p>
+      ) : invites.data === undefined ? (
+        <ListSkeleton className="mt-3 h-12" />
+      ) : invites.data.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          No invites are waiting to be accepted.
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-3">
+          {invites.data.map((invite) => (
+            <InviteRow key={invite.id} invite={invite} />
+          ))}
+        </ul>
       )}
     </div>
   );

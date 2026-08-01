@@ -68,11 +68,17 @@ The line: *own the look everywhere guests look; never hand-write accessibility t
 | need | choice | note |
 |---|---|---|
 | icons | `lucide-react` | tree-shakeable, MIT; both surfaces |
-| toasts | `sonner` | page-spec §2's 5xx/network toasts |
 | date picking | `react-day-picker` | headless; arrives with the M2 availability picker |
 | class variants | `cva` + `tailwind-merge` + `clsx` | arrive with shadcn |
 
 All free (invariant #8). Anything heavier gets flagged before it enters.
+
+**Removed 2026-08-01: `sonner`.** It was listed here for "page-spec §2's 5xx/network toasts" and mounted
+in `main.tsx`, and **nothing ever called `toast()`**. Feedback in this app is inline, beside the control
+that caused it, which `sync-now-button.tsx` argues for in place: a sync summary is something an owner may
+want to read twice, and a toast takes it away on a timer. The global surface that WAS missing is a
+render-time error boundary and a 404 route, and those now exist on the router
+([`pages/_list-pattern.md`](pages/_list-pattern.md) D6/D7).
 
 ## 6. Working agreements
 

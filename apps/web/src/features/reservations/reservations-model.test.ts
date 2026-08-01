@@ -42,6 +42,7 @@ const unit = (over: Partial<UnitResponse> = {}): UnitResponse => ({
   propertyId: "p1",
   tenantId: "t1",
   name: "Room",
+  archived: false,
   basePriceIdr: toRupiah(1_000_000n),
   maxGuests: 2,
   minStay: 1,

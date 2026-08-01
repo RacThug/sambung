@@ -15,6 +15,7 @@ import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { isOwner } from "../../lib/role";
 import { FormField } from "@/components/form-field";
+import { ListError, ListSkeleton } from "@/components/list-state";
 import { PageHeader } from "@/components/page-header";
 import { ChannelsSection } from "./channels-section";
 import { PhotosSection } from "./photos-section";
@@ -27,19 +28,32 @@ const route = getRouteApi("/app/properties/$propertyId");
 // (the per-unit OTA sync + export links, #55).
 export function PropertyEditPage() {
   const { propertyId } = route.useParams();
-  const { data: property, isLoading } = useQuery({
+  const query = useQuery({
     queryKey: ["properties", propertyId],
     queryFn: () => api.get<PropertyResponse>(`/properties/${propertyId}`),
     retry: (failureCount, error) =>
       // A 404 stays a 404 - don't burn retries on it.
       !(error instanceof ApiError && error.status === 404) && failureCount < 1,
   });
+  const property = query.data;
 
-  if (isLoading) {
-    return <p className="text-muted-foreground">Loading property…</p>;
+  // A 404 and a network failure used to render the SAME sentence, so a blip
+  // claimed the property did not exist (divergence D5). Error is checked before
+  // data, and the gate is `!data` rather than `isLoading` - which goes false the
+  // moment a failed attempt settles (D2).
+  if (query.isError) {
+    const notFound =
+      query.error instanceof ApiError && query.error.status === 404;
+    return (
+      <ListError>
+        {notFound
+          ? "This property doesn’t exist, or it isn’t yours."
+          : "We couldn’t load this property. Please try again."}
+      </ListError>
+    );
   }
   if (!property) {
-    return <p className="text-muted-foreground">Property not found.</p>;
+    return <ListSkeleton className="h-64" />;
   }
 
   const archived = isArchived(property);

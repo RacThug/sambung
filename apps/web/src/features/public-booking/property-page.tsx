@@ -1,6 +1,6 @@
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import type { PublicPropertyResponse, PublicUnit } from "@sambung/shared";
+import { isSellable, type PublicPropertyResponse, type PublicUnit } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { formatIdr } from "../../lib/money";
 import { useI18n, type I18n } from "@/i18n/context";
@@ -159,7 +159,11 @@ function UnitCard({
   onDates: (dates: { from?: string; to?: string }) => void;
 }) {
   const { t } = i18n;
-  const bookable = unit.basePriceIdr > 0;
+  // The shared rule, not a second spelling of it: `isSellable` is what the
+  // dashboard's units table and the API's `publishable` derivation both use, and
+  // this page inlined `basePriceIdr > 0` instead until the page-spec migration
+  // found the two copies.
+  const bookable = isSellable(unit);
 
   return (
     <div className="rounded-lg border border-border p-4">

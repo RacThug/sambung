@@ -95,6 +95,22 @@ export const unitResponseSchema = z.object({
    * public payload omits it. Read-only, set by POST /units/:id/archive.
    */
   archivedAt: z.string().nullable(), // ISO-8601 UTC or null
+  /**
+   * EFFECTIVE retirement: this Unit's own `archivedAt` OR its Property's
+   * (ADR-0005). Derived server-side from the join the read already performs.
+   *
+   * Both fields are on the wire because they answer different questions.
+   * `archivedAt` is the Unit's OWN flag - what archive/unarchive acts on, and what
+   * decides whether the verb reads "Archive" or "Unarchive". `archived` is what
+   * every consumer actually renders: a live Unit under a retired Property is
+   * archived for every purpose a guest or a calendar cares about, and reading its
+   * own null flag would say otherwise.
+   *
+   * This was the client's job until the page-spec migration counted the cost: one
+   * rule, three feature files, six UI decisions, nothing checking the copies
+   * agreed (MIGRATION-REPORT.md §3.A).
+   */
+  archived: z.boolean(),
   createdAt: z.string(), // ISO-8601 UTC
 });
 export type UnitResponse = z.infer<typeof unitResponseSchema>;

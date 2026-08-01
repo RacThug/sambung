@@ -4,6 +4,7 @@ import {
   availabilityQuerySchema,
   coalesceRanges,
   countNights,
+  lastNightOf,
   meetsMinStay,
   quoteTotalIdr,
   type BlockedRange,
@@ -39,6 +40,33 @@ describe("quoteTotalIdr (v1 pricing rule)", () => {
     // The product can exceed MAX_SAFE_INTEGER before toRupiah range-checks it at
     // the boundary; number math would have rounded here.
     expect(quoteTotalIdr(9_000_000_000_000_000n, 3)).toBe(27_000_000_000_000_000n);
+  });
+});
+
+describe("lastNightOf (the changeover day is not a night)", () => {
+  it("returns the day before check-out", () => {
+    expect(lastNightOf({ from: "2026-08-10", to: "2026-08-13" })).toBe("2026-08-12");
+  });
+
+  it("collapses a one-night range to its own start", () => {
+    expect(lastNightOf({ from: "2026-08-10", to: "2026-08-11" })).toBe("2026-08-10");
+  });
+
+  it("crosses a month boundary", () => {
+    expect(lastNightOf({ from: "2026-07-30", to: "2026-08-01" })).toBe("2026-07-31");
+  });
+
+  it("crosses a year boundary", () => {
+    expect(lastNightOf({ from: "2026-12-30", to: "2027-01-01" })).toBe("2026-12-31");
+  });
+
+  it("agrees with countNights: from + nights - 1 is the last night", () => {
+    const range = { from: "2026-03-01", to: "2026-03-29" };
+    const nights = countNights(range.from, range.to);
+    const expected = new Date(Date.parse(`${range.from}T00:00:00Z`) + (nights - 1) * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    expect(lastNightOf(range)).toBe(expected);
   });
 });
 

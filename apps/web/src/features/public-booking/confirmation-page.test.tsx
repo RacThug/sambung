@@ -16,6 +16,9 @@ const confirmation = (over: Record<string, unknown> = {}) => ({
   unitName: "Garden Room 1",
   totalPriceIdr: 4_000_000,
   amountPaidIdr: 1_200_000,
+  // Server-stated since the balance moved onto the wire (api-spec §6.3): the page
+  // renders this rather than subtracting the two fields above.
+  balanceIdr: 2_800_000,
   waLink: "https://wa.me/6281234567890?text=Here",
   ...over,
 });

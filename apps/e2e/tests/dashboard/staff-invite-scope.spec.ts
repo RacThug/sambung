@@ -159,8 +159,13 @@ test.describe("Flow 5 - scoped access as staff", () => {
     const response = await responsePromise;
     expect(response.status()).toBe(404);
 
-    // And the workbench renders "not found" rather than a permission wall.
-    await expect(page.getByText("Property not found.")).toBeVisible();
+    // And the workbench renders "not found" rather than a permission wall. The
+    // copy now covers both readings without confirming which - "doesn't exist, or
+    // it isn't yours" - which is exactly the answer 404-over-403 exists to give
+    // (divergence D5: it also stopped saying this for a mere network failure).
+    await expect(
+      page.getByText(/doesn.t exist, or it isn.t yours/i),
+    ).toBeVisible();
   });
 
   // Scenario 4 [AUTH-3]: owner-only verbs are hidden from staff and the settings

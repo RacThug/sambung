@@ -119,6 +119,17 @@ export class ConfirmationService {
       totalPriceIdr:
         v.totalPriceIdr === null ? null : toRupiah(v.totalPriceIdr),
       amountPaidIdr: toRupiah(v.amountPaidIdr),
+      // Clamped at zero: a settlement above the total is a reconciliation problem
+      // for the owner (the paid-but-lapsed inbox exists for that family of case),
+      // not a negative number to show a guest.
+      balanceIdr:
+        v.totalPriceIdr === null
+          ? null
+          : toRupiah(
+              v.totalPriceIdr > v.amountPaidIdr
+                ? v.totalPriceIdr - v.amountPaidIdr
+                : 0n,
+            ),
       waLink: buildWaMeLink({
         phone: v.guestPhone,
         guestName: v.guestName,

@@ -1,4 +1,12 @@
+---
+status: legacy
+---
+
 # Sambung - Page Specification (v1)
+
+> **Legacy, and still accurate:** this file documents pages that already shipped. A **new** page is
+> specified before it is built, in [`pages/`](./pages/README.md) - start from
+> [`pages/_template.md`](./pages/_template.md).
 
 > **What this is:** the UX contract - every page the SPA needs across M0-M5: what it is, what it does, which endpoints feed it, and the states it must handle.
 > **What this is not:** visual design (that happens in the UI work per milestone) or API shapes (canonical in [`api-spec.md`](./api-spec.md) - referenced below as `api #n` using its §2 endpoint index).

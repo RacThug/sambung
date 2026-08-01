@@ -4,14 +4,17 @@ import {
   createUnitRequestSchema,
   isArchived,
   isSellable,
+  updateUnitRequestSchema,
   type CreateUnitRequest,
   type PropertyResponse,
   type UnitResponse,
+  type UpdateUnitRequest,
 } from "@sambung/shared";
 import { api, ApiError } from "../../lib/api-client";
 import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { formatIdr } from "../../lib/money";
+import { ListSkeleton } from "@/components/list-state";
 
 /**
  * Units on the property workbench (page-spec §4.5, api #14/#15/#16).
@@ -23,10 +26,11 @@ import { formatIdr } from "../../lib/money";
  * arrives in bursts.
  */
 export function UnitsSection({ property }: { property: PropertyResponse }) {
-  const { data: units, isLoading } = useQuery({
+  const unitsQuery = useQuery({
     queryKey: ["properties", property.id, "units"],
     queryFn: () => api.get<UnitResponse[]>(`/properties/${property.id}/units`),
   });
+  const units = unitsQuery.data;
   const [editingId, setEditingId] = useState<string | null>(null);
 
   // When the property is archived, every Unit under it is effectively archived
@@ -42,8 +46,12 @@ export function UnitsSection({ property }: { property: PropertyResponse }) {
         one is sold, and synced to the OTAs, on its own.
       </p>
 
-      {isLoading ? (
-        <p className="mt-4 text-sm text-muted-foreground">Loading units…</p>
+      {unitsQuery.isError ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          We couldn’t load these units. Please try again.
+        </p>
+      ) : units === undefined ? (
+        <ListSkeleton className="mt-4 h-32" />
       ) : (
         // The page body must never scroll sideways; the table may.
         <div className="mt-4 overflow-x-auto">
@@ -121,12 +129,13 @@ function UnitRow({
   onEdit: () => void;
 }) {
   const queryClient = useQueryClient();
-  // The unit's OWN flag drives the toggle verb; effective-archived (its own OR
-  // its property's, ADR-0005) drives how it's SHOWN. They diverge exactly when a
-  // live unit sits under an archived property - which must read as archived here,
-  // not as a bookable room under a "retired" banner.
+  // The unit's OWN flag drives the toggle verb; effective-archived drives how it
+  // is SHOWN. They diverge exactly when a live unit sits under an archived
+  // property - which must read as archived here, not as a bookable room under a
+  // "retired" banner. Both now come from the server (ADR-0005): `archivedAt` is
+  // the Unit's own, `archived` the derived one.
   const selfArchived = isArchived(unit);
-  const effectiveArchived = selfArchived || propertyArchived;
+  const effectiveArchived = unit.archived;
   const remove = useMutation({
     mutationFn: () => api.delete(`/units/${unit.id}`),
     onSuccess: () =>
@@ -284,7 +293,7 @@ function UnitFormRow({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const save = useMutation({
-    mutationFn: (body: CreateUnitRequest) =>
+    mutationFn: (body: CreateUnitRequest | UpdateUnitRequest) =>
       unit
         ? api.patch<UnitResponse>(`/units/${unit.id}`, body)
         : api.post<UnitResponse>(`/properties/${propertyId}/units`, body),
@@ -340,7 +349,15 @@ function UnitFormRow({
 
   function onSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
-    const parsed = createUnitRequestSchema.safeParse({
+    // An edit validates against the PATCH schema, a create against the POST one.
+    // They differ exactly where it matters: `createUnitRequestSchema` DEFAULTS an
+    // absent `maxGuests`/`minStay` to 2 and 1, so editing a unit and clearing one
+    // of those boxes used to silently reset the stored value. `.partial()`
+    // short-circuits on `undefined` before reaching the default, so the same
+    // gesture now means "leave it alone" - which is what PATCH means, and what the
+    // API has always validated this request with (`units.controller.ts`).
+    const schema = unit ? updateUnitRequestSchema : createUnitRequestSchema;
+    const parsed = schema.safeParse({
       name: form.name,
       // "" -> undefined, NOT Number("") which is 0: a blank price must read as
       // "you forgot this", never as a silently free room.
