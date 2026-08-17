@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -144,6 +144,15 @@ function UnitChannels({ unit }: { unit: UnitResponse }) {
  */
 function ExportUrl({ unitId }: { unitId: string }) {
   const [copied, setCopied] = useState(false);
+  // The "Copied" flash owns its timer through an effect so unmount CANCELS it: a
+  // bare setTimeout in the click handler outlived the component and fired into a
+  // torn-down test environment (surfaced when the Prices panel lengthened this
+  // page's render) - and in prod would set state on an unmounted component.
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
   // Same-origin `/api` (Caddy proxies it in prod, the Vite dev server in dev),
   // so an absolute URL from the current origin is what the OTA should fetch.
   const url = `${window.location.origin}/api/public/units/${unitId}/calendar.ics`;
@@ -160,10 +169,7 @@ function ExportUrl({ unitId }: { unitId: string }) {
           variant="outline"
           size="sm"
           onClick={() => {
-            void navigator.clipboard.writeText(url).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            });
+            void navigator.clipboard.writeText(url).then(() => setCopied(true));
           }}
         >
           {copied ? "Copied" : "Copy"}
