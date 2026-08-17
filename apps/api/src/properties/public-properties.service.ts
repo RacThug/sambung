@@ -6,7 +6,15 @@ import {
   toRupiah,
   type PublicPropertyResponse,
 } from '@sambung/shared';
+import { Inject } from '@nestjs/common';
+import { paymentCredentialExists } from '../common/payment-credential-exists';
 import { PublicScope } from '../common/public-scope.service';
+import { TenantContext } from '../common/tenant-context.service';
+import { TenantDbService } from '../db/tenant-db.service';
+import {
+  PAYMENT_GATEWAY,
+  type PaymentGateway,
+} from '../payments/payment-gateway';
 import { StorageService } from '../storage/storage.service';
 import { ogCanonicalUrl, renderPropertyOgHtml } from './property-og-html';
 import { PropertiesRepository } from './properties.repository';
@@ -26,6 +34,12 @@ export class PublicPropertiesService {
     private readonly repo: PropertiesRepository,
     private readonly storage: StorageService,
     private readonly config: ConfigService,
+    private readonly db: TenantDbService,
+    private readonly tenant: TenantContext,
+    // Only for `requiresCredentials` (GW-04): the flag must say "available"
+    // wherever the fake is bound - env or a spec override - so it reads the
+    // BOUND gateway. PropertiesModule registers the same factory/token.
+    @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
   ) {}
 
   async getBySlug(slug: string): Promise<PublicPropertyResponse> {
@@ -50,6 +64,16 @@ export class PublicPropertiesService {
     // keys, so the payload cannot silently widen to whatever the row grew. One
     // line that makes "no PII in the public payload" a property of the code
     // rather than a promise in a review.
+    // Online checkout availability (REQ-PA-04, EARS GW-04): a credential EXISTS
+    // for this tenant (or the fake gateway simulates one - the e2e seam). The
+    // SAME predicate the booking write refuses on (GW-03), so the page's promise
+    // and the write's answer cannot drift. Derived, never stored.
+    const onlinePaymentsAvailable =
+      !this.gateway.requiresCredentials ||
+      (await this.db.run((tx) =>
+        paymentCredentialExists(tx, this.tenant.tenantId),
+      ));
+
     return publicPropertyResponseSchema.parse({
       slug: row.slug,
       name: row.name,
@@ -57,6 +81,7 @@ export class PublicPropertiesService {
       description: row.description,
       verified: row.verified,
       depositPct: row.depositPct,
+      onlinePaymentsAvailable,
       photos: row.photos.map((key) => ({ url: this.storage.publicUrl(key) })),
       units: row.units.map((u) => ({
         id: u.id,

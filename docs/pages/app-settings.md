@@ -17,8 +17,9 @@ verified: true
 
 ## 1. Purpose
 
-The tenant-wide knobs: how many photos a Property's Gallery may hold, and who else may work on the
-Tenant's Properties. *(page-spec §4.7)*
+The tenant-wide knobs: how many photos a Property's Gallery may hold, who else may work on the
+Tenant's Properties, and the Tenant's own payment-gateway credentials. *(page-spec §4.7; Payments
+added by the REQ-PA-04 amendment)*
 
 ---
 
@@ -31,7 +32,7 @@ Tenant's Properties. *(page-spec §4.7)*
 | **URL params** | None. |
 | **Query state** | None. |
 | **Not in the URL** | The cap input's in-progress value, which staff row is being edited, and the invite form. |
-| **Auth** | Authed. **`GET /settings` is open to any signed-in member**; every write, and every Team read, is owner-only. Staff get a read-only sentence, and the owner-only reads are **never issued**, so a Staff session produces no stray 403s. |
+| **Auth** | Authed. **`GET /settings` is open to any signed-in member**; every write, and every Team read, is owner-only. Staff get a read-only sentence, and the owner-only reads are **never issued**, so a Staff session produces no stray 403s. The Payments section is owner-only in BOTH directions (read and write) - credentials are the shape of the Tenant's money, the ADR-0032 verb line's clearest case; Staff see nothing, not a read-only sentence. |
 
 ---
 
@@ -59,6 +60,11 @@ Tenant's Properties. *(page-spec §4.7)*
 | Team | pending invite email | `email` | `inviteDtoSchema` | `GET /auth/invites` | raw | [code] |
 | Team | pending invite properties + expiry | `properties[].name`, `expiresAt` | `inviteDtoSchema` | `GET /auth/invites` | raw | [code] |
 | Team | Change access / Remove / Revoke buttons | - | none | - | FE | [code] |
+| Payments | status line: "configured <date> · sandbox / production" or "not configured" | `provider`, `environment`, `configuredAt`, `lastVerifyStatus`, `lastVerifyAt` | `paymentCredentialStatusResponseSchema` / `listPaymentCredentialsResponseSchema` | `GET /settings/payment-credentials` | raw | [code] |
+| Payments | verify badge ("key checked ✓ / key check failed / unchecked") | `lastVerifyStatus`, `lastVerifyAt` | `credentialVerifyStatusSchema` | `GET /settings/payment-credentials` | BE | [code] |
+| Payments | paste form: server key + environment select | `serverKey`, `environment` | `savePaymentCredentialRequestSchema` / `paymentEnvironmentSchema` | `PUT /settings/payment-credentials/:provider` | raw | [code] |
+| Payments | "never shown again" helper + activation checklist link | - | none | - | FE | [code] |
+| Payments | save/replace feedback ("Saved. Guests can now pay online.") | - | none | - | FE | [code] |
 
 `staffMemberDtoSchema.id` and `.createdAt`, `inviteDtoSchema.id` and `.createdAt` are on the wire;
 `createdAt` on both is **not rendered**, and neither `id` is displayed (both are used as mutation
@@ -66,6 +72,11 @@ targets).
 
 The **raw invite token appears in no row on purpose**: no endpoint returns it, so a lost email means
 revoke and re-invite rather than re-reading it here (ADR-0033).
+
+**The server key appears in no row for the same reason, permanently**: no endpoint
+ever returns it - not masked, not last-4 (that is partial readback). What the owner sees is that a key
+exists, when it was saved, and whether the last verification call reached Midtrans. A lost key means
+paste it again from the Midtrans dashboard - which is also the replace flow, one idempotent PUT.
 
 ---
 
@@ -77,9 +88,10 @@ revoke and re-invite rather than re-reading it here (ADR-0033).
 | `GET /staff` | on mount, **owner only** | section only | yes - `["staff"]` |
 | `GET /auth/invites` | on mount, **owner only** | section only | yes - `["invites"]` |
 | `GET /properties` | on mount, **owner only** (the property picker) | section only | yes - `["properties"]`, usually already warm from the calendar |
-| `PATCH /settings` · `POST /auth/invites` · `DELETE /auth/invites/:id` · `PATCH /staff/:id` · `DELETE /staff/:id` | per action | mutations | n/a |
+| `GET /settings/payment-credentials` | on mount, **owner only** | section only | yes - `["payment-credentials"]` |
+| `PATCH /settings` · `POST /auth/invites` · `DELETE /auth/invites/:id` · `PATCH /staff/:id` · `DELETE /staff/:id` · `PUT /settings/payment-credentials/:provider` | per action | mutations | n/a |
 
-**Four blocking reads for an Owner** - the most on any page - though each blocks only its own card or
+**Five blocking reads for an Owner** - the most on any page - though each blocks only its own card or
 list, and a Staff session issues exactly one.
 
 ---
@@ -111,6 +123,7 @@ Follows [`_list-pattern.md`](./_list-pattern.md). Deltas:
 | Revoke invite | `DELETE /auth/invites/:id` | button → "Revoking…" | invalidate `["invites"]` only - it has no business refetching the roster | *(no error branch)* | no | yes - 404-over-403, idempotent |
 | Change access | `PATCH /staff/:id` | button → "Saving…" | invalidate `["staff"]`, close the editor | *(no error branch)* | no | yes - a whole-set write |
 | Remove staff | `window.confirm` → `DELETE /staff/:id` | - | invalidate `["staff"]` | *(no error branch)* | no | yes |
+| Save / replace a payment key | `PUT /settings/payment-credentials/:provider` | button → "Saving…" (the server verifies against Midtrans inline, so it can take a beat) | invalidate `["payment-credentials"]`, clear the input, show the status line | 400 → field (bad shape); verify-failure is NOT a refusal - the key stores, the badge says "key check failed" (see §7) | no | yes - an idempotent overwrite; replacing with the same key is a no-op in effect |
 
 Removing a colleague asks first: it is not undone by a second click, which is the same bar as deleting
 inventory (`_list-pattern.md` §6.4). The three Team mutations have **no failure rendering at all** - a
@@ -132,6 +145,11 @@ failed revoke or reassignment is silent.
 | An address that already holds a membership **here** is refused; one at another Tenant is invited normally | BE | `code` | - |
 | Removing a staff member ends the Membership, not the account | BE | - | - |
 | A failed invite email rolls the invite back | BE | - | - |
+| The server key is write-only: no endpoint returns it, in any form | BE | - | - |
+| Credentials are encrypted at rest with the app-held key; ciphertext is read only on the owner connection at the gateway layer, never under a principal's RLS scope | BE | - | - |
+| Online checkout is available iff a credential EXISTS; the verify badge is information, not a gate | BE | `onlinePaymentsAvailable` (public), `lastVerify` (here) | - |
+| Verify-on-save stores its outcome instead of refusing: a Midtrans outage must not stop a valid key being saved (the channels smoke-fetch rule, #55) | BE | `lastVerifyStatus`, `lastVerifyAt` | - |
+| Payments is owner-only both directions - 403 for staff, before any lookup | BE (`@Roles`) | - | - |
 
 One leak, and a mild one: the "at least one property" rule is enforced by `assignedPropertyIdsSchema`'s
 `min(1)` and mirrored by a disabled button plus an explanatory line ("pick at least one property, or
@@ -145,10 +163,23 @@ regardless.
 
 ## 8. Schema implications
 
-**None.** `tenantSettingsResponseSchema`, `updateTenantSettingsRequestSchema`, `galleryCapSchema`,
-`createInviteRequestSchema`, `inviteDtoSchema`, `listInvitesResponseSchema`, `staffMemberDtoSchema`,
-`listStaffResponseSchema`, `updateStaffRequestSchema`, `assignedPropertyIdsSchema` and
-`assignedPropertySchema` all exist.
+**None for the shipped page.** `tenantSettingsResponseSchema`, `updateTenantSettingsRequestSchema`,
+`galleryCapSchema`, `createInviteRequestSchema`, `inviteDtoSchema`, `listInvitesResponseSchema`,
+`staffMemberDtoSchema`, `listStaffResponseSchema`, `updateStaffRequestSchema`,
+`assignedPropertyIdsSchema` and `assignedPropertySchema` all exist.
+
+**REQ-PA-04 (built):** the Payments amendment's schema work, all landed with migration 0018:
+
+| Change | Table / package | Migration | Why |
+|---|---|---|---|
+| `tenant_payment_credential` (id, `tenant_id` unique-with-`provider`, `provider text`, `environment` ('sandbox' / 'production'), `ciphertext bytea`, `nonce bytea`, `key_version smallint`, `last_verify_status` + `last_verify_at`, `created_at`, `updated_at`) | `packages/db` | `0018_tenant_payment_credential.sql` | ADR-0039: credentials on the tenant. A TABLE, not tenant columns - multi-field secret material with a provider axis and a lifecycle, kept out of the hot `tenant` row |
+| RLS policy: tenant term only, and the SELECT the dashboard issues never includes `ciphertext`/`nonce` - the decrypting read happens at the gateway layer on the owner connection | `packages/db` | same | A Visitor-scoped pay request must never be able to SELECT secret material; the owner-connection read is the sweeper/webhook category (system config, not an actor browsing) |
+| `savePaymentCredentialRequestSchema` (`strictObject`; serverKey trimmed, bounded; environment enum) | `packages/shared` | n/a | The one inbound body. The serverKey field exists ONLY here - in no response schema, ever |
+| `paymentCredentialStatusResponseSchema` (provider, environment, configuredAt, lastVerify status+at) | `packages/shared` | n/a | What the owner may know about a stored key |
+| `payments_not_configured` added to `conflictCodeSchema` + `describeConflict` copy | `packages/shared` + web | n/a | The pay/booking refusal when no credential exists (ADR-0012) |
+| `publicPropertyResponseSchema` gains derived `onlinePaymentsAvailable: boolean` | `packages/shared` | n/a | Decision 4 (ADR-0039): the funnel disables checkout honestly instead of letting a guest hit the 409 |
+| New env `CREDENTIAL_ENCRYPTION_KEY` (base64, 32 bytes) + `validateEnv` guard: refuse to boot a DEPLOYMENT (the #193 predicate) without it; `MIDTRANS_SERVER_KEY` leaves the production path (seed-only) | `apps/api` | n/a | No shared key to fall back to; a key-less deployment with stored credentials is bricked checkouts and must be loud |
+| `docs/runbooks/credential-key.md`: generate, back up, rotate (`key_version`) | docs | n/a | ADR-0039's stated consequence: losing this key bricks every tenant's checkout - the runbook ships WITH the first credential, not after |
 
 ---
 
@@ -160,6 +191,15 @@ regardless.
 - **What Staff can actually see.** Enforced by RLS on two axes (ADR-0032); this page only assigns.
 - **Accepting an invite.** `/invite/$token`.
 - **Billing.** Names nothing that exists.
+- **Deleting a credential** (= deliberately disabling online payments). Replace is the only verb at
+  MVP; a tenant who wants out swaps in a revoked key or asks. Revisit on real demand.
+- **Xendit.** The `provider` axis exists in the table and the URL, but only `midtrans` is accepted
+  until a second gateway is actually built (ADR-0039's deferred sub-merchant path is further still).
+- **The "signature failing since…" inbox item** (ADR-0039's last consequence). Follow-up, not this
+  slice - failures are loud in the log meanwhile.
+- **Per-property credentials.** ADR-0039 decision 1's wording notwithstanding, the credential is the
+  TENANT's (one merchant account per business); the per-property resolution happens through the
+  booking's tenant.
 
 ---
 
@@ -172,4 +212,8 @@ regardless.
 - [ ] **The Team section has no error or loading branch for invites.** "No pending invites" and "the read
   failed" are the same rendering (D5). **Owner:** builder.
 - [ ] **An Owner's session issues four reads here**, three of them owner-only. Fine at this size; worth
-  noting as the app's highest blocking-read count. **Owner:** RacThug.
+  noting as the app's highest blocking-read count (five with the Payments read). **Owner:** RacThug.
+- [ ] **What does the demo tenant show?** The seed encrypts the sandbox key from
+  `MIDTRANS_SERVER_KEY` (if set) into Bali Breeze so `demo.md` keeps working; a keyless dev machine
+  gets the "not configured" state - which is itself demoable (decision 4). Confirm that trade reads
+  fine in the demo script. **Owner:** RacThug. **Blocks:** the seed change only.

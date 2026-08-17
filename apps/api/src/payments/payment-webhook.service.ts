@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import {
   booking,
@@ -10,8 +16,10 @@ import {
 import { paymentProviderSchema, type PaymentProvider } from '@sambung/shared';
 import { DbService } from '../db/db.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CredentialResolver } from './credential-resolver.service';
 import {
   PAYMENT_GATEWAY,
+  type GatewayCredential,
   type PaymentGateway,
   type ParsedPaymentEvent,
   type PaymentOutcome,
@@ -66,6 +74,7 @@ export class PaymentWebhookService {
     private readonly dbs: DbService,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
     private readonly notifications: NotificationsService,
+    private readonly credentials: CredentialResolver,
   ) {}
 
   /**
@@ -73,13 +82,32 @@ export class PaymentWebhookService {
    * including a duplicate; providers retry non-2xx forever. Throws only for the
    * signature (401), an unknown provider (404), a malformed body (400), or a
    * genuine server fault (500, which the provider then correctly retries).
+   *
+   * RESOLVE FIRST, VERIFY SECOND (REQ-PA-04, EARS WH-01): signature verification
+   * needs the TENANT's key, and only `order_id` says which tenant. So the order
+   * id is peeked from the (still-untrusted) body, resolved payment → booking →
+   * tenant on the owner connection, the tenant's credential decrypted, and ONLY
+   * then is the signature checked - under that one key, never any other
+   * tenant's. An order id that resolves to nothing cannot be verified at all:
+   * 200 + WARN, nothing recorded (EARS WH-02 - a 4xx to a provider is a retry
+   * storm, ADR-0018).
    */
   async handle(providerParam: string, body: unknown): Promise<void> {
-    // Unknown provider → 404 (api-spec §6.2). Verify + translate behind the port,
-    // which throws 401 on a bad signature and 400 on a malformed body BEFORE
-    // anything trusts the payload (invariant: trust no external input).
+    // Unknown provider → 404 (api-spec §6.2).
     const provider = this.resolveProvider(providerParam);
-    const event = this.gateway.verifyAndParse(body);
+
+    const orderId = this.gateway.peekOrderId(body);
+    if (!orderId) {
+      throw new BadRequestException('Webhook payload carries no order id');
+    }
+    const credential = await this.credentialForOrder(orderId);
+    if (!credential) return; // 200; the WARN was logged where the gap was found
+
+    // Verify + translate behind the port - 401 on a bad signature, 400 on a
+    // malformed body, BEFORE anything trusts the payload (trust no external
+    // input). The peeked order id is only ever used again from the VERIFIED
+    // event, so a body whose order_id changed identity mid-parse cannot matter.
+    const event = this.gateway.verifyAndParse(body, credential);
 
     let result: ApplyResult;
     try {
@@ -117,7 +145,13 @@ export class PaymentWebhookService {
    * throw - a provider hiccup must not break the read.
    */
   async reconcile(orderId: string): Promise<void> {
-    const event = await this.gateway.fetchStatus(orderId);
+    // Same tenant-first resolution as `handle` (EARS WH-04): no payment row or
+    // no stored credential → nothing to reconcile, never an error - the
+    // confirmation page still renders the DB's current state.
+    const credential = await this.credentialForOrder(orderId);
+    if (!credential) return;
+
+    const event = await this.gateway.fetchStatus(orderId, credential);
     if (!event) return; // provider has no record (guest hasn't paid) - nothing to do
 
     let result: ApplyResult;
@@ -137,6 +171,48 @@ export class PaymentWebhookService {
     }
 
     await this.afterCommit(result, event);
+  }
+
+  /**
+   * The tenant's credential for the payment `orderId` names, or null when the
+   * chain breaks - each gap logged where it is found. The fake gateway
+   * (`requiresCredentials: false`) simulates a fully-configured provider and
+   * skips the store entirely: signature semantics are its own, and the e2e
+   * harness seeds no credential rows.
+   */
+  private async credentialForOrder(
+    orderId: string,
+  ): Promise<GatewayCredential | null> {
+    if (!this.gateway.requiresCredentials) {
+      return this.credentials.fakeCredential();
+    }
+    const rows = await this.dbs.db
+      .select({ tenantId: booking.tenantId })
+      .from(payment)
+      .innerJoin(booking, eq(booking.id, payment.bookingId))
+      .where(eq(payment.id, orderId))
+      .limit(1);
+    const target = rows[0];
+    if (!target) {
+      // Nothing to verify against: without a payment row there is no tenant,
+      // and without a tenant no key. Ack (200) so the provider stops retrying.
+      this.logger.warn(
+        `Webhook/reconcile for unknown order ${orderId} - unverifiable, no-op`,
+      );
+      return null;
+    }
+    const credential = await this.credentials.maybeResolve(target.tenantId);
+    if (!credential) {
+      // A payment exists but its tenant holds no credential (deleted after the
+      // session was minted). Unverifiable; loud, because THIS one is an
+      // operator problem - the ADR-0039 "signature failing since…" follow-up's
+      // territory.
+      this.logger.warn(
+        `Webhook/reconcile for order ${orderId}: tenant ${target.tenantId} has no payment credential - unverifiable, no-op`,
+      );
+      return null;
+    }
+    return credential;
   }
 
   /**

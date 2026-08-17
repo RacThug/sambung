@@ -48,6 +48,13 @@ export function AvailabilityPicker({
   onChange,
   /** 0 in tests to skip the debounce; ~300 ms in the app. */
   debounceMs = 300,
+  /**
+   * `property.onlinePaymentsAvailable` (REQ-PA-04, ADR-0039 decision 4): false
+   * keeps the calendar and the quote honest but swaps the Book CTA for a
+   * contact-the-owner line. Defaults ON so a missed thread-through degrades to
+   * the server's 409 (which the funnel localizes), never to a hidden calendar.
+   */
+  onlinePayments = true,
 }: {
   unit: PublicUnit;
   slug: string;
@@ -55,6 +62,7 @@ export function AvailabilityPicker({
   to?: string;
   onChange: (next: { from?: string; to?: string }) => void;
   debounceMs?: number;
+  onlinePayments?: boolean;
 }) {
   const i18n = useI18n();
   const today = todayIso();
@@ -102,6 +110,7 @@ export function AvailabilityPicker({
           unit={unit}
           quote={quote}
           syncing={syncing}
+          onlinePayments={onlinePayments}
         />
       </div>
     </div>
@@ -118,6 +127,7 @@ function QuoteCard({
   unit,
   quote,
   syncing,
+  onlinePayments,
 }: {
   i18n: I18n;
   stay: { from: string; to: string } | null;
@@ -125,6 +135,7 @@ function QuoteCard({
   unit: PublicUnit;
   quote: ReturnType<typeof useQuote>["query"];
   syncing: boolean;
+  onlinePayments: boolean;
 }) {
   const { t } = i18n;
   if (!stay) {
@@ -159,7 +170,14 @@ function QuoteCard({
   }
 
   return quote.data.available ? (
-    <Available i18n={i18n} res={quote.data} stay={stay} slug={slug} unit={unit} />
+    <Available
+      i18n={i18n}
+      res={quote.data}
+      stay={stay}
+      slug={slug}
+      unit={unit}
+      onlinePayments={onlinePayments}
+    />
   ) : (
     <Unavailable i18n={i18n} res={quote.data} unit={unit} />
   );
@@ -171,12 +189,14 @@ function Available({
   stay,
   slug,
   unit,
+  onlinePayments,
 }: {
   i18n: I18n;
   res: AvailabilityResponse;
   stay: { from: string; to: string };
   slug: string;
   unit: PublicUnit;
+  onlinePayments: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -191,14 +211,23 @@ function Available({
           </span>
         </p>
       </div>
-      <Link
-        to="/p/$slug/book"
-        params={{ slug }}
-        search={{ unit: unit.id, from: stay.from, to: stay.to }}
-        className="inline-flex items-center rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-      >
-        {i18n.t("picker.book")}
-      </Link>
+      {onlinePayments ? (
+        <Link
+          to="/p/$slug/book"
+          params={{ slug }}
+          search={{ unit: unit.id, from: stay.from, to: stay.to }}
+          className="inline-flex items-center rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
+          {i18n.t("picker.book")}
+        </Link>
+      ) : (
+        // The Tenant has no payment gateway yet (REQ-PA-04, ADR-0039 decision
+        // 4): the quote above stays - availability is honest - but there is
+        // nothing online to book THROUGH, so the CTA is the truth instead.
+        <p className="max-w-xs text-sm text-muted-foreground">
+          {i18n.t("picker.paymentsUnavailable")}
+        </p>
+      )}
     </div>
   );
 }

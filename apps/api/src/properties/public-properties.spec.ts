@@ -195,11 +195,16 @@ describe('Public property page', () => {
     // `depositPct` was ADDED deliberately (#52, ADR-0015): a payment term the
     // guest sees at checkout anyway, so the funnel can preview the deposit before
     // the redirect. Non-PII, unlike licenseNo.
+    // `onlinePaymentsAvailable` was ADDED deliberately (REQ-PA-04, ADR-0039
+    // decision 4): a derived boolean - "does checkout work here" - carrying no
+    // tenant internals; the funnel replaces the Book CTA with an honest message
+    // when it is false.
     expect(Object.keys(body).sort()).toEqual([
       'address',
       'depositPct',
       'description',
       'name',
+      'onlinePaymentsAvailable',
       'photos',
       'slug',
       'units',

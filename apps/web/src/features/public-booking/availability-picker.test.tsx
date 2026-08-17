@@ -101,6 +101,34 @@ describe("availability picker", () => {
     expect(href).toContain("to=2026-09-13");
   });
 
+  it("no payment gateway: the quote still renders, the CTA becomes contact-the-owner (REQ-PA-04)", async () => {
+    stubFetch({
+      "GET /api/public/properties/villa": () =>
+        json(
+          publicPropertyResponse({
+            slug: "villa",
+            name: "Villa X",
+            onlinePaymentsAvailable: false,
+            units: [{ basePriceIdr: 1_200_000 }],
+          }),
+        ),
+      [`GET /api/public/units/${UNIT_ID}/availability`]: () =>
+        json(quote({ available: true, nights: 3, totalPriceIdr: 3_600_000 })),
+    });
+    renderAt(`/p/villa?unit=${UNIT_ID}&from=2026-09-10&to=2026-09-13`);
+
+    // Availability stays honest (ADR-0039 decision 4)...
+    expect(await screen.findByText("Available")).toBeInTheDocument();
+    expect(screen.getByText("Rp 3.600.000")).toBeInTheDocument();
+    // ...but there is nothing online to book through.
+    expect(
+      screen.getByText(/online payment isn’t available/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /book these dates/i }),
+    ).not.toBeInTheDocument();
+  });
+
   it("selecting a range writes ?from&to, shows checking, then the quote", async () => {
     stub([{ basePriceIdr: 1_200_000 }], (from, to) =>
       from === "2026-08-20" && to === "2026-08-23"

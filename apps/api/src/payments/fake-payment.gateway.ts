@@ -3,6 +3,7 @@ import type { PaymentProvider } from '@sambung/shared';
 import { midtransOutcome } from './midtrans.gateway';
 import type {
   CreateSessionInput,
+  CredentialVerifyOutcome,
   ParsedPaymentEvent,
   PaymentGateway,
   PaymentSession,
@@ -33,7 +34,16 @@ export interface FakeWebhookBody {
  */
 export class FakePaymentGateway implements PaymentGateway {
   readonly provider: PaymentProvider = 'midtrans';
+  /**
+   * The fake simulates a FULLY-CONFIGURED provider (REQ-PA-04): no credential
+   * rows needed, so the e2e harness and every fake-bound spec skip credential
+   * resolution and the `payments_not_configured` gate entirely. The gate's own
+   * tests bind the real gateway class (whose refusals fire before any network call).
+   */
+  readonly requiresCredentials = false;
   readonly calls: CreateSessionInput[] = [];
+  /** What verifyCredential reports - a test flips it to exercise CR-03. */
+  verifyOutcome: CredentialVerifyOutcome = 'ok';
 
   /**
    * What the Provider's status API would report per order (reconcile-on-read,
@@ -55,6 +65,10 @@ export class FakePaymentGateway implements PaymentGateway {
     });
   }
 
+  verifyCredential(): Promise<CredentialVerifyOutcome> {
+    return Promise.resolve(this.verifyOutcome);
+  }
+
   /**
    * Reconcile-on-read (#54): return the parsed status a test staged for `orderId`,
    * or null when none is staged (the Provider has no record). Reuses the same
@@ -73,6 +87,11 @@ export class FakePaymentGateway implements PaymentGateway {
    * exercised against the SAME status→outcome mapping prod uses - the fake stands
    * in for the signature, not the semantics.
    */
+  peekOrderId(body: unknown): string | null {
+    const id = (body as { orderId?: unknown } | null)?.orderId;
+    return typeof id === 'string' && id.length > 0 ? id : null;
+  }
+
   verifyAndParse(body: unknown): ParsedPaymentEvent {
     const b = (body ?? {}) as Partial<FakeWebhookBody>;
     if (

@@ -110,6 +110,23 @@ export function validateEnv(env: NodeJS.ProcessEnv): void {
     );
   }
 
+  // CREDENTIAL_ENCRYPTION_KEY encrypts every tenant's payment-gateway server
+  // key at rest (REQ-PA-04, migration 0018). A deployment without it cannot
+  // read or write a single credential: every owner's "save key" 500s and every
+  // pay/webhook path is dead - and the first symptom is a guest who cannot pay.
+  // Refuse at boot instead. The runbook (docs/runbooks/credential-key.md) is
+  // the generate/backup/rotate procedure this message points at.
+  const credKey = env.CREDENTIAL_ENCRYPTION_KEY?.trim() ?? '';
+  if (Buffer.from(credKey, 'base64').length !== 32) {
+    throw new Error(
+      'CREDENTIAL_ENCRYPTION_KEY must be set to 32 base64-encoded bytes on a ' +
+        'deployment: it encrypts tenant payment credentials at rest (REQ-PA-04), and ' +
+        'without it no owner can configure payments and no guest can pay. Generate one ' +
+        'and BACK IT UP - losing it bricks every tenant checkout. See docs/runbooks/credential-key.md' +
+        because,
+    );
+  }
+
   // STORAGE_BOOTSTRAP is the dev-only convenience that applies bucket CORS and
   // website access on boot so a fresh `docker compose up` just works. R2
   // supports neither PutBucketCors nor PutBucketWebsite over the S3 API - CORS

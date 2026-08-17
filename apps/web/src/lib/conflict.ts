@@ -71,6 +71,11 @@ export function describeConflict(body: ConflictBody): string {
     // stay indistinguishable, §5.3) and the list is right there on screen.
     case "price_override_overlap":
       return "These dates already have a price override";
+    // Reaches the DASHBOARD only via this map for completeness - the funnel,
+    // where a guest actually meets it, renders its own localized copy from the
+    // slug (ADR-0024), not this English default.
+    case "payments_not_configured":
+      return "Online payment is not set up for this property yet.";
     default:
       return assertNever(body);
   }

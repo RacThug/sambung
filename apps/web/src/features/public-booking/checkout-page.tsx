@@ -206,13 +206,36 @@ function Checkout({
 
   const nights = countNights(from, to);
   const createConflict = conflictOf(createMut.error);
-  // A pay 409 is `booking_not_payable` - the hold lapsed between create and pay.
+  // A pay 409 splits by code (ADR-0012): `booking_not_payable` = the hold lapsed
+  // between create and pay; `payments_not_configured` = the tenant's gateway
+  // vanished mid-checkout (credential deleted) - the guest still OWNS the hold,
+  // so that one must NOT render as "hold lapsed - pick dates again".
   const payConflict = conflictOf(payMut.error);
+  const payNotConfigured = payConflict?.code === 'payments_not_configured';
+  const payHoldLapsed = payConflict?.code === 'booking_not_payable';
   const payProviderError = payMut.isError && !payConflict;
+
+  // The Tenant has no payment gateway yet (REQ-PA-04, ADR-0039 decision 4): a
+  // cold deep link to /book renders the honest panel instead of a form whose
+  // submit can only 409. Gated on the property having LOADED - a miss falls
+  // back to the server's refusal, which the funnel localizes anyway; the FE
+  // gate is UX, the server is correctness (EARS GW-03).
+  if ((property && !property.onlinePaymentsAvailable) || payNotConfigured) {
+    return (
+      <Shell slug={slug} unit={unitId} from={from} to={to}>
+        {/* The Shell already carries the back-to-property link. */}
+        <div className="mt-6 rounded-lg border border-border bg-card p-5">
+          <p className="text-sm text-muted-foreground">
+            {t("picker.paymentsUnavailable")}
+          </p>
+        </div>
+      </Shell>
+    );
+  }
 
   // The hold lapsed (countdown hit zero, or the server refused pay for a lapsed
   // hold): the dates are no longer held, so send the guest back to pick again.
-  if (holdLapsed || payConflict) {
+  if (holdLapsed || payHoldLapsed) {
     return (
       <Shell slug={slug} unit={unitId} from={from} to={to}>
         <div className="mt-6 rounded-lg border border-border bg-card p-5">

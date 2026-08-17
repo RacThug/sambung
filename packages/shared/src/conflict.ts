@@ -76,6 +76,12 @@ export const conflictCodeSchema = z.enum([
   // make the layers distinguishable (the constraint path knows only the
   // constraint's name), and the dates are already in the request.
   "price_override_overlap",
+  // the guest funnel on a Tenant with no payment gateway (REQ-PA-04, ADR-0039
+  // decision 4): both the booking write (a Hold exists only to bridge to
+  // payment) and the pay endpoint refuse with this. One-layer (no constraint
+  // produces it - the absence of a credential row does); no detail, the state
+  // is binary and the funnel's honest message needs nothing more.
+  "payments_not_configured",
 ]);
 export type ConflictCode = z.infer<typeof conflictCodeSchema>;
 
@@ -148,6 +154,10 @@ const priceOverrideOverlapBodySchema = z.object({
   code: z.literal("price_override_overlap"),
 });
 
+const paymentsNotConfiguredBodySchema = z.object({
+  code: z.literal("payments_not_configured"),
+});
+
 export const conflictBodySchema = z.discriminatedUnion("code", [
   emailTakenBodySchema,
   unitNameTakenBodySchema,
@@ -160,6 +170,7 @@ export const conflictBodySchema = z.discriminatedUnion("code", [
   inviteNotAcceptableBodySchema,
   inviteAlreadyPendingBodySchema,
   priceOverrideOverlapBodySchema,
+  paymentsNotConfiguredBodySchema,
 ]);
 export type ConflictBody = z.infer<typeof conflictBodySchema>;
 

@@ -65,6 +65,8 @@ export const id: Messages = {
   "picker.checking": "Memeriksa ketersediaan…",
   "picker.available": "Tersedia",
   "picker.book": "Pesan tanggal ini",
+  "picker.paymentsUnavailable":
+    "Pembayaran online belum tersedia untuk properti ini - silakan hubungi pemilik untuk memesan.",
   "picker.notAvailable": "Tidak tersedia untuk tanggal ini",
   "picker.reasonMinStay": "Kamar ini memiliki masa inap minimum {nights}.",
   "picker.reasonOverlap": "Sebagian malam tersebut sudah dipesan.",

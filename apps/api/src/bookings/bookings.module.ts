@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { PAYMENT_GATEWAY } from '../payments/payment-gateway';
+import { createPaymentGateway } from '../payments/payment-gateway.factory';
 import { AvailabilityRepository } from './availability.repository';
 import { AvailabilityService } from './availability.service';
 import { BookingsController } from './bookings.controller';
@@ -39,6 +42,16 @@ import { PublicBookingsController } from './public-bookings.controller';
     BookingsQueryService,
     BookingsQueryRepository,
     HoldSweeperService,
+    // The SAME factory PaymentsModule binds (a file import - no @Module cycle):
+    // the public booking write reads only `requiresCredentials` for the
+    // payments_not_configured gate (REQ-PA-04, EARS GW-03). A spec's
+    // `.overrideProvider(PAYMENT_GATEWAY)` replaces every binding of the token,
+    // so fake-bound suites skip the gate exactly like the e2e env seam does.
+    {
+      provide: PAYMENT_GATEWAY,
+      useFactory: createPaymentGateway,
+      inject: [ConfigService],
+    },
   ],
   exports: [AvailabilityService, BookingsRepository],
 })

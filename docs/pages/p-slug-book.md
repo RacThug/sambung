@@ -102,6 +102,7 @@ open question there). The full set:
 | Non-409 create error | Destructive banner, generic copy. |
 | Hold created, pay failed | The form is replaced by the Hold panel: countdown + "Retry payment" against the *same* booking. |
 | Hold lapsed | Terminal panel + "pick dates again". Entered either by the countdown reaching zero **or** by a `booking_not_payable` 409 from pay. |
+| Payments not configured | A cold deep link to `/book` on a Tenant with no gateway renders the contact-the-owner panel instead of the form (`onlinePaymentsAvailable` rides the property fetch this page already does for `depositPct`); a `payments_not_configured` 409 from PAY (the gateway vanished mid-checkout) lands on the SAME panel - never the hold-lapsed one, because the guest still owns the Hold (review finding). The FE gate is UX; the server is correctness: `POST /public/bookings` answers `409 payments_not_configured` for such a Tenant, so a crafted request cannot park 15-minute Holds that can never be paid. |
 
 ---
 

@@ -7,6 +7,7 @@ import { ApiError } from "../../lib/api-client";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { isOwner } from "../../lib/role";
 import { TeamSection } from "../staff/team-section";
+import { PaymentsSection } from "./payments-section";
 import { FormField } from "@/components/form-field";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,13 @@ export function SettingsPage() {
             </p>
           ))}
       </div>
+
+      {/* Payments (REQ-PA-04, ADR-0039). Owner-only in BOTH directions - unlike
+          the sections around it, staff get NOTHING here, not a read-only
+          sentence: a payment credential is the shape of the tenant's money
+          (the ADR-0032 verb line), and even its status read is 403 for staff,
+          so the read is never issued. */}
+      {owner && <PaymentsSection />}
 
       {/* Team (#57). Owner-only - a staff member gets the same read-only
           treatment as the gallery cap above, for the same reason: the server

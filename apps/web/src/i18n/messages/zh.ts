@@ -64,6 +64,8 @@ export const zh: Messages = {
   "picker.checking": "正在查询空房…",
   "picker.available": "有空房",
   "picker.book": "预订这些日期",
+  "picker.paymentsUnavailable":
+    "该住宿暂未开通在线支付 - 请联系房东预订。",
   "picker.notAvailable": "这些日期暂无空房",
   "picker.reasonMinStay": "此房间最少需入住 {nights}。",
   "picker.reasonOverlap": "其中部分晚已被预订。",

@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "storage:doctor": "tsx scripts/storage-doctor.ts",
     "og:doctor": "tsx scripts/og-doctor.ts",
+    "credentials:rotate": "tsx scripts/rotate-credential-key.ts",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",

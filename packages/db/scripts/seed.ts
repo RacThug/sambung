@@ -8,7 +8,7 @@
  * Run: pnpm --filter @sambung/db db:seed
  */
 import "./load-env";
-import { createHash } from "node:crypto";
+import { createCipheriv, createHash, randomBytes } from "node:crypto";
 import { count, eq } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 import { closeDb, db } from "../src/index";
@@ -32,6 +32,7 @@ import {
   staffInviteProperty,
   syncConflict,
   tenant,
+  tenantPaymentCredential,
   unit,
   unitPriceOverride,
   userProperty,
@@ -131,6 +132,13 @@ const nights = ({ checkIn, checkOut }: DemoStay): bigint =>
 const total = (stay: DemoStay, unit: DemoUnitKey): bigint =>
   nights(stay) * PRICE[unit];
 
+// REQ-PA-04: both must be set for the demo credential below; read once so the
+// summary print can say which state the demo tenant is in.
+const demoServerKey = process.env.MIDTRANS_SERVER_KEY?.trim();
+const credKeyRaw = process.env.CREDENTIAL_ENCRYPTION_KEY?.trim();
+const credKey = credKeyRaw ? Buffer.from(credKeyRaw, "base64") : null;
+const paymentsConfigured = Boolean(demoServerKey && credKey?.length === 32);
+
 async function main() {
   await db.transaction(async (tx) => {
     // --- wipe (FK-safe order) so the seed is idempotent ---
@@ -146,6 +154,7 @@ async function main() {
     await tx.delete(channelConnection);
     await tx.delete(userProperty);
     await tx.delete(membership);
+    await tx.delete(tenantPaymentCredential);
     await tx.delete(unitPriceOverride);
     await tx.delete(unit);
     await tx.delete(property);
@@ -310,6 +319,36 @@ async function main() {
         minStay: DEMO_UNIT_MIN_STAY.riverSuite,
       },
     ]);
+
+    // --- Bali Breeze's payment credential (REQ-PA-04, ADR-0039) ---
+    // Encrypts the sandbox key from MIDTRANS_SERVER_KEY (seed-only: the app
+    // itself reads no platform-wide key any more) into T1, so docs/demo.md's
+    // Snap leg works out of the box. Ubud (T2) is deliberately left
+    // UNCONFIGURED - its funnel shows the honest "online payment not available"
+    // state, which is itself demoable (ADR-0039 decision 4).
+    //
+    // The encryption is inlined (this package cannot import apps/api) and MUST
+    // match apps/api/src/payments/credential-crypto.ts's format: AES-256-GCM,
+    // 12-byte nonce, 16-byte tag APPENDED to the ciphertext. The api's
+    // credentials spec decrypts a seed-format row, which is what pins the pair.
+    if (demoServerKey && credKey?.length === 32) {
+      const nonce = randomBytes(12);
+      const cipher = createCipheriv("aes-256-gcm", credKey, nonce);
+      const ciphertext = Buffer.concat([
+        cipher.update(demoServerKey, "utf8"),
+        cipher.final(),
+        cipher.getAuthTag(),
+      ]);
+      await tx.insert(tenantPaymentCredential).values({
+        tenantId: T1,
+        provider: "midtrans",
+        environment: "sandbox",
+        ciphertext,
+        nonce,
+        // Stored without a live probe - the seed never calls Midtrans.
+        lastVerifyStatus: "unchecked",
+      });
+    }
 
     // --- a seasonal price override (P0-2) on the Whole Villa's free gap ---
     // Covers exactly the picker-demo gap, so quoting those nights in the funnel
@@ -527,6 +566,11 @@ async function main() {
   console.log(
     `Inbox demo (Bali Breeze /app/inbox): 1 open sync conflict + 1 paid-but-lapsed payment. ` +
       `Pending staff invite for ${KNOWN_INVITE_EMAIL} (create-account accept path).`,
+  );
+  console.log(
+    paymentsConfigured
+      ? "Payments: Bali Breeze holds an encrypted sandbox credential (Snap leg works); Ubud is UNCONFIGURED on purpose - its funnel shows the honest no-online-payment state."
+      : "Payments: NO tenant credential seeded (set MIDTRANS_SERVER_KEY + CREDENTIAL_ENCRYPTION_KEY to enable the Snap demo leg). Both funnels show the honest no-online-payment state.",
   );
   // The demo script (docs/demo.md) names these by role, never by absolute date -
   // they move with the calendar. Print them so a presenter can check the state

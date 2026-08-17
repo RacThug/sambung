@@ -14,6 +14,7 @@ import {
   property,
   syncConflict,
   tenant,
+  tenantPaymentCredential,
   unit,
   unitPriceOverride,
   userProperty,
@@ -145,7 +146,17 @@ describe('RLS policies', () => {
         nightlyPriceIdr: 750_000n,
       })
       .returning({ id: unitPriceOverride.id });
-    return { tenantId: t.id, user: u.id, prop: p.id, unit: un.id, cc: cc.id, booking: b.id, payment: pay.id, event: pe.id, override: po.id };
+    const [cred] = await db
+      .insert(tenantPaymentCredential)
+      .values({
+        tenantId: t.id,
+        provider: 'midtrans',
+        environment: 'sandbox',
+        ciphertext: Buffer.alloc(48, 5),
+        nonce: Buffer.alloc(12, 5),
+      })
+      .returning({ id: tenantPaymentCredential.id });
+    return { tenantId: t.id, user: u.id, prop: p.id, unit: un.id, cc: cc.id, booking: b.id, payment: pay.id, event: pe.id, override: po.id, credential: cred.id };
   }
 
   beforeAll(async () => {
@@ -164,6 +175,7 @@ describe('RLS policies', () => {
     ids.user_property = { a: a.prop, b: b.prop };
     ids.membership = { a: a.user, b: b.user };
     ids.unit_price_override = { a: a.override, b: b.override };
+    ids.tenant_payment_credential = { a: a.credential, b: b.credential };
   });
 
   afterAll(async () => {
@@ -200,6 +212,14 @@ describe('RLS policies', () => {
       name: 'unit_price_override',
       table: unitPriceOverride,
       col: unitPriceOverride.id,
+    },
+    // 0018: flat tenant term (no property axis - @Roles owns the role question).
+    // The generic loops SELECT only `id`, which the write-only column grant
+    // allows; the secret columns are payment-credential.test.ts's business.
+    {
+      name: 'tenant_payment_credential',
+      table: tenantPaymentCredential,
+      col: tenantPaymentCredential.id,
     },
   ];
 

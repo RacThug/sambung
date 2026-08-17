@@ -17,6 +17,7 @@ describe("conflictCodeSchema", () => {
       "email_taken",
       "invite_already_pending",
       "invite_not_acceptable",
+      "payments_not_configured",
       "price_override_overlap",
       "property_has_bookings",
       "unit_has_bookings",
@@ -85,6 +86,12 @@ describe("conflictBodySchema", () => {
         reason: "eaten",
       }).success,
     ).toBe(false);
+  });
+
+  it("accepts payments-not-configured as a slug-only body", () => {
+    expect(
+      conflictBodySchema.parse({ code: "payments_not_configured" }),
+    ).toEqual({ code: "payments_not_configured" });
   });
 
   it("accepts the price-override overlap as a slug-only body", () => {

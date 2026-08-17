@@ -1,4 +1,4 @@
-import type { PaymentProvider } from '@sambung/shared';
+import type { PaymentEnvironment, PaymentProvider } from '@sambung/shared';
 
 /**
  * The Provider boundary (ADR-0015, api-spec §6.1 AC #3). Everything the app knows
@@ -12,6 +12,20 @@ import type { PaymentProvider } from '@sambung/shared';
  * identity to inject by.
  */
 export const PAYMENT_GATEWAY = Symbol('PAYMENT_GATEWAY');
+
+/**
+ * The TENANT's decrypted gateway credential (REQ-PA-04, ADR-0039): resolved per
+ * request by CredentialResolver, passed explicitly to every gateway call. There
+ * is no process-wide key any more - which tenant's money is in play is decided
+ * by the booking, never by the environment.
+ */
+export interface GatewayCredential {
+  serverKey: string;
+  environment: PaymentEnvironment;
+}
+
+/** How a verify-on-save probe ended (EARS CR-03). Information, not a gate. */
+export type CredentialVerifyOutcome = 'ok' | 'failed';
 
 /** What the app hands the Provider to open a checkout session. `orderId` is the
  * payment row's id (globally unique, ADR-0015); `amountIdr` is what to charge now
@@ -79,18 +93,41 @@ export interface ParsedPaymentEvent {
 export interface PaymentGateway {
   /** Which Provider this adapter is - stamped onto the payment row and the wire. */
   readonly provider: PaymentProvider;
-  /** Open a checkout session for `input`, or throw if the Provider refuses /
-   * is unreachable / is unconfigured (→ the pay endpoint surfaces a 5xx and the
-   * hold survives for a retry, page-spec §3.2). */
-  createSession(input: CreateSessionInput): Promise<PaymentSession>;
   /**
-   * Verify the webhook's Provider signature and translate the payload into a
-   * `ParsedPaymentEvent`, or throw: `UnauthorizedException` on a signature
-   * mismatch (→ 401), `BadRequestException` on a malformed body (→ 400). The
-   * signature crypto and the Provider's field names live behind this port
-   * (ADR-0015); the webhook service never sees either.
+   * Whether this adapter needs a real tenant credential (REQ-PA-04). The real
+   * MidtransGateway: true - no credential, no calls, and the funnel gates on it
+   * (`409 payments_not_configured`, EARS GW-02/03). The FakePaymentGateway:
+   * false - the e2e/offline seam simulates a fully-configured provider, so the
+   * harness and every fake-bound spec need no credential rows.
    */
-  verifyAndParse(body: unknown): ParsedPaymentEvent;
+  readonly requiresCredentials: boolean;
+  /** Open a checkout session for `input` with the tenant's `credential`, or
+   * throw if the Provider refuses / is unreachable (→ the pay endpoint surfaces
+   * a 5xx and the hold survives for a retry, page-spec §3.2). */
+  createSession(
+    input: CreateSessionInput,
+    credential: GatewayCredential,
+  ): Promise<PaymentSession>;
+  /**
+   * Read ONLY the order id out of an (unverified!) webhook body - the minimum
+   * needed to resolve which tenant's key to verify under (EARS WH-01). Provider
+   * vocabulary (`order_id` vs the fake's `orderId`) stays behind the port.
+   * Returns null when the body carries none; NOTHING else in the body may be
+   * trusted until verifyAndParse succeeds.
+   */
+  peekOrderId(body: unknown): string | null;
+  /**
+   * Verify the webhook's Provider signature UNDER THE TENANT's key and translate
+   * the payload into a `ParsedPaymentEvent`, or throw: `UnauthorizedException` on
+   * a signature mismatch (→ 401), `BadRequestException` on a malformed body
+   * (→ 400). The caller resolves the tenant from `order_id` FIRST (EARS WH-01) -
+   * a signature is never tried against any other tenant's key. The crypto and
+   * the Provider's field names live behind this port (ADR-0015).
+   */
+  verifyAndParse(
+    body: unknown,
+    credential: GatewayCredential,
+  ): ParsedPaymentEvent;
   /**
    * Reconcile-on-read (#54, api-spec §6.3, risk R3): PULL the current status of
    * order `orderId` from the Provider's status API and translate it to the SAME
@@ -102,5 +139,19 @@ export interface PaymentGateway {
    * signature failure; the caller swallows it, because a reconcile hiccup must
    * never break the read (the page still renders the DB's current state).
    */
-  fetchStatus(orderId: string): Promise<ParsedPaymentEvent | null>;
+  fetchStatus(
+    orderId: string,
+    credential: GatewayCredential,
+  ): Promise<ParsedPaymentEvent | null>;
+  /**
+   * Verify-on-save (EARS CR-03): probe the Provider with a pasted key BEFORE it
+   * is encrypted and stored, so a paste of the wrong key (or the wrong
+   * environment) is caught at the moment the owner can still fix it. The outcome
+   * is INFORMATION - the caller stores the key either way, because a Provider
+   * outage must not block a valid key (#55's smoke-fetch rule). Never throws:
+   * unreachable, unauthorized and unexpected all collapse to 'failed'.
+   */
+  verifyCredential(
+    credential: GatewayCredential,
+  ): Promise<CredentialVerifyOutcome>;
 }

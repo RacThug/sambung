@@ -255,4 +255,30 @@ describe("checkout page", () => {
       await screen.findByText(/choose your dates on the property page/i),
     ).toBeInTheDocument();
   });
+
+  it("no payment gateway: a cold deep link renders the contact-the-owner panel, not the form (REQ-PA-04)", async () => {
+    stubFetch({
+      "GET /api/public/properties/villa": () =>
+        json(
+          publicPropertyResponse({
+            slug: "villa",
+            onlinePaymentsAvailable: false,
+          }),
+        ),
+      [`GET /api/public/units/${UNIT_ID}/availability`]: () =>
+        json(availableQuote),
+    });
+    renderAt(`/p/villa/book?unit=${UNIT_ID}&from=2026-09-10&to=2026-09-13`);
+
+    expect(
+      await screen.findByText(/online payment isn’t available/i),
+    ).toBeInTheDocument();
+    // No form to dead-end into: the submit does not exist.
+    expect(
+      screen.queryByRole("button", { name: /continue to payment/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /back to the property/i }),
+    ).toBeInTheDocument();
+  });
 });

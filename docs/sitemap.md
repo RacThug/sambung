@@ -212,6 +212,8 @@ Grouped by module. Machine/edge routes (no page) are last. `api #n` points into 
 |---|---|---|---|
 | `GET /settings` | Tenant settings (Gallery cap) - any signed-in member. | authed | api #38 · ADR-0030 |
 | `PATCH /settings` | Update settings - Owner only. | authed · owner | api #39 · ADR-0030 |
+| `GET /settings/payment-credentials` | Payment-credential status per provider (never the key) - Owner only. | authed · owner | REQ-PA-04 · ADR-0039 |
+| `PUT /settings/payment-credentials/:provider` | Save/replace the Tenant's gateway key (encrypted at rest, write-only). | authed · owner | REQ-PA-04 · ADR-0039 |
 | `GET /staff` | The Team roster + each member's Assignments. | authed · owner | ADR-0032 |
 | `PATCH /staff/:id` | Reassign a Staff member's Properties (whole-set write). | authed · owner | ADR-0032 |
 | `DELETE /staff/:id` | Remove a Staff seat (the Membership; the account survives). | authed · owner | ADR-0034 |
@@ -250,7 +252,7 @@ Each page → the endpoints it calls → the feature module behind it → the bo
 | `/app/properties` | `GET /properties` · `POST /properties` | `properties/properties-page.tsx` | ADR-0002 |
 | `/app/properties/$propertyId` | `GET/PATCH/DELETE /properties/:id` · `…/photos/presign` · `PATCH …/photos` · `POST …/archive`·`/unarchive` · `GET/POST /properties/:propertyId/units` · `PATCH/DELETE /units/:id` · `POST /units/:id/archive`·`/unarchive` · `GET/POST /units/:unitId/channels` · `DELETE /channels/:id` · `POST /channels/:id/sync` · `GET/POST /units/:unitId/price-overrides` · `DELETE /price-overrides/:id` | `properties/{property-edit-page, photos-section, units-section, channels-section, prices-section}` | ADR-0002 · ADR-0005 · ADR-0016 |
 | `/app/bookings/$bookingId` | `GET /bookings/:id` · `POST /bookings/:id/cancel` | `bookings/booking-detail-page.tsx` | ADR-0011 |
-| `/app/settings` | `GET/PATCH /settings` · `GET /staff` · `PATCH/DELETE /staff/:id` · `GET/POST/DELETE /auth/invites` | `settings/*`, `staff/team-section.tsx` | ADR-0030 · ADR-0032 · ADR-0033 |
+| `/app/settings` | `GET/PATCH /settings` · `GET /settings/payment-credentials` · `PUT /settings/payment-credentials/:provider` · `GET /staff` · `PATCH/DELETE /staff/:id` · `GET/POST/DELETE /auth/invites` | `settings/*`, `staff/team-section.tsx` | ADR-0030 · ADR-0032 · ADR-0033 · ADR-0039 |
 
 **Routes with no FE page** - their consumer is a machine, or the UI isn't wired:
 
