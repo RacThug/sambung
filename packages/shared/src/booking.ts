@@ -187,8 +187,9 @@ export type CreateBookingResponse = z.infer<typeof createBookingResponseSchema>;
  *   Occupies the calendar but sells nothing.
  * - `direct` (a **walk-in**): `guestName` is REQUIRED (AC #2); contact is optional
  *   (the booking is already confirmed, so there's no WhatsApp step to feed);
- *   `totalPriceIdr` is optional - omitted, the server computes `base x nights`;
- *   provided, it is the owner's offline / negotiated rate.
+ *   `totalPriceIdr` is optional - omitted, the server computes the quote total
+ *   (each night at its price override, else the base - P0-2); provided, it is
+ *   the owner's offline / negotiated rate.
  *
  * `guestCount` carries no `max_guests` ceiling here (the server skips that check
  * for the owner) - the `.max(64)` is int-overflow sanity only, same as the public

@@ -100,6 +100,13 @@ const farIso = (days: number): string =>
     .toISOString()
     .slice(0, 10);
 
+/** `iso` plus n whole days - farIso's arithmetic anchored to a given date. One
+ * helper, because the override window and the summary print must agree on it. */
+const plusDaysIso = (iso: string, days: number): string =>
+  new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
 /** Nightly rate per unit, integer rupiah (invariant #6). */
 const PRICE: Record<DemoUnitKey, bigint> = {
   wholeVilla: 3_500_000n,
@@ -314,13 +321,7 @@ async function main() {
       unitId: U_VILLA,
       tenantId: T1,
       fromDate: D.firstFreeNight,
-      // The gap's end, same arithmetic as the summary print below.
-      toDate: new Date(
-        Date.parse(`${D.firstFreeNight}T00:00:00Z`) +
-          DEMO_FREE_NIGHTS * 86_400_000,
-      )
-        .toISOString()
-        .slice(0, 10),
+      toDate: plusDaysIso(D.firstFreeNight, DEMO_FREE_NIGHTS),
       nightlyPriceIdr: (PRICE.wholeVilla * 3n) / 2n,
     });
 
@@ -531,11 +532,7 @@ async function main() {
   // they move with the calendar. Print them so a presenter can check the state
   // they are about to talk over, and so "all in the future" is visible, not
   // claimed.
-  const freeUntil = new Date(
-    Date.parse(`${D.firstFreeNight}T00:00:00Z`) + DEMO_FREE_NIGHTS * 86_400_000,
-  )
-    .toISOString()
-    .slice(0, 10);
+  const freeUntil = plusDaysIso(D.firstFreeNight, DEMO_FREE_NIGHTS);
   console.log(
     [
       "Demo window (all future, half-open, all within a week):",

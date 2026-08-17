@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import {
@@ -14,6 +14,7 @@ import { api, ApiError } from "../../lib/api-client";
 import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { isOwner } from "../../lib/role";
+import { useCopiedFlash } from "../../lib/use-copied-flash";
 import { FormField } from "@/components/form-field";
 import { ListError, ListSkeleton } from "@/components/list-state";
 import { PageHeader } from "@/components/page-header";
@@ -139,14 +140,7 @@ function PublicLink({
   property: PropertyResponse;
   archived: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
-  // Effect-owned flash timer, cancelled on unmount - the same latent
-  // set-state-after-teardown the channels section's copy button had.
-  useEffect(() => {
-    if (!copied) return;
-    const t = setTimeout(() => setCopied(false), 2000);
-    return () => clearTimeout(t);
-  }, [copied]);
+  const { copied, flash } = useCopiedFlash();
   const path = `/p/${property.slug}`;
   const url = window.location.origin + path;
 
@@ -174,7 +168,7 @@ function PublicLink({
       <button
         type="button"
         onClick={() => {
-          void navigator.clipboard.writeText(url).then(() => setCopied(true));
+          void navigator.clipboard.writeText(url).then(flash);
         }}
         className="rounded-md border border-input px-2 py-0.5 text-xs font-medium text-foreground"
       >

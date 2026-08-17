@@ -177,8 +177,10 @@ export class BookingsService {
               guestCount: null,
               totalPriceIdr: null,
             })
-          : // A walk-in: guest name required; price is the owner's override or
-            // the server's `base x nights` default (the quote's figure).
+          : // A walk-in: guest name required; price is the owner's negotiated
+            // figure or the server's quote total - which prices each night
+            // through any price override covering it (P0-2), the same one
+            // authority the guest funnel uses.
             await this.repo.insertConfirmed({
               ...base,
               source: 'direct',

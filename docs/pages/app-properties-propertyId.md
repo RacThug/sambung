@@ -231,7 +231,7 @@ existed and the read already joined `property`.
 | `createPriceOverrideRequestSchema` (`strictObject`, ADR-0031; `from < to` refine) | `packages/shared` | n/a | The one inbound body |
 | `price_override_overlap` added to the closed `conflictCodeSchema` + `describeConflict` copy | `packages/shared` + web | n/a | ADR-0012: the 409 carries a code; the web owns the words |
 | `quoteTotalIdr(basePriceIdr, nights)` → prices a night list: override covering the night, else base | `packages/shared` | n/a | The seam its own comment reserved: "a future seasonal model changes one function". Both #47's read and #48's write flow through it unchanged |
-| `AvailabilityRepository.fetchUnitPricing` also fetches overrides clipped to the window, inside the same `db.run` | `apps/api` | n/a | `quote()` stays the single authority; no second price read path |
+| `AvailabilityRepository.findPriceOverrides` (a sibling of `fetchUnitPricing`) reads overrides clipped to the window; both run inside `quote()`'s one `db.run` | `apps/api` | n/a | `quote()` stays the single authority; no second price read path |
 
 ---
 

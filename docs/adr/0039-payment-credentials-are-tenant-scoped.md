@@ -13,13 +13,13 @@
 ## Context
 
 Today the Midtrans gateway reads one `MIDTRANS_SERVER_KEY` from the environment. Every guest
-payment, for every property, settles into **one** merchant account — ours. That was the right
+payment, for every property, settles into **one** merchant account - ours. That was the right
 shape for a portfolio demo with a sandbox key: one config, one webhook signature, nothing to
 provision per tenant.
 
 It is the wrong shape for a product, for a reason that is not technical. If guest money for many
 properties lands in our account and we forward it onward, we are functionally holding and routing
-third-party funds. In Indonesia that is regulated territory (PJP licensing under BI) — the
+third-party funds. In Indonesia that is regulated territory (PJP licensing under BI) - the
 business Midtrans and Xendit are licensed to be, and we are not. It also buys us the entire
 operational tail that comes with being in the money path: weekly payouts to every owner,
 "whose rupiah is this" reconciliation, and sitting in the middle of every refund and chargeback,
@@ -28,7 +28,7 @@ sometimes for funds already forwarded.
 The industry default agrees. BookandLink's Payment Hub and Hotel Link both have the property
 register its **own** gateway account and enter its own keys; their managed offerings (PayKu,
 Hotel Link Pay) are optional layers on top, run by entities with the scale and licensing to
-carry them. Midtrans accepts individual merchants with KTP + NPWP — no legal entity — so
+carry them. Midtrans accepts individual merchants with KTP + NPWP - no legal entity - so
 "every owner has their own account" is a realistic ask even for a four-room guesthouse.
 
 The schema is already half-pointed here: `payment.provider` is a per-row column - though
@@ -39,14 +39,14 @@ source is global.
 ## Decision
 
 **Gateway credentials live on the tenant, encrypted at rest. Guest funds settle directly to the
-owner's own merchant account. Sambung is never in the money path — not at launch, not later.**
+owner's own merchant account. Sambung is never in the money path - not at launch, not later.**
 
 Four decisions inside that shape it:
 
 1. **The factory resolves credentials per property, not per process.** `PAYMENT_GATEWAY=fake`
    remains a process-level test switch; real gateway construction takes the tenant's decrypted
    keys. A property with no stored credentials gets a gateway that refuses with a typed
-   "payments not configured" error, not a fallback to any shared key — there is no shared key
+   "payments not configured" error, not a fallback to any shared key - there is no shared key
    to fall back to.
 
 2. **The webhook path identifies the tenant first, verifies the signature second.** Signature
@@ -60,8 +60,8 @@ Four decisions inside that shape it:
    every response schema in `packages/shared`, and excluded from logs. RLS scopes the row;
    encryption covers the backup file and the stolen dump.
 
-4. **"No gateway yet" is a supported state, not an error state.** A property can be live —
-   taking manual bookings, syncing iCal — before its Midtrans activation clears. The public
+4. **"No gateway yet" is a supported state, not an error state.** A property can be live -
+   taking manual bookings, syncing iCal - before its Midtrans activation clears. The public
    funnel shows availability but disables online checkout with an honest message; the owner's
    setup checklist carries the activation as a step with a guided template.
 
@@ -72,22 +72,22 @@ commission-free positioning we sell.
 
 **Deferred, not rejected: sub-merchant orchestration.** Xendit's platform/sub-account scheme
 (and Midtrans partner equivalents) lets a licensed PJP hold the funds while we orchestrate
-owner onboarding in-product — PayKu convenience without the money path. It layers **on top of**
+owner onboarding in-product - PayKu convenience without the money path. It layers **on top of**
 this decision later; nothing here forecloses it, and this ADR is the reason it will layer
 cleanly: the tenant, not the platform, is already the merchant of record.
 
 ## Why
 
 **The regulatory line is the one line a solo operator cannot afford to discover from the wrong
-side.** Every other cost in this decision is recoverable — schema migrations, factory rework,
+side.** Every other cost in this decision is recoverable - schema migrations, factory rework,
 onboarding friction. Being an unlicensed funds processor is not a bug you patch.
 
 **It converts a money-handling burden into a data-handling one we already carry.** We go from
-custodian of funds to custodian of encrypted credentials — a serious duty, but the same *kind*
+custodian of funds to custodian of encrypted credentials - a serious duty, but the same *kind*
 of duty as the RLS tenancy we already bet on (ADR-0032, ADR-0034), guarded by the same habits.
 
 **It keeps the pricing story honest.** Flat SaaS, no per-booking take, and structurally *unable*
-to skim a transaction — the architecture is the proof of the marketing claim.
+to skim a transaction - the architecture is the proof of the marketing claim.
 
 ## Consequences
 

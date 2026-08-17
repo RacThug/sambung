@@ -336,6 +336,33 @@ describe('Price overrides (P0-2)', () => {
       expect(row.totalPriceIdr).toBe(7_000_000n);
     });
 
+    it('an owner walk-in with no negotiated price lands at the override total (PR-03)', async () => {
+      // Base 1m; override 2.5m covers the whole 2-night stay -> 5m. The owner
+      // omits totalPriceIdr, so the server's quote - the SAME authority the
+      // funnel uses - fills it, overrides included.
+      const u = await createUnit(tokenA, 1_000_000);
+      await createOverride(tokenA, u, {
+        from: daysFromToday(20),
+        to: daysFromToday(22),
+        nightlyPriceIdr: 2_500_000,
+      }).expect(201);
+
+      const walkIn = bodyOf<{ totalPriceIdr: number | null }>(
+        await request(server())
+          .post('/api/bookings')
+          .set(auth(tokenA))
+          .send({
+            source: 'direct',
+            unitId: u,
+            checkIn: daysFromToday(20),
+            checkOut: daysFromToday(22),
+            guestName: 'Ketut Walk-in',
+          })
+          .expect(201),
+      );
+      expect(walkIn.totalPriceIdr).toBe(5_000_000);
+    });
+
     it('a stay clear of every override still prices at base x nights', async () => {
       const u = await createUnit(tokenA, 1_000_000);
       await createOverride(tokenA, u, {

@@ -20,7 +20,7 @@ amendment), migration `0017_unit_price_override.sql`, shared contract
 | PR-03 | The system shall produce one total for one stay wherever it is asked: the public availability read, the guest booking write, and the owner walk-in all price through the single `quote()` authority. | api `units/price-overrides.spec.ts` (public quote + guest write price identically) |
 | PR-04 | WHILE a booking exists, the system shall never re-price it: `total_price_idr` is a snapshot at creation, and no override create/delete may change what was sold. | db `price-override.test.ts` ("config, not ledger") + existing booking specs |
 | PR-05 | The system shall compute the Deposit share (ADR-0015) from the snapshotted total, unchanged by this feature. | existing `deposit.spec.ts` |
-| PR-06 | The system shall keep every nightly price - base or override - within `[1..1e9]` (`MAX_NIGHTLY_RATE_IDR`), so a 366-night quote can never overflow `toRupiah`. | shared `price-override.test.ts` (zod layer) + db `price-override.test.ts` (CHECK layer) |
+| PR-06 | The system shall cap every nightly price - base or override - at `MAX_NIGHTLY_RATE_IDR` (1e9), so a 366-night quote can never overflow `toRupiah`. Floors differ on purpose: the base may be `0` (a placeholder gating `publishable`, api-spec §4.3), an override must be `>= 1` (it has no placeholder role). | shared `price-override.test.ts` (zod layer) + db `price-override.test.ts` (CHECK layer) |
 
 ## 2. Override lifecycle (owner/staff API)
 
