@@ -120,6 +120,18 @@ account or by inheriting an Archived Property - the effective state is derived f
 twice. Distinct from delete, which is only for inventory that was never booked.
 _Avoid_: deleted, hidden, disabled, deactivated, unpublished
 
+**Base price**:
+A Unit's everyday nightly rate (`basePriceIdr`) - what a night costs when no Price Override covers
+it, and the price the public page headlines. Zero means placeholder (see Publishable), never free.
+_Avoid_: default price, standard rate
+
+**Price Override**:
+A dated price window on one Unit: every night inside its half-open range costs the override's rate
+instead of the Base price. Windows on one Unit never overlap (an exclusion constraint, like Stays),
+so a night always has exactly one price. Config, not ledger: creating or removing one never touches
+a Booking - its total is a snapshot from when it was sold.
+_Avoid_: seasonal rate, rate plan (a deferred, richer concept), price rule, discount
+
 ### Bookings
 
 **Booking**:

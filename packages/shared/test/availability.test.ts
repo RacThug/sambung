@@ -30,16 +30,71 @@ describe("countNights (half-open, db-design §4.2)", () => {
   });
 });
 
-describe("quoteTotalIdr (v1 pricing rule)", () => {
-  it("is base price times nights, in bigint rupiah", () => {
-    expect(quoteTotalIdr(3_500_000n, 4)).toBe(14_000_000n);
-    expect(quoteTotalIdr(0n, 4)).toBe(0n); // placeholder unit quotes at zero
+describe("quoteTotalIdr (the pricing rule: override covering the night, else base)", () => {
+  it("is base price times nights when no override touches the stay", () => {
+    expect(quoteTotalIdr(3_500_000n, "2026-08-10", "2026-08-14")).toBe(
+      14_000_000n,
+    );
+    // placeholder unit quotes at zero
+    expect(quoteTotalIdr(0n, "2026-08-10", "2026-08-14")).toBe(0n);
+    // an override elsewhere in the calendar changes nothing
+    expect(
+      quoteTotalIdr(3_500_000n, "2026-08-10", "2026-08-14", [
+        { from: "2026-12-20", to: "2027-01-05", nightlyPriceIdr: 9_000_000n },
+      ]),
+    ).toBe(14_000_000n);
+  });
+
+  it("prices each overridden night at the override, the rest at the base", () => {
+    // 4-night stay [10,14); override covers [12,14) -> 2 base + 2 override.
+    expect(
+      quoteTotalIdr(1_000_000n, "2026-08-10", "2026-08-14", [
+        { from: "2026-08-12", to: "2026-08-14", nightlyPriceIdr: 2_500_000n },
+      ]),
+    ).toBe(2_000_000n + 5_000_000n);
+  });
+
+  it("intersects an override wider than the stay - callers may pass them unclipped", () => {
+    // Override spans the whole month; the 3-night stay is priced entirely at it.
+    expect(
+      quoteTotalIdr(1_000_000n, "2026-08-10", "2026-08-13", [
+        { from: "2026-08-01", to: "2026-09-01", nightlyPriceIdr: 2_000_000n },
+      ]),
+    ).toBe(6_000_000n);
+  });
+
+  it("handles several disjoint overrides in one stay, in any order", () => {
+    // [10,16): nights 10,11 base; 12,13 at 2m; 14 base; 15 at 3m.
+    expect(
+      quoteTotalIdr(1_000_000n, "2026-08-10", "2026-08-16", [
+        { from: "2026-08-15", to: "2026-08-16", nightlyPriceIdr: 3_000_000n },
+        { from: "2026-08-12", to: "2026-08-14", nightlyPriceIdr: 2_000_000n },
+      ]),
+    ).toBe(3_000_000n + 4_000_000n + 3_000_000n);
+  });
+
+  it("an override may DISCOUNT below the base - the identity handles a negative delta", () => {
+    expect(
+      quoteTotalIdr(2_000_000n, "2026-08-10", "2026-08-12", [
+        { from: "2026-08-10", to: "2026-08-11", nightlyPriceIdr: 500_000n },
+      ]),
+    ).toBe(500_000n + 2_000_000n);
+  });
+
+  it("a stay ending on an override's first day pays none of it (half-open on both sides)", () => {
+    expect(
+      quoteTotalIdr(1_000_000n, "2026-08-10", "2026-08-12", [
+        { from: "2026-08-12", to: "2026-08-20", nightlyPriceIdr: 9_000_000n },
+      ]),
+    ).toBe(2_000_000n);
   });
 
   it("stays exact well past the safe-number range (that's why it's bigint)", () => {
     // The product can exceed MAX_SAFE_INTEGER before toRupiah range-checks it at
     // the boundary; number math would have rounded here.
-    expect(quoteTotalIdr(9_000_000_000_000_000n, 3)).toBe(27_000_000_000_000_000n);
+    expect(
+      quoteTotalIdr(9_000_000_000_000_000n, "2026-08-10", "2026-08-13"),
+    ).toBe(27_000_000_000_000_000n);
   });
 });
 

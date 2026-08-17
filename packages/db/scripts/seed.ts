@@ -33,6 +33,7 @@ import {
   syncConflict,
   tenant,
   unit,
+  unitPriceOverride,
   userProperty,
 } from "../src/schema";
 
@@ -99,6 +100,13 @@ const farIso = (days: number): string =>
     .toISOString()
     .slice(0, 10);
 
+/** `iso` plus n whole days - farIso's arithmetic anchored to a given date. One
+ * helper, because the override window and the summary print must agree on it. */
+const plusDaysIso = (iso: string, days: number): string =>
+  new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
 /** Nightly rate per unit, integer rupiah (invariant #6). */
 const PRICE: Record<DemoUnitKey, bigint> = {
   wholeVilla: 3_500_000n,
@@ -138,6 +146,7 @@ async function main() {
     await tx.delete(channelConnection);
     await tx.delete(userProperty);
     await tx.delete(membership);
+    await tx.delete(unitPriceOverride);
     await tx.delete(unit);
     await tx.delete(property);
     await tx.delete(appUser);
@@ -301,6 +310,20 @@ async function main() {
         minStay: DEMO_UNIT_MIN_STAY.riverSuite,
       },
     ]);
+
+    // --- a seasonal price override (P0-2) on the Whole Villa's free gap ---
+    // Covers exactly the picker-demo gap, so quoting those nights in the funnel
+    // shows date-based pricing live (base 3.5m -> peak 5.25m). No seeded booking
+    // intersects it, so every seeded total_price_idr stays the base x nights the
+    // quote would have given when it was "sold" - a booking's total is a
+    // snapshot either way (EARS PR-04).
+    await tx.insert(unitPriceOverride).values({
+      unitId: U_VILLA,
+      tenantId: T1,
+      fromDate: D.firstFreeNight,
+      toDate: plusDaysIso(D.firstFreeNight, DEMO_FREE_NIGHTS),
+      nightlyPriceIdr: (PRICE.wholeVilla * 3n) / 2n,
+    });
 
     // --- a channel connection (Airbnb) on the Whole Villa ---
     await tx.insert(channelConnection).values({
@@ -509,11 +532,7 @@ async function main() {
   // they move with the calendar. Print them so a presenter can check the state
   // they are about to talk over, and so "all in the future" is visible, not
   // claimed.
-  const freeUntil = new Date(
-    Date.parse(`${D.firstFreeNight}T00:00:00Z`) + DEMO_FREE_NIGHTS * 86_400_000,
-  )
-    .toISOString()
-    .slice(0, 10);
+  const freeUntil = plusDaysIso(D.firstFreeNight, DEMO_FREE_NIGHTS);
   console.log(
     [
       "Demo window (all future, half-open, all within a week):",
@@ -530,6 +549,7 @@ async function main() {
       // in the way" into a list. Use the gap to show the picker greying nights
       // on both sides; book on the property the demo creates.
       `  bookable gap           ${D.firstFreeNight} -> ${freeUntil}  (Whole Villa, ${DEMO_FREE_NIGHTS} nights = its min stay; picker demo only)`,
+      `  peak price override    ${D.firstFreeNight} -> ${freeUntil}  (Whole Villa, Rp 5.250.000/night vs base 3.500.000 - quote those nights to demo P0-2)`,
     ].join("\n"),
   );
   // The dashboard opens on the current MONTH, and nothing can put a future stay

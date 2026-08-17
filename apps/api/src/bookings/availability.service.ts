@@ -82,6 +82,10 @@ export class AvailabilityService {
       const blockedRanges = coalesceRanges(
         await this.repo.findBlockedRanges(unitId, from, to),
       );
+      // Date-based pricing (P0-2): the overrides ride into the SAME quote that
+      // the booking writes re-run in-transaction, so every surface reprices at
+      // once - there is no second price authority to drift.
+      const overrides = await this.repo.findPriceOverrides(unitId, from, to);
       const nights = countNights(from, to);
       const overlap = blockedRanges.length > 0;
       const minStayOk = meetsMinStay(nights, pricing.minStay);
@@ -95,7 +99,9 @@ export class AvailabilityService {
         response: {
           available: !overlap && minStayOk,
           nights,
-          totalPriceIdr: toRupiah(quoteTotalIdr(pricing.basePriceIdr, nights)),
+          totalPriceIdr: toRupiah(
+            quoteTotalIdr(pricing.basePriceIdr, from, to, overrides),
+          ),
           minStay: pricing.minStay,
           reasons,
           blockedRanges,

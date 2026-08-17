@@ -5,6 +5,7 @@ import {
   datesUnavailable,
   emailTaken,
   inviteAlreadyPending,
+  priceOverrideOverlap,
   unitNameTaken,
 } from './conflicts';
 
@@ -58,6 +59,9 @@ const MAP = new Map<string, () => HttpException>([
   // this email. Same shape as the two above - the app pre-check and the partial
   // unique index throw the identical factory (§5.3).
   ['staff_invite_live_email_uniq', inviteAlreadyPending],
+  // A lost create-override race (P0-2): the range is already priced. Same 409 as
+  // the app pre-check, so the two layers are indistinguishable (§5.3).
+  ['price_override_no_overlap', priceOverrideOverlap],
 ]);
 
 /**

@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
-import { booking, property, unit } from '@sambung/db';
-import { OCCUPYING_STATUSES, type BlockedRange } from '@sambung/shared';
+import { booking, property, unit, unitPriceOverride } from '@sambung/db';
+import {
+  OCCUPYING_STATUSES,
+  type BlockedRange,
+  type PriceOverrideSpan,
+} from '@sambung/shared';
 import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
 
@@ -94,6 +98,38 @@ export class AvailabilityRepository {
           ),
         )
         .orderBy(asc(booking.checkIn)),
+    );
+  }
+
+  /**
+   * Every price override touching `[from, to)`, clipped to the window - the same
+   * `greatest`/`least`-cast-to-text shape as findBlockedRanges, and the same
+   * `daterange && daterange` operators as the `price_override_no_overlap`
+   * exclusion constraint, whose GiST index this query rides. Clipping here is
+   * belt-and-braces: `quoteTotalIdr` intersects again, and both are tested.
+   */
+  findPriceOverrides(
+    unitId: string,
+    from: string,
+    to: string,
+  ): Promise<PriceOverrideSpan[]> {
+    const tenantId = this.tenant.tenantId;
+    return this.db.run((tx) =>
+      tx
+        .select({
+          from: sql<string>`greatest(${unitPriceOverride.fromDate}, ${from}::date)::text`,
+          to: sql<string>`least(${unitPriceOverride.toDate}, ${to}::date)::text`,
+          nightlyPriceIdr: unitPriceOverride.nightlyPriceIdr,
+        })
+        .from(unitPriceOverride)
+        .where(
+          and(
+            eq(unitPriceOverride.unitId, unitId),
+            eq(unitPriceOverride.tenantId, tenantId),
+            sql`daterange(${unitPriceOverride.fromDate}, ${unitPriceOverride.toDate}, '[)') && daterange(${from}::date, ${to}::date, '[)')`,
+          ),
+        )
+        .orderBy(asc(unitPriceOverride.fromDate)),
     );
   }
 }

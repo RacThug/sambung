@@ -14,11 +14,13 @@ import { api, ApiError } from "../../lib/api-client";
 import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
 import { isOwner } from "../../lib/role";
+import { useCopiedFlash } from "../../lib/use-copied-flash";
 import { FormField } from "@/components/form-field";
 import { ListError, ListSkeleton } from "@/components/list-state";
 import { PageHeader } from "@/components/page-header";
 import { ChannelsSection } from "./channels-section";
 import { PhotosSection } from "./photos-section";
+import { PricesSection } from "./prices-section";
 import { UnitsSection } from "./units-section";
 import { VerifiedBadge } from "./verified-badge";
 
@@ -99,6 +101,8 @@ export function PropertyEditPage() {
 
       <UnitsSection property={property} />
 
+      <PricesSection property={property} />
+
       <ChannelsSection property={property} />
 
       {/* Owner-only, and hidden rather than disabled (#57): archiving and
@@ -136,7 +140,7 @@ function PublicLink({
   property: PropertyResponse;
   archived: boolean;
 }) {
-  const [copied, setCopied] = useState(false);
+  const { copied, flash } = useCopiedFlash();
   const path = `/p/${property.slug}`;
   const url = window.location.origin + path;
 
@@ -164,10 +168,7 @@ function PublicLink({
       <button
         type="button"
         onClick={() => {
-          void navigator.clipboard.writeText(url).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          });
+          void navigator.clipboard.writeText(url).then(flash);
         }}
         className="rounded-md border border-input px-2 py-0.5 text-xs font-medium text-foreground"
       >
