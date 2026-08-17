@@ -74,6 +74,8 @@ export const en = {
   "picker.checking": "Checking availability…",
   "picker.available": "Available",
   "picker.book": "Book these dates",
+  "picker.paymentsUnavailable":
+    "Online payment isn’t available for this property yet - please contact the owner to book.",
   "picker.notAvailable": "Not available for these dates",
   "picker.reasonMinStay": "This room has a {nights} minimum stay.",
   "picker.reasonOverlap": "Some of those nights are already booked.",

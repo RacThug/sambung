@@ -119,6 +119,9 @@ export function publicPropertyResponse(
     description: null,
     verified: false,
     depositPct: 100,
+    // Online checkout on by default (REQ-PA-04): most funnel tests exercise a
+    // configured tenant; the not-configured state overrides this to false.
+    onlinePaymentsAvailable: true,
     photos: [],
     units: (units ?? []).map((u, i) => ({
       id: `bbbbbbbb-0000-0000-0000-00000000000${i + 1}`,

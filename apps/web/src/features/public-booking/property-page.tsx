@@ -118,6 +118,7 @@ export function PropertyPage() {
                   onOpen={() => openUnit(unit.id)}
                   onClose={() => openUnit(undefined)}
                   onDates={setDates}
+                  onlinePayments={data.onlinePaymentsAvailable}
                 />
               </li>
             ))}
@@ -147,6 +148,7 @@ function UnitCard({
   onOpen,
   onClose,
   onDates,
+  onlinePayments,
 }: {
   i18n: I18n;
   unit: PublicUnit;
@@ -157,6 +159,7 @@ function UnitCard({
   onOpen: () => void;
   onClose: () => void;
   onDates: (dates: { from?: string; to?: string }) => void;
+  onlinePayments: boolean;
 }) {
   const { t } = i18n;
   // The shared rule, not a second spelling of it: `isSellable` is what the
@@ -207,6 +210,7 @@ function UnitCard({
             from={from}
             to={to}
             onChange={onDates}
+            onlinePayments={onlinePayments}
           />
           <button
             type="button"

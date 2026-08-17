@@ -133,6 +133,9 @@ export const api = {
   getBlob,
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
+  // The codebase's first PUT (REQ-PA-04): a wholesale idempotent replace of one
+  // addressable resource - the payment-credential upsert.
+  put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   // Generic: a 204 delete resolves to undefined, a 200 delete (channel disconnect,
   // which returns how many imported bookings were kept - api-spec §7.4) to its body.
   delete: <T = undefined>(path: string) => request<T>("DELETE", path),
