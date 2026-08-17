@@ -62,7 +62,7 @@ telling you to click the next-month arrow, and there is nothing else to be done 
 
 | | Why |
 |---|---|
-| `MIDTRANS_SERVER_KEY` in `apps/api/.env` | Sandbox key from [dashboard.sandbox.midtrans.com](https://dashboard.sandbox.midtrans.com) → Settings → Access Keys. Without it, Act 2's payment step leaves the guest on **"Your dates are held"** with **"Payment couldn't start. Please try again."** and a **Retry payment** button. (The server-side cause, in the API log, is *"Payments are not configured (MIDTRANS_SERVER_KEY is unset)"*.) See the fallback at the end of Act 2. |
+| `MIDTRANS_SERVER_KEY` + `CREDENTIAL_ENCRYPTION_KEY` in `packages/db/.env` **before seeding** | Since REQ-PA-04 credentials are per-tenant: the SEED encrypts the sandbox key (from [dashboard.sandbox.midtrans.com](https://dashboard.sandbox.midtrans.com) → Settings → Access Keys) into the Bali Breeze tenant, and the api (whose `.env` needs the SAME `CREDENTIAL_ENCRYPTION_KEY`) decrypts it per payment. Without them, the seed says so, the funnel's Book CTA becomes an honest "online payment isn't available - contact the owner" (worth showing on purpose: Ubud Retreats is ALWAYS in that state, by design), and Act 2 uses the fallback at its end. |
 | Two browser windows | One signed in as the owner, one for the guest. Use a private window for the guest so the two sessions do not share a token. |
 
 **The 15-minute hold is real.** The seeded hold on the Garden Room expires 15 minutes after
@@ -341,7 +341,7 @@ than discovered by a guest at the door.
 | `db:migrate` cannot find `DATABASE_URL` | The `cp .env.example .env` steps were skipped. `load-env.ts` swallows the missing file. |
 | Login fails | The seed ran against a different database than the API. Check `DATABASE_URL` in `apps/api/.env` and `packages/db/.env` match. |
 | The calendar looks empty | You seeded in the last few days of a month, so the stays are in the next one. Click **›**. `db:reset` warns when this applies. |
-| **"Payment couldn't start. Please try again."** on a "Your dates are held" panel | `MIDTRANS_SERVER_KEY` is unset (the API log says so plainly). Use the Act 2 fallback. |
+| The Book CTA reads "online payment isn't available - contact the owner" on Seminyak | The seed ran without `MIDTRANS_SERVER_KEY` + `CREDENTIAL_ENCRYPTION_KEY` in `packages/db/.env` (its summary says which). Set both, re-seed. On Ubud Retreats this state is CORRECT - it demos ADR-0039 decision 4. |
 | The public page 404s | The property is archived, or the slug is wrong. An archived property's URL stays reserved and returns 404 on purpose. |
 | Photos do not load | Garage is down (`docker compose up -d`). The rest of the demo is unaffected. |
 | The hold has already lapsed | Re-run `db:reset` (about 3 seconds). |

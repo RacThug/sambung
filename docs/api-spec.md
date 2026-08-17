@@ -91,6 +91,8 @@ Sources: `direct | airbnb | booking_com | vrbo | manual_block`. Transitions outs
 | 41 | `GET /units/:unitId/price-overrides` | List a unit's dated price windows | **Built** (P0-2) | - |
 | 42 | `POST /units/:unitId/price-overrides` | Add a price window (409 on overlap) | **Built** (P0-2) | - |
 | 43 | `DELETE /price-overrides/:id` | Remove a price window | **Built** (P0-2) | - |
+| 44 | `GET /settings/payment-credentials` | Credential status per provider (never the key) | **Built** (REQ-PA-04) | PAY-1 |
+| 45 | `PUT /settings/payment-credentials/:provider` | Save/replace the Tenant's gateway key | **Built** (REQ-PA-04) | PAY-1 |
 
 Notifications (FR-NOTIF-1/2) have **no endpoints**: email fires on the `confirmed` transition (webhook handler); the WhatsApp `wa.me` deeplink is a field on #25's response.
 
@@ -333,6 +335,14 @@ The owner-facing surface for the **late-settlement** case §6.2 handles safely b
 - `POST /payments/:id/handle` → 200: `{ paymentId, handledAt }`. Sets a nullable `payment.handled_at` marker (migration 0011) and **nothing else** - `payment.status` stays `paid`, the booking stays expired/cancelled (the ledger is never mutated to clear an inbox item, ADR-0002). The item drops from `GET /payments/lapsed` by the list's predicate, not by any ledger change. Idempotent (already-handled → 200 no-op); unknown / cross-tenant / non-inbox id → 404 (404-over-403). Refund stays **manual** at sandbox (ADR-0011) - handling records "I dealt with it", it does not move money.
 
 ---
+
+### 6.5 Tenant payment credentials - **Built** (REQ-PA-04, [ADR-0039](adr/0039-payment-credentials-are-tenant-scoped.md), EARS [`docs/spec/tenant-payments.md`](spec/tenant-payments.md))
+
+Shared types: `packages/shared/src/payment-credential.ts`. Credentials live ON THE TENANT, encrypted at rest (AES-256-GCM under `CREDENTIAL_ENCRYPTION_KEY`, migration 0018); guest money settles into the owner's own Midtrans account and Sambung is never in the money path. **Owner-only in both directions** (`@Roles('owner')` on read AND write - unlike §4.9's split).
+
+`GET /settings/payment-credentials` → 200, one status per configured provider (empty array = not configured, a SUPPORTED state - never 404). `PUT /settings/payment-credentials/:provider` body `{ serverKey, environment }` → 200 the status; an idempotent wholesale replace (the codebase's first PUT). Unknown provider segment → 404. The key is verified against Midtrans inline (`verifyCredential`: a status probe for an order that cannot exist - 404 = authenticated) and the OUTCOME is stored, never a refusal (a Midtrans outage must not block a valid key - the §7.1 smoke-fetch rule). **The key is returned by no endpoint, in no form** - not masked, not last-4; the app role cannot even SELECT the ciphertext (a column-level grant, 0018).
+
+Downstream: every gateway call takes the BOOKING's tenant's decrypted credential (`CredentialResolver`, owner connection); the webhook resolves `order_id` → tenant FIRST and verifies under that one key (§6.2 amended by construction); `POST /public/bookings` and `…/pay` answer `409 payments_not_configured` for a credential-less tenant, and §4.7's payload carries derived `onlinePaymentsAvailable` so the funnel disables checkout honestly. Key rotation: `pnpm --filter api credentials:rotate` + `docs/runbooks/credential-key.md`.
 
 ## 7. Channel sync - M4 (boss fight #3, #38)
 

@@ -32,11 +32,13 @@ Never in the repo, never in a chat log, never in an email. Test the backup by re
 `key_version` on every row exists for exactly this:
 
 1. Generate a new key; set `CREDENTIAL_ENCRYPTION_KEY_NEXT` beside the old one.
-2. Run the re-encrypt script (ships with the credential service): for each row, decrypt with the
-   version its `key_version` names, re-encrypt with the new key, bump `key_version` - one
-   transaction per row, resumable.
-3. When every row carries the new version, move the new key into `CREDENTIAL_ENCRYPTION_KEY`,
-   drop `_NEXT`, restart, and update the backups.
+2. `pnpm --filter api credentials:rotate` - re-encrypts every row under the new key and bumps
+   `key_version`, one transaction per row. Resumable (a re-run skips rows already on the new
+   generation), and a row the old key cannot read is REPORTED and left untouched rather than
+   aborting the pass - that tenant's owner re-pastes their key, everyone else rotates.
+3. Follow the script's printed instructions: move the new key into `CREDENTIAL_ENCRYPTION_KEY`,
+   set `CREDENTIAL_ENCRYPTION_KEY_VERSION` to the printed generation, drop `_NEXT`, restart,
+   and update the backups.
 
 If the OLD key is already lost (rotation impossible), the recovery is honest and manual: every
 tenant re-pastes their Midtrans key on `/app/settings`. Their money was never at risk - the keys

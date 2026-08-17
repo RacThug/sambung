@@ -15,10 +15,6 @@ verified: true
 
 ---
 
-> **AMENDMENT IN DRAFT (per-tenant payments, PRD-product P0-6 / REQ-PA-04, ADR-0039):** the rows
-> marked `[TBD]` add a **Payments** section and are NOT built yet. They become `[code]` in the same
-> PR that builds them; until then `docs:doctor` is deliberately red on this file (check 6).
-
 ## 1. Purpose
 
 The tenant-wide knobs: how many photos a Property's Gallery may hold, who else may work on the
@@ -64,11 +60,11 @@ added by the REQ-PA-04 amendment)*
 | Team | pending invite email | `email` | `inviteDtoSchema` | `GET /auth/invites` | raw | [code] |
 | Team | pending invite properties + expiry | `properties[].name`, `expiresAt` | `inviteDtoSchema` | `GET /auth/invites` | raw | [code] |
 | Team | Change access / Remove / Revoke buttons | - | none | - | FE | [code] |
-| Payments | status line: "configured <date> · sandbox / production" or "not configured" | `provider`, `environment`, `configuredAt`, `lastVerify` | **NEW** `paymentCredentialStatusResponseSchema` | **NEW** `GET /settings/payment-credentials` | raw | [TBD] |
-| Payments | verify badge ("key checked ✓ / key check failed / unchecked") | `lastVerify` | **NEW** `paymentCredentialStatusResponseSchema` | **NEW** `GET /settings/payment-credentials` | BE | [TBD] |
-| Payments | paste form: server key + environment select | `serverKey`, `environment` | **NEW** `savePaymentCredentialRequestSchema` | **NEW** `PUT /settings/payment-credentials/:provider` | raw | [TBD] |
-| Payments | "never shown again" helper + activation checklist link | - | none | - | FE | [TBD] |
-| Payments | save/replace feedback ("Saved. Guests can now pay online.") | - | none | - | FE | [TBD] |
+| Payments | status line: "configured <date> · sandbox / production" or "not configured" | `provider`, `environment`, `configuredAt`, `lastVerifyStatus`, `lastVerifyAt` | `paymentCredentialStatusResponseSchema` / `listPaymentCredentialsResponseSchema` | `GET /settings/payment-credentials` | raw | [code] |
+| Payments | verify badge ("key checked ✓ / key check failed / unchecked") | `lastVerifyStatus`, `lastVerifyAt` | `credentialVerifyStatusSchema` | `GET /settings/payment-credentials` | BE | [code] |
+| Payments | paste form: server key + environment select | `serverKey`, `environment` | `savePaymentCredentialRequestSchema` / `paymentEnvironmentSchema` | `PUT /settings/payment-credentials/:provider` | raw | [code] |
+| Payments | "never shown again" helper + activation checklist link | - | none | - | FE | [code] |
+| Payments | save/replace feedback ("Saved. Guests can now pay online.") | - | none | - | FE | [code] |
 
 `staffMemberDtoSchema.id` and `.createdAt`, `inviteDtoSchema.id` and `.createdAt` are on the wire;
 `createdAt` on both is **not rendered**, and neither `id` is displayed (both are used as mutation
@@ -77,7 +73,7 @@ targets).
 The **raw invite token appears in no row on purpose**: no endpoint returns it, so a lost email means
 revoke and re-invite rather than re-reading it here (ADR-0033).
 
-*(REQ-PA-04 draft)* **The server key appears in no row for the same reason, permanently**: no endpoint
+**The server key appears in no row for the same reason, permanently**: no endpoint
 ever returns it - not masked, not last-4 (that is partial readback). What the owner sees is that a key
 exists, when it was saved, and whether the last verification call reached Midtrans. A lost key means
 paste it again from the Midtrans dashboard - which is also the replace flow, one idempotent PUT.
@@ -92,10 +88,10 @@ paste it again from the Midtrans dashboard - which is also the replace flow, one
 | `GET /staff` | on mount, **owner only** | section only | yes - `["staff"]` |
 | `GET /auth/invites` | on mount, **owner only** | section only | yes - `["invites"]` |
 | `GET /properties` | on mount, **owner only** (the property picker) | section only | yes - `["properties"]`, usually already warm from the calendar |
-| **NEW** `GET /settings/payment-credentials` | on mount, **owner only** | section only | yes - `["payment-credentials"]` |
-| `PATCH /settings` · `POST /auth/invites` · `DELETE /auth/invites/:id` · `PATCH /staff/:id` · `DELETE /staff/:id` · **NEW** `PUT /settings/payment-credentials/:provider` | per action | mutations | n/a |
+| `GET /settings/payment-credentials` | on mount, **owner only** | section only | yes - `["payment-credentials"]` |
+| `PATCH /settings` · `POST /auth/invites` · `DELETE /auth/invites/:id` · `PATCH /staff/:id` · `DELETE /staff/:id` · `PUT /settings/payment-credentials/:provider` | per action | mutations | n/a |
 
-**Four blocking reads for an Owner** - the most on any page - though each blocks only its own card or
+**Five blocking reads for an Owner** - the most on any page - though each blocks only its own card or
 list, and a Staff session issues exactly one.
 
 ---
@@ -127,7 +123,7 @@ Follows [`_list-pattern.md`](./_list-pattern.md). Deltas:
 | Revoke invite | `DELETE /auth/invites/:id` | button → "Revoking…" | invalidate `["invites"]` only - it has no business refetching the roster | *(no error branch)* | no | yes - 404-over-403, idempotent |
 | Change access | `PATCH /staff/:id` | button → "Saving…" | invalidate `["staff"]`, close the editor | *(no error branch)* | no | yes - a whole-set write |
 | Remove staff | `window.confirm` → `DELETE /staff/:id` | - | invalidate `["staff"]` | *(no error branch)* | no | yes |
-| Save / replace a payment key *(draft)* | `PUT /settings/payment-credentials/:provider` | button → "Saving…" (the server verifies against Midtrans inline, so it can take a beat) | invalidate `["payment-credentials"]`, clear the input, show the status line | 400 → field (bad shape); verify-failure is NOT a refusal - the key stores, the badge says "key check failed" (see §7) | no | yes - an idempotent overwrite; replacing with the same key is a no-op in effect |
+| Save / replace a payment key | `PUT /settings/payment-credentials/:provider` | button → "Saving…" (the server verifies against Midtrans inline, so it can take a beat) | invalidate `["payment-credentials"]`, clear the input, show the status line | 400 → field (bad shape); verify-failure is NOT a refusal - the key stores, the badge says "key check failed" (see §7) | no | yes - an idempotent overwrite; replacing with the same key is a no-op in effect |
 
 Removing a colleague asks first: it is not undone by a second click, which is the same bar as deleting
 inventory (`_list-pattern.md` §6.4). The three Team mutations have **no failure rendering at all** - a
@@ -149,11 +145,11 @@ failed revoke or reassignment is silent.
 | An address that already holds a membership **here** is refused; one at another Tenant is invited normally | BE | `code` | - |
 | Removing a staff member ends the Membership, not the account | BE | - | - |
 | A failed invite email rolls the invite back | BE | - | - |
-| The server key is write-only: no endpoint returns it, in any form *(draft)* | BE | - | - |
-| Credentials are encrypted at rest with the app-held key; ciphertext is read only on the owner connection at the gateway layer, never under a principal's RLS scope *(draft)* | BE | - | - |
-| Online checkout is available iff a credential EXISTS; the verify badge is information, not a gate *(draft)* | BE | `onlinePaymentsAvailable` (public), `lastVerify` (here) | - |
-| Verify-on-save stores its outcome instead of refusing: a Midtrans outage must not stop a valid key being saved (the channels smoke-fetch rule, #55) *(draft)* | BE | `lastVerify` | - |
-| Payments is owner-only both directions - 403 for staff, before any lookup *(draft)* | BE (`@Roles`) | - | - |
+| The server key is write-only: no endpoint returns it, in any form | BE | - | - |
+| Credentials are encrypted at rest with the app-held key; ciphertext is read only on the owner connection at the gateway layer, never under a principal's RLS scope | BE | - | - |
+| Online checkout is available iff a credential EXISTS; the verify badge is information, not a gate | BE | `onlinePaymentsAvailable` (public), `lastVerify` (here) | - |
+| Verify-on-save stores its outcome instead of refusing: a Midtrans outage must not stop a valid key being saved (the channels smoke-fetch rule, #55) | BE | `lastVerifyStatus`, `lastVerifyAt` | - |
+| Payments is owner-only both directions - 403 for staff, before any lookup | BE (`@Roles`) | - | - |
 
 One leak, and a mild one: the "at least one property" rule is enforced by `assignedPropertyIdsSchema`'s
 `min(1)` and mirrored by a disabled button plus an explanatory line ("pick at least one property, or
@@ -172,7 +168,7 @@ regardless.
 `staffMemberDtoSchema`, `listStaffResponseSchema`, `updateStaffRequestSchema`,
 `assignedPropertyIdsSchema` and `assignedPropertySchema` all exist.
 
-**DRAFT (REQ-PA-04 amendment)** - every **NEW** in §3 resolves here:
+**REQ-PA-04 (built):** the Payments amendment's schema work, all landed with migration 0018:
 
 | Change | Table / package | Migration | Why |
 |---|---|---|---|
@@ -217,7 +213,7 @@ regardless.
   failed" are the same rendering (D5). **Owner:** builder.
 - [ ] **An Owner's session issues four reads here**, three of them owner-only. Fine at this size; worth
   noting as the app's highest blocking-read count (five with the Payments read). **Owner:** RacThug.
-- [ ] *(REQ-PA-04 draft)* **What does the demo tenant show?** The seed encrypts the sandbox key from
+- [ ] **What does the demo tenant show?** The seed encrypts the sandbox key from
   `MIDTRANS_SERVER_KEY` (if set) into Bali Breeze so `demo.md` keeps working; a keyless dev machine
   gets the "not configured" state - which is itself demoable (decision 4). Confirm that trade reads
   fine in the demo script. **Owner:** RacThug. **Blocks:** the seed change only.
