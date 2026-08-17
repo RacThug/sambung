@@ -47,8 +47,10 @@ A portfolio VPS and a "someone else's revenue depends on this" VPS are different
 ### 5. Legal & trust pages (REQ-TR-01)
 Terms of service, privacy policy, refund/cancellation policy (guest-facing, per property), and a real support contact. Required by Midtrans production review anyway.
 
-### 6. Per-tenant payment credentials (REQ-PA-04, [ADR-0039](adr/0039-payment-credentials-are-tenant-scoped.md)) - **IN PROGRESS**
+### 6. Per-tenant payment credentials (REQ-PA-04, [ADR-0039](adr/0039-payment-credentials-are-tenant-scoped.md)) - **SHIPPED** (PR #209, migration 0018)
 The code half of item 1 (activation is the business half): each owner pastes their **own** Midtrans keys, encrypted at rest with an app-held key; guest money settles straight into the owner's merchant account and Sambung is never in the money path. The webhook resolves the tenant first and verifies the signature second; "no gateway yet" is a supported state - the funnel shows availability and disables online checkout honestly. Buildable in full against sandbox keys, so it runs in parallel with the merchant-review lead time.
+
+*Shipped as [`docs/spec/tenant-payments.md`](spec/tenant-payments.md): the secret is unreadable even by the app role (a column-level grant, not discipline), key rotation ships with the runbook [`docs/runbooks/credential-key.md`](runbooks/credential-key.md), and ADR-0039 stays Proposed until item 1's activation confirms it. Deferred by name there: deleting a credential, Xendit, sub-merchant orchestration, per-property keys.*
 
 > REQ IDs (`REQ-PR-02/03`, `REQ-PA-04`, `REQ-AV-04`, `REQ-TR-01`) are recovered from the gated PRD
 > draft this file superseded - recorded here so references to them resolve somewhere real.
