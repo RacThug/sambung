@@ -88,6 +88,9 @@ Sources: `direct | airbnb | booking_com | vrbo | manual_block`. Transitions outs
 | 38 | `GET /settings` | Tenant settings (gallery cap) | **Built** (#67) | PROP-1 |
 | 39 | `PATCH /settings` | Update settings (owner only) | **Built** (#67) | PROP-1 |
 | 40 | `POST /channels/sync` | "Sync now" for every feed the caller can see | **Built** (#201) | SYNC-1 |
+| 41 | `GET /units/:unitId/price-overrides` | List a unit's dated price windows | **Built** (P0-2) | - |
+| 42 | `POST /units/:unitId/price-overrides` | Add a price window (409 on overlap) | **Built** (P0-2) | - |
+| 43 | `DELETE /price-overrides/:id` | Remove a price window | **Built** (P0-2) | - |
 
 Notifications (FR-NOTIF-1/2) have **no endpoints**: email fires on the `confirmed` transition (webhook handler); the WhatsApp `wa.me` deeplink is a field on #25's response.
 
@@ -226,6 +229,18 @@ The bound is on **count**: over the cap, a same-length **swap** (drop one key, a
 
 > `@Roles(...)` + `RolesGuard` (`apps/api/src/common/`) are the codebase's **first** role check, built here as the seam §3.6's staff invites extend - not a one-off `if`, which would give #57 a second authorization path to reconcile. Property-scoped permissions are deliberately out of scope here.
 
+### 4.10 Price overrides - **Built** (PRD-product P0-2, EARS [`docs/spec/date-based-pricing.md`](spec/date-based-pricing.md))
+
+Shared types: `packages/shared/src/price-override.ts`. A dated price layered over `basePriceIdr`: a night in half-open `[from, to)` costs `nightlyPriceIdr`, every other night the base. **Only `quote()` reads the table** - the public quote (§5.1), the guest write (§5.3) and the owner walk-in (§5.4) all reprice together by construction.
+
+`GET /units/:unitId/price-overrides` → 200, sorted by `from`. Unknown / cross-tenant / staff-unassigned unit → **404**.
+
+`POST /units/:unitId/price-overrides` body `{ from, to, nightlyPriceIdr }` → 201. `from < to`, real calendar dates, price `1..MAX_NIGHTLY_RATE_IDR` (the SAME cap as the base, so §5.1's overflow argument holds per-night) - else 400. Overlapping an existing override → **409 `price_override_overlap`**, reached by two indistinguishable layers (§5.3): the app pre-check and the `price_override_no_overlap` GiST exclusion constraint (the `booking_no_overlap` pattern, migration 0017).
+
+`DELETE /price-overrides/:id` → 204; unknown → 404. **Never re-prices a booking** - `total_price_idr` is a snapshot at creation.
+
+**No `@Roles` guard**: pricing an assigned Unit is *operating* it (the ADR-0032 verb line reserves tenant-shape verbs), so Staff manage prices for the units RLS shows them - the policy carries both axes (tenant + `app_property_visible` via the unit's property). **No archived gate**: pricing a retired unit is harmless; §5.3's chokepoint is what guards selling. Deferred by name: rate plans, occupancy pricing, LOS rules, in-place edit (remove-then-add).
+
 ---
 
 ## 5. Availability, calendar & bookings - M2 (boss fights #1, #2)
@@ -247,7 +262,7 @@ Response:
 - **`blockedRanges`** = every *occupying* booking (`pending_payment`|`confirmed`) intersecting `[from,to)`, clipped to the window, **half-open**, contiguous/overlapping ranges **coalesced into maximal intervals**, and carrying `{from,to}` only - no `source`/`guest`/`bookingId`/`status` ever. It is **unconditional**: always the occupied nights in the window. So the picker uses this one endpoint in two modes - query the visible month to grey out booked nights (ignore `available`/price), then query the concrete selection to quote. Coalescing also means a Visitor never sees the *seam* between two adjacent bookings (a checkout-day = next check-in), only "these nights are unavailable".
 - **`available`** = `blockedRanges` empty **and** `nights ≥ minStay`. Because `blockedRanges` is unconditional, a non-empty one *is* the overlap signal - there is no separate availability query. (So for one window, `available:true` ⟺ `blockedRanges` empty.)
 - **`reasons`** = machine-readable slugs, subset of `overlap` (blockedRanges non-empty) and `min_stay` (`nights < minStay`); both may be present. **Slugs only, no prose** - the response is language-neutral (§1); the SPA composes localized copy from the slug + `minStay`/`blockedRanges` using its own i18n. `?lang` is accepted (public-endpoint convention) but unused here.
-- **`totalPriceIdr`** = `basePriceIdr × nights`, always computed (v1 pricing; no seasonal rates - PRD non-goal). A zero-priced (placeholder) unit quotes honestly at `0`; whether it can actually be *booked* is the write chokepoint's call (§5.3), not the read's.
+- **`totalPriceIdr`** = the sum of nightly prices over `[from,to)`: each night costs the **price override** covering it, else `basePriceIdr` (§4.10, PRD-product P0-2). *Amended: this bullet originally read "`basePriceIdr × nights` … no seasonal rates - PRD non-goal"; the product phase reversed that non-goal, and `quoteTotalIdr` - the one pricing function both the read and the writes flow through - was generalised in place.* A zero-priced (placeholder) unit still quotes honestly at `0`; whether it can actually be *booked* is the write chokepoint's call (§5.3), not the read's.
 
 **Tenant scope & archive.** No auth, but a tenant: `PublicScope.enterFromUnitId(id)` resolves the tenant from the unit id (one column, owner connection) exactly as `enterFromSlug` does for a slug ([ADR-0003](adr/0003-a-visitor-is-a-principal.md), [ADR-0008](adr/0008-a-public-resolver-resolves-it-does-not-judge.md)). The resolver stays pure - it 404s only a *nonexistent* unit; the **effectively-archived** check (`unit.archived_at IS NOT NULL OR property.archived_at IS NOT NULL` → 404, §4.8) is enforced in `AvailabilityService` at the chokepoint, from the same unit-fetch that reads `basePriceIdr`/`minStay`.
 
