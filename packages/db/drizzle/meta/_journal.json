@@ -127,6 +127,13 @@
       "when": 1786954521635,
       "tag": "0017_unit_price_override",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786962170984,
+      "tag": "0018_tenant_payment_credential",
+      "breakpoints": true
     }
   ]
 }

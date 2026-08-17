@@ -25,6 +25,22 @@ const statements = [
   `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${ROLE};`,
   `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${ROLE};`,
   `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ${ROLE};`,
+  // tenant_payment_credential is WRITE-ONLY for the app role (REQ-PA-04,
+  // migration 0018): the blanket grant above just re-opened full SELECT, so the
+  // column restriction is re-applied here - the app role may never read the
+  // secret columns (ciphertext, nonce); the decrypting read runs on the OWNER
+  // connection only. This is the SECOND copy of the column list (the first is in
+  // 0018, which no-ops on a fresh database because this role does not exist yet
+  // when migrations run); the pair is pinned by the behavioural test in
+  // test/payment-credential.test.ts, which is the one authority over both.
+  `DO $$ BEGIN
+     IF EXISTS (SELECT FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'tenant_payment_credential') THEN
+       REVOKE SELECT ON TABLE tenant_payment_credential FROM ${ROLE};
+       GRANT SELECT (id, tenant_id, provider, environment, key_version, last_verify_status, last_verify_at, created_at, updated_at)
+         ON tenant_payment_credential TO ${ROLE};
+     END IF;
+   END $$;`,
 ];
 
 async function main() {

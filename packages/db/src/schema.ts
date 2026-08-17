@@ -38,6 +38,12 @@ const citext = customType<{ data: string }>({
   dataType: () => "citext",
 });
 
+// bytea: raw bytes, for the encrypted payment credentials (REQ-PA-04). Drizzle
+// has no built-in bytea; node-postgres maps it to Buffer both ways.
+const bytea = customType<{ data: Buffer }>({
+  dataType: () => "bytea",
+});
+
 const timestamptz = (name: string) =>
   timestamp(name, { withTimezone: true, mode: "date" });
 
@@ -777,6 +783,78 @@ export const paymentEvent = pgTable(
   ],
 );
 
+// The Tenant's own gateway credentials, encrypted at rest (REQ-PA-04, ADR-0039):
+// guest money settles into the OWNER's Midtrans account, and Sambung is never in
+// the money path. One row per (tenant, provider).
+//
+// ciphertext/nonce hold the AES-256-GCM-encrypted server key under the app-held
+// CREDENTIAL_ENCRYPTION_KEY; key_version is the rotation path (the runbook,
+// docs/runbooks/credential-key.md). WRITE-ONLY BY CONSTRUCTION for the app role:
+// migration 0018 + setup-app-role.ts both restrict sambung_app's SELECT to the
+// non-secret columns (a column-level grant), so no principal-scoped query - not
+// even a compromised one - can read secret material; the decrypting read runs
+// only at the gateway layer on the OWNER connection. The two copies of that
+// column list are pinned by a behavioural test in test/payment-credential.test.ts,
+// not by hope.
+//
+// provider/environment are text with the zod boundary (+ a CHECK backstop for
+// environment, whose wrongness is silent - the property_time_zone reasoning):
+// a provider is Sambung's word for an external system, like payment.provider.
+export const tenantPaymentCredential = pgTable(
+  "tenant_payment_credential",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    provider: text("provider").notNull(), // 'midtrans' (zod-gated closed set)
+    environment: text("environment").notNull(), // 'sandbox' | 'production'
+    ciphertext: bytea("ciphertext").notNull(),
+    nonce: bytea("nonce").notNull(),
+    keyVersion: smallint("key_version").notNull().default(1),
+    // Verify-on-save outcome (EARS CR-03): information, never a gate. 'unchecked'
+    // = stored without a live provider call (the seed's demo credential).
+    lastVerifyStatus: text("last_verify_status").notNull().default("unchecked"),
+    lastVerifyAt: timestamptz("last_verify_at"),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+    updatedAt: timestamptz("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    // The upsert target: replace is the same idempotent PUT (EARS CR-01).
+    unique("tenant_payment_credential_tenant_provider_uniq").on(
+      t.tenantId,
+      t.provider,
+    ),
+    // Backstops for values whose wrongness is SILENT (wrong base URL, undecryptable
+    // blob): the zod boundary rejects them first, the CHECK rejects a bypass.
+    check(
+      "tenant_payment_credential_environment",
+      sql`${t.environment} in ('sandbox', 'production')`,
+    ),
+    check(
+      "tenant_payment_credential_verify_status",
+      sql`${t.lastVerifyStatus} in ('ok', 'failed', 'unchecked')`,
+    ),
+    // AES-256-GCM: a 12-byte nonce and a non-empty ciphertext (which includes the
+    // 16-byte auth tag, so anything shorter can only be a broken write).
+    check(
+      "tenant_payment_credential_nonce_len",
+      sql`octet_length(${t.nonce}) = 12`,
+    ),
+    check(
+      "tenant_payment_credential_ciphertext_len",
+      sql`octet_length(${t.ciphertext}) > 16`,
+    ),
+    check(
+      "tenant_payment_credential_key_version",
+      sql`${t.keyVersion} >= 1`,
+    ),
+  ],
+);
+
 // ---- Row types ------------------------------------------------------------------
 export type Tenant = typeof tenant.$inferSelect;
 export type AppUser = typeof appUser.$inferSelect;
@@ -791,6 +869,7 @@ export type SyncConflict = typeof syncConflict.$inferSelect;
 export type Booking = typeof booking.$inferSelect;
 export type Payment = typeof payment.$inferSelect;
 export type PaymentEvent = typeof paymentEvent.$inferSelect;
+export type TenantPaymentCredential = typeof tenantPaymentCredential.$inferSelect;
 export type UserRole = (typeof userRole.enumValues)[number];
 export type BookingSource = (typeof bookingSource.enumValues)[number];
 export type BookingStatus = (typeof bookingStatus.enumValues)[number];
