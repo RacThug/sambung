@@ -142,7 +142,7 @@ would otherwise execute on a recycled connection under somebody else's tenant.
 
 ## Decisions worth reading
 
-The full log is at the bottom of [`CLAUDE.md`](CLAUDE.md), and each entry links its ADR in
+The full log is [`docs/decision-log.md`](docs/decision-log.md), and each entry links its ADR in
 [`docs/adr/`](docs/adr/). These shaped the product rather than the plumbing:
 
 | | Decision |
@@ -222,7 +222,9 @@ exclusion constraint you have stubbed out is not the thing you were trying to te
 | [`docs/page-spec.md`](docs/page-spec.md) | adding or changing a page or route |
 | [`docs/design-system.md`](docs/design-system.md) | building or styling any UI |
 | [`docs/demo.md`](docs/demo.md) | showing the thing to somebody |
-| [`CLAUDE.md`](CLAUDE.md) | changing anything: the invariants, the guardrails, the decision log |
+| [`CLAUDE.md`](CLAUDE.md) | changing anything: the invariants, the guardrails, the decision index |
+| [`docs/decision-log.md`](docs/decision-log.md) | asking why a call was made; adding a decision of your own |
+| [`docs/history.md`](docs/history.md) | asking whether something already shipped, or was deferred on purpose |
 
 The DB and architecture docs are teaching editions: every decision carries its *why*, because
 the point of this project was to get better, not only to ship.
