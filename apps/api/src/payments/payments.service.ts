@@ -13,8 +13,10 @@ import {
 } from '@sambung/shared';
 import { bookingNotPayable } from '../common/db-error/conflicts';
 import { PublicScope } from '../common/public-scope.service';
+import { TenantContext } from '../common/tenant-context.service';
 import { TenantDbService } from '../db/tenant-db.service';
 import { BookingsRepository } from '../bookings/bookings.repository';
+import { CredentialResolver } from './credential-resolver.service';
 import { depositAmountIdr } from './deposit';
 import { PAYMENT_GATEWAY, type PaymentGateway } from './payment-gateway';
 import { PaymentsRepository } from './payments.repository';
@@ -39,6 +41,8 @@ export class PaymentsService {
     private readonly bookings: BookingsRepository,
     private readonly config: ConfigService,
     @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
+    private readonly tenant: TenantContext,
+    private readonly credentials: CredentialResolver,
   ) {}
 
   async pay(bookingId: string): Promise<PaymentSessionResponse> {
@@ -46,6 +50,14 @@ export class PaymentsService {
     // unknown id, judges status nowhere). Everything after runs under RLS as that
     // tenant, so the payment insert/read pass the booking-scoped policy.
     await this.scope.enterFromBookingId(bookingId);
+
+    // The TENANT's key, before any work (REQ-PA-04, EARS GW-02): no credential →
+    // 409 payments_not_configured. Resolved outside the transaction below - a
+    // config read has no business inside a booking row lock.
+    const credential = await this.credentials.forGatewayOrThrow(
+      this.gateway,
+      this.tenant.tenantId,
+    );
 
     return this.db.run(async () => {
       // Lock the booking row for the transaction, so concurrent pays serialise and
@@ -99,17 +111,20 @@ export class PaymentsService {
       // already carries the session it returned.
       const paymentId = randomUUID();
       const webBase = this.config.get<string>('WEB_BASE_URL');
-      const session = await this.gateway.createSession({
-        orderId: paymentId,
-        amountIdr: Number(toRupiah(amountIdr)),
-        itemName: `${ctx.propertyName} - ${ctx.unitName}`,
-        customer: {
-          name: ctx.guestName,
-          phone: ctx.guestPhone,
-          email: ctx.guestEmail,
+      const session = await this.gateway.createSession(
+        {
+          orderId: paymentId,
+          amountIdr: Number(toRupiah(amountIdr)),
+          itemName: `${ctx.propertyName} - ${ctx.unitName}`,
+          customer: {
+            name: ctx.guestName,
+            phone: ctx.guestPhone,
+            email: ctx.guestEmail,
+          },
+          finishUrl: webBase ? `${webBase}/booking/${bookingId}` : null,
         },
-        finishUrl: webBase ? `${webBase}/booking/${bookingId}` : null,
-      });
+        credential,
+      );
       await this.repo.insertPaymentWithSession({
         id: paymentId,
         bookingId,

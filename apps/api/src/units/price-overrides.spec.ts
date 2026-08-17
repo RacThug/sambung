@@ -17,6 +17,7 @@ import {
 } from '@sambung/shared';
 import { AppModule } from '../app.module';
 import { DbService } from '../db/db.service';
+import { insertCredentialFixture } from '../test-helpers';
 import { PriceOverridesRepository } from './price-overrides.repository';
 
 // The price-override lifecycle + the quote it feeds (PRD-product P0-2, EARS
@@ -98,6 +99,9 @@ describe('Price overrides (P0-2)', () => {
     tokenA = await registerTenant('Override Tenant A');
     tokenB = await registerTenant('Override Tenant B');
     unitA = await createUnit(tokenA);
+    // The quote test books through the guest funnel, which gates on a payment
+    // credential existing (REQ-PA-04, GW-03) under the real gateway binding.
+    await insertCredentialFixture(dbs.db, createdTenantIds[0]);
   });
 
   afterAll(async () => {

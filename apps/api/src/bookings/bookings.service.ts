@@ -16,13 +16,20 @@ import {
   type CreateOwnerBookingRequest,
   type CreateOwnerBookingResponse,
 } from '@sambung/shared';
+import { Inject } from '@nestjs/common';
 import { PublicScope } from '../common/public-scope.service';
 import { TenantContext } from '../common/tenant-context.service';
 import {
   bookingNotCancellable,
   datesUnavailable,
+  paymentsNotConfigured,
 } from '../common/db-error/conflicts';
+import { paymentCredentialExists } from '../common/payment-credential-exists';
 import { TenantDbService } from '../db/tenant-db.service';
+import {
+  PAYMENT_GATEWAY,
+  type PaymentGateway,
+} from '../payments/payment-gateway';
 import { AvailabilityService } from './availability.service';
 import { BookingsRepository } from './bookings.repository';
 
@@ -52,6 +59,12 @@ export class BookingsService {
     private readonly tenant: TenantContext,
     private readonly availability: AvailabilityService,
     private readonly repo: BookingsRepository,
+    // The gateway is injected ONLY for `requiresCredentials` (the funnel gate
+    // below): the fake seam must switch the gate off wherever the fake is bound
+    // - by env (e2e) or by a spec's `.overrideProvider` - so the gate reads the
+    // BOUND gateway, not the env. BookingsModule registers the same factory
+    // under the same token; a test override replaces both bindings at once.
+    @Inject(PAYMENT_GATEWAY) private readonly gateway: PaymentGateway,
   ) {}
 
   async createPublicBooking(
@@ -62,6 +75,20 @@ export class BookingsService {
     // Visitor scoped to exactly that tenant, and judges archive nowhere - the
     // archived answer is this write's to give, below, as a 409.
     await this.scope.enterFromUnitId(req.unitId);
+
+    // A Hold exists only to bridge to payment (REQ-PA-04, EARS GW-03): a Tenant
+    // with no gateway gets `409 payments_not_configured` HERE, not just at pay -
+    // otherwise a crafted request parks 15-minute Holds that can never be paid.
+    // The funnel never shows this (it reads `onlinePaymentsAvailable`); the fake
+    // gateway (e2e) simulates a configured provider and skips the gate.
+    if (
+      this.gateway.requiresCredentials &&
+      !(await this.db.run((tx) =>
+        paymentCredentialExists(tx, this.tenant.tenantId),
+      ))
+    ) {
+      throw paymentsNotConfigured();
+    }
 
     // One transaction owns the whole unit of work: sweep -> re-check -> insert.
     // quote() and the repository methods JOIN this transaction (#72), so the

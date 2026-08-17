@@ -195,3 +195,17 @@ export const priceOverrideOverlap = (): HttpException =>
     'price_override_overlap',
     'These dates already have a price override',
   );
+
+/**
+ * The Tenant has no payment gateway configured (REQ-PA-04, ADR-0039 decision
+ * 4). One-layer: no constraint produces it - the ABSENCE of a credential row
+ * does. Thrown by the public booking write (a Hold exists only to bridge to
+ * payment - EARS GW-03) and by the pay endpoint (GW-02); the funnel avoids both
+ * by reading `onlinePaymentsAvailable`, so a guest who meets this bypassed the
+ * UI. No detail: the state is binary.
+ */
+export const paymentsNotConfigured = (): HttpException =>
+  conflict(
+    'payments_not_configured',
+    'Online payment is not set up for this property yet',
+  );

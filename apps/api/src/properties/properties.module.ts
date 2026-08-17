@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AuthModule } from '../auth/auth.module';
+import { PAYMENT_GATEWAY } from '../payments/payment-gateway';
+import { createPaymentGateway } from '../payments/payment-gateway.factory';
 import { SettingsModule } from '../settings/settings.module';
 import { StorageModule } from '../storage/storage.module';
 import { PropertiesController } from './properties.controller';
@@ -19,6 +22,19 @@ import { PublicPropertiesService } from './public-properties.service';
   // tenant's gallery cap?", which the photo write consults (#67, ADR-0030).
   imports: [AuthModule, StorageModule, SettingsModule], // AuthModule provides JwtAuthGuard
   controllers: [PropertiesController, PublicPropertiesController],
-  providers: [PropertiesService, PropertiesRepository, PublicPropertiesService],
+  providers: [
+    PropertiesService,
+    PropertiesRepository,
+    PublicPropertiesService,
+    // Same factory/token as PaymentsModule (file import, no @Module cycle): the
+    // public page's `onlinePaymentsAvailable` reads `requiresCredentials`
+    // (REQ-PA-04, EARS GW-04) and must follow whatever gateway is bound -
+    // including a spec's override.
+    {
+      provide: PAYMENT_GATEWAY,
+      useFactory: createPaymentGateway,
+      inject: [ConfigService],
+    },
+  ],
 })
 export class PropertiesModule {}

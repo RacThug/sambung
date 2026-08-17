@@ -15,6 +15,8 @@ const PROD = {
   NODE_ENV: 'production',
   WEB_BASE_URL: 'https://sambung.example',
   STORAGE_PUBLIC_BASE_URL: 'https://photos.sambung.example',
+  // 32 base64 bytes (REQ-PA-04) - any 32 will do for the guard's shape check.
+  CREDENTIAL_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
 } satisfies NodeJS.ProcessEnv;
 
 /**
@@ -45,6 +47,7 @@ describe('validateEnv', () => {
       validateEnv({
         NODE_ENV: 'production',
         WEB_BASE_URL: 'https://sambung.example',
+        CREDENTIAL_ENCRYPTION_KEY: PROD.CREDENTIAL_ENCRYPTION_KEY,
       }),
     ).not.toThrow();
   });
@@ -122,6 +125,28 @@ describe('validateEnv', () => {
     });
   });
 
+  // --- The credential encryption key (REQ-PA-04, migration 0018) ---
+
+  describe('CREDENTIAL_ENCRYPTION_KEY', () => {
+    it('refuses a deployment without it - stored credentials would be unreadable, silently', () => {
+      const withoutKey: NodeJS.ProcessEnv = { ...PROD };
+      delete withoutKey.CREDENTIAL_ENCRYPTION_KEY;
+      expect(() => validateEnv(withoutKey)).toThrow(
+        /CREDENTIAL_ENCRYPTION_KEY/,
+      );
+    });
+
+    it('refuses a key that is not 32 base64 bytes', () => {
+      expect(() =>
+        validateEnv({ ...PROD, CREDENTIAL_ENCRYPTION_KEY: 'dG9vLXNob3J0' }),
+      ).toThrow(/CREDENTIAL_ENCRYPTION_KEY/);
+    });
+
+    it('does not require it on a proven local sandbox', () => {
+      expect(() => validateEnv(LOCAL)).not.toThrow();
+    });
+  });
+
   // --- The e2e payment-gateway seam guard (#167 part b) ---
 
   describe('PAYMENT_GATEWAY', () => {
@@ -161,6 +186,7 @@ describe('validateEnv', () => {
     const DEPLOYED = {
       WEB_BASE_URL: 'https://sambung.example',
       STORAGE_PUBLIC_BASE_URL: 'https://photos.sambung.example',
+      CREDENTIAL_ENCRYPTION_KEY: PROD.CREDENTIAL_ENCRYPTION_KEY,
     } satisfies NodeJS.ProcessEnv;
 
     it('refuses PAYMENT_GATEWAY=fake when a public origin is declared', () => {
@@ -201,6 +227,7 @@ describe('validateEnv', () => {
           STORAGE_ENDPOINT: 'http://localhost:3900',
           STORAGE_PUBLIC_BASE_URL: 'https://photos.sambung.example',
           STORAGE_BOOTSTRAP: 'true',
+          CREDENTIAL_ENCRYPTION_KEY: PROD.CREDENTIAL_ENCRYPTION_KEY,
         }),
       ).toThrow(/STORAGE_BOOTSTRAP must not be "true"/);
     });

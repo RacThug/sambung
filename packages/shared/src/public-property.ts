@@ -63,6 +63,16 @@ export const publicPropertyResponseSchema = z.object({
    */
   depositPct: depositPctSchema,
   /**
+   * Whether online checkout works for this Tenant (REQ-PA-04, ADR-0039 decision
+   * 4): derived from a payment credential EXISTING - the same predicate the
+   * booking write refuses on (409 payments_not_configured), so the page's
+   * promise and the write's answer cannot drift. When false the funnel still
+   * shows availability (honesty) but replaces the Book CTA and the checkout form
+   * with a contact-the-owner message. Not a verify-status: the badge is
+   * information for the Owner, existence is the gate.
+   */
+  onlinePaymentsAvailable: z.boolean(),
+  /**
    * May be empty, and an unpriced unit still appears. `publishable` does not
    * gate this endpoint (ADR-0004): a page renders whatever the Owner has, so
    * that deleting a photo can never silently 404 a link already in the wild.

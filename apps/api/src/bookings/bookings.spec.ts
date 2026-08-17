@@ -22,7 +22,7 @@ import {
 } from '@sambung/shared';
 import { AppModule } from '../app.module';
 import { DbService } from '../db/db.service';
-import { testSlug } from '../test-helpers';
+import { insertCredentialFixture, testSlug } from '../test-helpers';
 import { HoldSweeperService } from './hold-sweeper.service';
 
 /**
@@ -122,6 +122,9 @@ describe('Guest booking + hold sweeper', () => {
     const auth = bodyOf<AuthResponse>(res);
     tenantAId = auth.tenant.id;
     createdTenantIds.push(tenantAId);
+    // The guest funnel gates on a payment credential existing (REQ-PA-04,
+    // GW-03); this suite runs the REAL gateway binding, so plant one.
+    await insertCredentialFixture(dbs.db, tenantAId);
 
     const [prop] = await dbs.db
       .insert(property)

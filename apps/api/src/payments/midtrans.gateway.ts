@@ -1,17 +1,18 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   BadGatewayException,
   BadRequestException,
   Injectable,
-  InternalServerErrorException,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { z } from 'zod';
-import type { PaymentProvider } from '@sambung/shared';
+import type { PaymentEnvironment, PaymentProvider } from '@sambung/shared';
 import type {
   CreateSessionInput,
+  CredentialVerifyOutcome,
+  GatewayCredential,
   ParsedPaymentEvent,
   PaymentGateway,
   PaymentOutcome,
@@ -69,15 +70,34 @@ export function midtransOutcome(
 }
 
 /**
+ * Midtrans base URLs per credential environment (EARS CR-04). Which pair a call
+ * uses follows the TENANT's stored credential, never the process - one
+ * deployment serves a sandbox demo tenant beside a production one. The env
+ * overrides (MIDTRANS_SNAP_BASE_URL / MIDTRANS_API_BASE_URL) remain for tests
+ * that point the adapter at a local mock; when set they win for BOTH
+ * environments, which no deployment should ever do.
+ */
+const BASE_URLS: Record<PaymentEnvironment, { snap: string; api: string }> = {
+  sandbox: {
+    snap: 'https://app.sandbox.midtrans.com/snap/v1/transactions',
+    api: 'https://api.sandbox.midtrans.com/v2',
+  },
+  production: {
+    snap: 'https://app.midtrans.com/snap/v1/transactions',
+    api: 'https://api.midtrans.com/v2',
+  },
+};
+
+/**
  * The one Provider adapter (ADR-0015). Talks to Midtrans Snap over `fetch` - no
  * SDK, because session-create is a single authenticated POST and staying
  * dependency-light keeps the whole adapter replaceable by the test fake (invariant
- * #8). Sandbox only for v1 (invariant #8 - no paid third-party services).
+ * #8).
  *
- * Keys come from ConfigService and are read at CALL time, not construction: the
- * app must boot for `pnpm dev` / tests without Midtrans keys (the fake replaces
- * this in tests, and an owner may not have configured it yet). An actual pay
- * attempt without a server key fails loud with a message naming the missing var.
+ * NO process-wide key (REQ-PA-04, ADR-0039): every method takes the TENANT's
+ * decrypted `GatewayCredential`, resolved by CredentialResolver from the row the
+ * owner pasted on /app/settings. The old `MIDTRANS_SERVER_KEY` env is read by
+ * nothing here any more - the seed alone consumes it, to plant a demo credential.
  */
 /**
  * Cap on the Snap call. It runs INSIDE the pay transaction, which holds a
@@ -91,25 +111,35 @@ const SNAP_TIMEOUT_MS = 8_000;
 @Injectable()
 export class MidtransGateway implements PaymentGateway {
   readonly provider: PaymentProvider = 'midtrans';
+  // The real gateway is useless without a tenant key - the funnel gates on this
+  // (EARS GW-02/03); the fake declares false and the harness needs no rows.
+  readonly requiresCredentials = true;
   private readonly logger = new Logger(MidtransGateway.name);
 
   constructor(private readonly config: ConfigService) {}
 
-  async createSession(input: CreateSessionInput): Promise<PaymentSession> {
-    const serverKey = this.config.get<string>('MIDTRANS_SERVER_KEY');
-    if (!serverKey) {
-      // Not a client error: the guest did nothing wrong, the server is
-      // misconfigured. 500 so it reads as ours to fix (and the hold survives).
-      throw new InternalServerErrorException(
-        'Payments are not configured (MIDTRANS_SERVER_KEY is unset)',
-      );
-    }
-    const baseUrl =
+  private snapUrl(credential: GatewayCredential): string {
+    return (
       this.config.get<string>('MIDTRANS_SNAP_BASE_URL') ??
-      'https://app.sandbox.midtrans.com/snap/v1/transactions';
+      BASE_URLS[credential.environment].snap
+    );
+  }
+
+  private apiUrl(credential: GatewayCredential): string {
+    return (
+      this.config.get<string>('MIDTRANS_API_BASE_URL') ??
+      BASE_URLS[credential.environment].api
+    );
+  }
+
+  async createSession(
+    input: CreateSessionInput,
+    credential: GatewayCredential,
+  ): Promise<PaymentSession> {
+    const baseUrl = this.snapUrl(credential);
 
     // Basic auth: the server key is the username, password empty (Midtrans spec).
-    const auth = Buffer.from(`${serverKey}:`).toString('base64');
+    const auth = Buffer.from(`${credential.serverKey}:`).toString('base64');
 
     let res: Response;
     try {
@@ -192,24 +222,28 @@ export class MidtransGateway implements PaymentGateway {
    * (api-spec §6.2). The idempotency key is `transaction_id:transaction_status`
    * so a redelivery collapses but a real pending→settlement does not (ADR-0018).
    */
-  verifyAndParse(body: unknown): ParsedPaymentEvent {
+  /** The pre-verification peek (EARS WH-01): order_id and nothing more. */
+  peekOrderId(body: unknown): string | null {
+    const id = (body as { order_id?: unknown } | null)?.order_id;
+    return typeof id === 'string' && id.length > 0 ? id : null;
+  }
+
+  verifyAndParse(
+    body: unknown,
+    credential: GatewayCredential,
+  ): ParsedPaymentEvent {
     const parsed = midtransNotificationSchema.safeParse(body);
     if (!parsed.success) {
       throw new BadRequestException('Malformed webhook payload');
     }
     const n = parsed.data;
 
-    const serverKey = this.config.get<string>('MIDTRANS_SERVER_KEY');
-    if (!serverKey) {
-      // Ours to fix, not the caller's: we can't verify without the key. 500 so
-      // the provider retries once we're configured, rather than a false 401.
-      throw new InternalServerErrorException(
-        'Payments are not configured (MIDTRANS_SERVER_KEY is unset)',
-      );
-    }
-
+    // The TENANT's key - resolved by the caller from order_id BEFORE this call
+    // (EARS WH-01), so a signature is never tried against another tenant's key.
     const expected = createHash('sha512')
-      .update(n.order_id + n.status_code + n.gross_amount + serverKey)
+      .update(
+        n.order_id + n.status_code + n.gross_amount + credential.serverKey,
+      )
       .digest('hex');
     if (!timingSafeEqualHex(expected, n.signature_key)) {
       this.logger.warn(`Webhook signature mismatch for order ${n.order_id}`);
@@ -226,6 +260,48 @@ export class MidtransGateway implements PaymentGateway {
   }
 
   /**
+   * Verify-on-save (EARS CR-03): GET the status of an order that cannot exist.
+   * A VALID key answers 404 ("no such order" - authenticated, no record); an
+   * invalid one answers 401. The probe costs nothing, creates nothing, and
+   * exercises exactly the auth path every real call uses - against the
+   * environment the credential names, so a production key pasted as "sandbox"
+   * fails here too. Never throws: an unreachable provider is 'failed', stored
+   * as information, never a blocked save.
+   */
+  async verifyCredential(
+    credential: GatewayCredential,
+  ): Promise<CredentialVerifyOutcome> {
+    const auth = Buffer.from(`${credential.serverKey}:`).toString('base64');
+    const probeOrder = `verify-${randomUUID()}`;
+    try {
+      const res = await fetch(
+        `${this.apiUrl(credential)}/${encodeURIComponent(probeOrder)}/status`,
+        {
+          method: 'GET',
+          signal: AbortSignal.timeout(SNAP_TIMEOUT_MS),
+          headers: {
+            Authorization: `Basic ${auth}`,
+            Accept: 'application/json',
+          },
+        },
+      );
+      if (res.status === 404) return 'ok';
+      // Midtrans also answers 200 with status_code "404" for unknown orders.
+      if (res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          status_code?: unknown;
+        } | null;
+        return body?.status_code === '404' ? 'ok' : 'failed';
+      }
+      this.logger.warn(`Credential verify: Midtrans answered ${res.status}`);
+      return 'failed';
+    } catch (cause) {
+      this.logger.warn(`Credential verify unreachable: ${String(cause)}`);
+      return 'failed';
+    }
+  }
+
+  /**
    * Reconcile-on-read (#54, api-spec §6.3): GET Midtrans's Get-Status API for
    * `orderId`. The status response is signed EXACTLY like a webhook notification
    * (sha512 over order_id + status_code + gross_amount + ServerKey), so it is
@@ -234,17 +310,12 @@ export class MidtransGateway implements PaymentGateway {
    * A 404 (HTTP or the `status_code: "404"` body Midtrans returns for an unknown
    * order) means the Provider has no record yet → null, nothing to reconcile.
    */
-  async fetchStatus(orderId: string): Promise<ParsedPaymentEvent | null> {
-    const serverKey = this.config.get<string>('MIDTRANS_SERVER_KEY');
-    if (!serverKey) {
-      throw new InternalServerErrorException(
-        'Payments are not configured (MIDTRANS_SERVER_KEY is unset)',
-      );
-    }
-    const apiBase =
-      this.config.get<string>('MIDTRANS_API_BASE_URL') ??
-      'https://api.sandbox.midtrans.com/v2';
-    const auth = Buffer.from(`${serverKey}:`).toString('base64');
+  async fetchStatus(
+    orderId: string,
+    credential: GatewayCredential,
+  ): Promise<ParsedPaymentEvent | null> {
+    const apiBase = this.apiUrl(credential);
+    const auth = Buffer.from(`${credential.serverKey}:`).toString('base64');
 
     let res: Response;
     try {
@@ -278,7 +349,7 @@ export class MidtransGateway implements PaymentGateway {
     if (body.status_code === '404') return null;
 
     // Signed like a notification: reuse verify + translate.
-    return this.verifyAndParse(body);
+    return this.verifyAndParse(body, credential);
   }
 }
 

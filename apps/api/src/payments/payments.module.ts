@@ -4,8 +4,12 @@ import { AuthModule } from '../auth/auth.module';
 import { BookingsModule } from '../bookings/bookings.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { ConfirmationService } from './confirmation.service';
+import { CredentialResolver } from './credential-resolver.service';
+import { CredentialsRepository } from './credentials.repository';
 import { PAYMENT_GATEWAY } from './payment-gateway';
 import { createPaymentGateway } from './payment-gateway.factory';
+import { PaymentCredentialsController } from './payment-credentials.controller';
+import { PaymentCredentialsService } from './payment-credentials.service';
 import { PaymentInboxController } from './payment-inbox.controller';
 import { PaymentInboxRepository } from './payment-inbox.repository';
 import { PaymentInboxService } from './payment-inbox.service';
@@ -44,6 +48,7 @@ import { PublicPaymentsController } from './public-payments.controller';
     PublicConfirmationController,
     PaymentWebhookController,
     PaymentInboxController,
+    PaymentCredentialsController,
   ],
   providers: [
     PaymentsService,
@@ -52,11 +57,19 @@ import { PublicPaymentsController } from './public-payments.controller';
     ConfirmationService,
     PaymentInboxService,
     PaymentInboxRepository,
+    PaymentCredentialsService,
+    CredentialsRepository,
+    CredentialResolver,
     {
       provide: PAYMENT_GATEWAY,
       useFactory: createPaymentGateway,
       inject: [ConfigService],
     },
   ],
+  // Deliberately NO exports: the funnel gates outside this module (the booking
+  // write GW-03, the property read GW-04) query the credential table through
+  // their OWN repositories - repositories query tables, not modules (the
+  // units.repository precedent) - and read the fake-gateway seam via
+  // `isFakeGatewayEnv`, a file import, so no @Module cycle with BookingsModule.
 })
 export class PaymentsModule {}
