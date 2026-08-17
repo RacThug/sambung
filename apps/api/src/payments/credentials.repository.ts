@@ -54,19 +54,10 @@ export class CredentialsRepository {
     );
   }
 
-  /** The funnel gate's question (EARS GW-03/04): does ANY credential exist for
-   * this tenant? Reads only `id` - the cheapest granted column. */
-  async existsForTenant(): Promise<boolean> {
-    const tenantId = this.tenant.tenantId;
-    const rows = await this.db.run((tx) =>
-      tx
-        .select({ id: tenantPaymentCredential.id })
-        .from(tenantPaymentCredential)
-        .where(eq(tenantPaymentCredential.tenantId, tenantId))
-        .limit(1),
-    );
-    return rows.length > 0;
-  }
+  // NOTE: no exists() here on purpose - the funnel gates ask that question
+  // through common/payment-credential-exists.ts, the ONE definition of
+  // "online payments are configured". A second copy on this class was deleted
+  // in review (the ADR-0012 drift rule).
 
   /**
    * The PUT's write (EARS CR-01): one row per (tenant, provider), replace is the

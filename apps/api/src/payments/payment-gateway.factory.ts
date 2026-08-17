@@ -38,19 +38,8 @@ import type { PaymentGateway } from './payment-gateway';
  * that bound the fake but slipped past the guard would be the exact drift this
  * avoids).
  */
-/**
- * The one reading of the fake-gateway seam (REQ-PA-04): the funnel gates that
- * live OUTSIDE the payments module (the public booking write GW-03, the public
- * property flag GW-04) must skip the credential-exists check exactly when the
- * fake is bound - a file import here avoids a BookingsModule↔PaymentsModule
- * cycle, and sharing the predicate keeps "which values count as fake" one fact.
- */
-export function isFakeGatewayEnv(config: ConfigService): boolean {
-  return config.get<string>('PAYMENT_GATEWAY')?.trim() === 'fake';
-}
-
 export function createPaymentGateway(config: ConfigService): PaymentGateway {
-  if (isFakeGatewayEnv(config)) {
+  if (config.get<string>('PAYMENT_GATEWAY')?.trim() === 'fake') {
     new Logger('PaymentGateway').warn(
       'PAYMENT_GATEWAY=fake - binding FakePaymentGateway (no live Midtrans). ' +
         'This is an e2e-only seam and must never happen in production ' +

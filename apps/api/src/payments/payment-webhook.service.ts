@@ -184,7 +184,7 @@ export class PaymentWebhookService {
     orderId: string,
   ): Promise<GatewayCredential | null> {
     if (!this.gateway.requiresCredentials) {
-      return this.credentials.forGateway(this.gateway, 'unused');
+      return this.credentials.fakeCredential();
     }
     const rows = await this.dbs.db
       .select({ tenantId: booking.tenantId })

@@ -36,9 +36,13 @@ Never in the repo, never in a chat log, never in an email. Test the backup by re
    `key_version`, one transaction per row. Resumable (a re-run skips rows already on the new
    generation), and a row the old key cannot read is REPORTED and left untouched rather than
    aborting the pass - that tenant's owner re-pastes their key, everyone else rotates.
-3. Follow the script's printed instructions: move the new key into `CREDENTIAL_ENCRYPTION_KEY`,
+3. **Re-run the script once more immediately before flipping** - an owner may have saved a key
+   between the first pass and now, and that row was encrypted under the OLD key at the old
+   generation; the second pass catches it (rows already rotated are skipped, so it costs seconds).
+4. Follow the script's printed instructions: move the new key into `CREDENTIAL_ENCRYPTION_KEY`,
    set `CREDENTIAL_ENCRYPTION_KEY_VERSION` to the printed generation, drop `_NEXT`, restart,
-   and update the backups.
+   and update the backups. A save that still slips between the second pass and the restart fails
+   LOUD on its next read (a 500, never garbage) - the recovery is that one owner re-pastes.
 
 If the OLD key is already lost (rotation impossible), the recovery is honest and manual: every
 tenant re-pastes their Midtrans key on `/app/settings`. Their money was never at risk - the keys

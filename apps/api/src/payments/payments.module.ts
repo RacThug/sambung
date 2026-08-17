@@ -68,8 +68,10 @@ import { PublicPaymentsController } from './public-payments.controller';
   ],
   // Deliberately NO exports: the funnel gates outside this module (the booking
   // write GW-03, the property read GW-04) query the credential table through
-  // their OWN repositories - repositories query tables, not modules (the
-  // units.repository precedent) - and read the fake-gateway seam via
-  // `isFakeGatewayEnv`, a file import, so no @Module cycle with BookingsModule.
+  // their own code - repositories query tables, not modules (the
+  // units.repository precedent) - and read the fake seam from their OWN
+  // PAYMENT_GATEWAY binding (`gateway.requiresCredentials`): Bookings/Properties
+  // register the same factory under the same token via a FILE import, so there
+  // is no @Module cycle and a spec's `.overrideProvider` replaces every binding.
 })
 export class PaymentsModule {}

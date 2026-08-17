@@ -514,6 +514,62 @@ describe('Payment credentials (REQ-PA-04)', () => {
       expect(confirmed.status).toBe('confirmed');
     });
 
+    it('a payment whose tenant holds NO credential is acked 200, unverifiable, booking untouched (WH-03/04)', async () => {
+      // The credentialForOrder branch GW-02 never reaches: the payment resolves,
+      // the tenant resolves, but the credential row is gone (deleted after the
+      // session was minted). Nothing to verify under -> 200 + WARN, no state.
+      const owner = await registerTenant('Webhook No Credential');
+      const [prop] = await dbs.db
+        .insert(property)
+        .values({
+          tenantId: owner.tenant.id,
+          name: 'NC Villa',
+          slug: testSlug(),
+        })
+        .returning({ id: property.id });
+      const [u] = await dbs.db
+        .insert(unit)
+        .values({
+          tenantId: owner.tenant.id,
+          propertyId: prop.id,
+          name: 'NC Room',
+          basePriceIdr: 1_000_000n,
+        })
+        .returning({ id: unit.id });
+      const [b] = await dbs.db
+        .insert(booking)
+        .values({
+          tenantId: owner.tenant.id,
+          unitId: u.id,
+          source: 'direct',
+          status: 'pending_payment',
+          checkIn: '2027-10-01',
+          checkOut: '2027-10-03',
+          totalPriceIdr: 2_000_000n,
+          holdExpiresAt: new Date(Date.now() + 15 * 60_000),
+        })
+        .returning({ id: booking.id });
+      const paymentId = randomUUID();
+      await dbs.db.insert(payment).values({
+        id: paymentId,
+        bookingId: b.id,
+        provider: 'midtrans',
+        amountIdr: 2_000_000n,
+      });
+
+      // Even a signature that WOULD verify under some key is moot: with no
+      // stored credential there is nothing to verify under.
+      await request(realServer())
+        .post('/api/webhooks/payment/midtrans')
+        .send(notification(paymentId, KEY_A))
+        .expect(200);
+      const [still] = await dbs.db
+        .select({ status: booking.status })
+        .from(booking)
+        .where(eq(booking.id, b.id));
+      expect(still.status).toBe('pending_payment');
+    });
+
     it('an unresolvable order id is acked 200 and never verified (WH-02)', async () => {
       await request(realServer())
         .post('/api/webhooks/payment/midtrans')

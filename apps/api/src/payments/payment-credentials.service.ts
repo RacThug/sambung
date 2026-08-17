@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   credentialVerifyStatusSchema,
+  paymentEnvironmentSchema,
   paymentProviderSchema,
   type PaymentCredentialStatusResponse,
   type PaymentProvider,
@@ -107,7 +108,9 @@ export class PaymentCredentialsService {
   ): PaymentCredentialStatusResponse {
     return {
       provider: paymentProviderSchema.parse(row.provider),
-      environment: row.environment === 'production' ? 'production' : 'sandbox',
+      // Parsed, not coerced: the 0018 CHECK guarantees the value, and a parse
+      // fails loud if that ever stops being true (the resolver's own rule).
+      environment: paymentEnvironmentSchema.parse(row.environment),
       configuredAt: row.createdAt.toISOString(),
       lastVerifyStatus: credentialVerifyStatusSchema.parse(
         row.lastVerifyStatus,

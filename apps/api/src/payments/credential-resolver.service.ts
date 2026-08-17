@@ -87,19 +87,16 @@ export class CredentialResolver {
     return credential;
   }
 
-  /**
-   * Gateway-aware resolution: a credential-free gateway (the fake, EARS GW-06)
-   * gets the one stand-in; the real one resolves the tenant's row. The two
-   * shapes mirror maybeResolve / resolveOrThrow.
-   */
-  forGateway(
-    gateway: Pick<PaymentGateway, 'requiresCredentials'>,
-    tenantId: string,
-  ): Promise<GatewayCredential | null> {
-    if (!gateway.requiresCredentials) return Promise.resolve(FAKE_CREDENTIAL);
-    return this.maybeResolve(tenantId);
+  /** The one stand-in a credential-free gateway (the fake, EARS GW-06) runs
+   * with - so no caller invents its own. */
+  fakeCredential(): GatewayCredential {
+    return FAKE_CREDENTIAL;
   }
 
+  /**
+   * Gateway-aware resolution: a credential-free gateway gets the stand-in; the
+   * real one resolves the tenant's row or throws the funnel's 409 (GW-02).
+   */
   forGatewayOrThrow(
     gateway: Pick<PaymentGateway, 'requiresCredentials'>,
     tenantId: string,

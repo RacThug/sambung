@@ -14,11 +14,14 @@ import { join } from 'node:path';
 const SRC = join(__dirname, '..');
 
 // READS only - a comment may still name the variable (documenting its absence
-// is fine; the value flowing back in is not).
+// is fine; the value flowing back in is not). Covers the codebase's idioms:
+// process.env / env-object access (dot and bracket) and ConfigService's
+// get / getOrThrow, generic or not.
 const READ_PATTERNS = [
   /process\.env\.MIDTRANS_SERVER_KEY/,
   /\benv\.MIDTRANS_SERVER_KEY/,
-  /get(<[^>]*>)?\(\s*['"]MIDTRANS_SERVER_KEY['"]/,
+  /\[['"]MIDTRANS_SERVER_KEY['"]\]/,
+  /get(OrThrow)?(<[^>]*>)?\(\s*['"]MIDTRANS_SERVER_KEY['"]/,
 ];
 
 function walk(dir: string, out: string[] = []): string[] {
