@@ -60,7 +60,9 @@ Under all of it: a double-booking is **impossible at the database level** - not 
 - **Team** - invite staff by email, scoped to chosen properties. Scoping is enforced in the database
   (row-level security), not sprinkled through the code: an unassigned property simply does not exist
   for that staff member, on every screen and every API call.
-- **Settings** - the tenant's gallery cap; a workspace switcher when one account holds several seats.
+- **Settings** - the tenant's gallery cap; **Payments**, where the owner pastes their own Midtrans
+  server key (encrypted at rest, never readable back, owner-only); a workspace switcher when one
+  account holds several seats.
 
 ### Calendars stay in sync (the channel manager)
 
@@ -76,17 +78,20 @@ Under all of it: a double-booking is **impossible at the database level** - not 
 
 Guests pay through Midtrans; the webhook that confirms payment is idempotent (a duplicate or a
 replay can never double-confirm), and the confirmation page can reconcile on its own if the webhook
-never arrives. Money is integer rupiah end to end - never floats. Product-phase direction: payment
-credentials become **tenant-owned** so guest money settles straight into each owner's own Midtrans
-account and Sambung is never in the money path ([ADR-0039](adr/0039-payment-credentials-are-tenant-scoped.md), proposed).
+never arrives. Money is integer rupiah end to end - never floats. Payment credentials are
+**tenant-owned** ([ADR-0039](adr/0039-payment-credentials-are-tenant-scoped.md)): each owner stores
+their own Midtrans key, guest money settles straight into their own account, and Sambung is never in
+the money path. A tenant with no key yet is a supported state, not a broken one - everything else
+works and the funnel says online payment is unavailable instead of failing at checkout.
 
 ## Where it stands
 
 All six original milestones (M0-M5) are complete and everything above runs locally on the
 `docker compose` stack - no deploy, no paid account needed (see `demo.md` for the five-minute
 walkthrough). The **product phase** is underway: the roadmap to a first paying guesthouse is
-[`prd-product.md`](./prd-product.md) (P0-2 date-based pricing shipped; Midtrans production
-activation, a live-OTA pilot, backups/monitoring, and legal pages remain in P0).
+[`prd-product.md`](./prd-product.md) (P0-2 date-based pricing and P0-6 per-tenant payment
+credentials shipped; Midtrans production activation, a live-OTA pilot, backups/monitoring, and legal
+pages remain in P0 - all business or ops work rather than code).
 
 ## Lost in the docs? Match your question to the right one
 
