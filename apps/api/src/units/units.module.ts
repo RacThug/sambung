@@ -1,5 +1,11 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import {
+  PriceOverridesController,
+  UnitPriceOverridesController,
+} from './price-overrides.controller';
+import { PriceOverridesRepository } from './price-overrides.repository';
+import { PriceOverridesService } from './price-overrides.service';
 import { PropertyUnitsController, UnitsController } from './units.controller';
 import { UnitsRepository } from './units.repository';
 import { UnitsService } from './units.service';
@@ -11,7 +17,17 @@ import { UnitsService } from './units.service';
 // the dependency runs one way and there is no cycle.
 @Module({
   imports: [AuthModule], // AuthModule provides JwtAuthGuard
-  controllers: [PropertyUnitsController, UnitsController],
-  providers: [UnitsService, UnitsRepository],
+  controllers: [
+    PropertyUnitsController,
+    UnitsController,
+    UnitPriceOverridesController,
+    PriceOverridesController,
+  ],
+  providers: [
+    UnitsService,
+    UnitsRepository,
+    PriceOverridesService,
+    PriceOverridesRepository,
+  ],
 })
 export class UnitsModule {}

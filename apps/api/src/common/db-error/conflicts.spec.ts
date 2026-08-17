@@ -5,6 +5,7 @@ import {
   bookingNotPayable,
   datesUnavailable,
   emailTaken,
+  priceOverrideOverlap,
   propertyHasBookings,
   unitHasBookings,
   unitNameTaken,
@@ -30,6 +31,7 @@ describe('conflict factories conform to the shared wire contract', () => {
       datesUnavailable(['overlap', 'min_stay']),
       bookingNotCancellable('cancelled'),
       bookingNotPayable('expired'),
+      priceOverrideOverlap(),
     ].map(bodyOf);
 
     for (const body of bodies) {

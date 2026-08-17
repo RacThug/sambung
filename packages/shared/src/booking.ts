@@ -133,9 +133,10 @@ const guestPhoneSchema = z
  *
  * Dates reuse the availability window semantics: real calendar dates (rejects
  * 2026-02-30), half-open, `from < to`, capped at MAX_AVAILABILITY_NIGHTS. The cap
- * doubles as the overflow guard the #47 review added - `base x nights` stays far
- * under MAX_SAFE_INTEGER - inherited here because the write prices through the
- * same `quoteTotalIdr`.
+ * doubles as the overflow guard the #47 review added - every night, base or
+ * override, is bounded by MAX_NIGHTLY_RATE_IDR, so the sum stays far under
+ * MAX_SAFE_INTEGER - inherited here because the write prices through the same
+ * `quoteTotalIdr`.
  */
 export const createBookingRequestSchema = strictObject({
   unitId: z.string().uuid(),

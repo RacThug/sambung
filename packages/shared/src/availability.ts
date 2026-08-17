@@ -41,14 +41,50 @@ export function countNights(from: string, to: string): number {
 }
 
 /**
- * The v1 pricing rule, in one place: base price x nights (no seasonal rates - PRD
- * non-goal). Bigint throughout - the DB hands us a bigint and the product can
- * exceed a safe JS number before it is range-checked in `toRupiah` at the
- * boundary. #47's quote and #48's booking both price through here, so a future
- * seasonal model changes one function.
+ * A dated price layered over the base (PRD-product P0-2): a night inside
+ * `[from, to)` costs `nightlyPriceIdr`. Bigint because this is the COMPUTE shape
+ * (the DB hands bigints); the wire shape is `priceOverrideResponseSchema`.
  */
-export function quoteTotalIdr(basePriceIdr: bigint, nights: number): bigint {
-  return basePriceIdr * BigInt(nights);
+export interface PriceOverrideSpan {
+  from: string;
+  to: string;
+  nightlyPriceIdr: bigint;
+}
+
+/**
+ * The pricing rule, in one place: each night of the half-open stay `[from, to)`
+ * costs the override covering it, else the base price. This WAS `base x nights`
+ * ("a future seasonal model changes one function" - that promise, kept: P0-2
+ * changed this function and no call site gained a second price authority).
+ * #47's quote and #48/#50's booking writes all price through here via quote().
+ *
+ * Computed as an arithmetic identity rather than a night-by-night loop:
+ *   total = base x nights + Σ overlapNights x (override - base)
+ * Overrides never overlap each other (`price_override_no_overlap`), so no night
+ * is corrected twice; each override is intersected with the stay first, so
+ * callers may pass them clipped or raw. Dates compare as strings - a validated
+ * YYYY-MM-DD sorts lexicographically exactly as chronologically (the
+ * coalesceRanges argument).
+ *
+ * Bigint throughout - the DB hands us bigints and the product can exceed a safe
+ * JS number before it is range-checked in `toRupiah` at the boundary.
+ */
+export function quoteTotalIdr(
+  basePriceIdr: bigint,
+  from: string,
+  to: string,
+  overrides: readonly PriceOverrideSpan[] = [],
+): bigint {
+  let total = basePriceIdr * BigInt(countNights(from, to));
+  for (const o of overrides) {
+    const overlapFrom = o.from > from ? o.from : from;
+    const overlapTo = o.to < to ? o.to : to;
+    const nights = countNights(overlapFrom, overlapTo);
+    if (nights > 0) {
+      total += (o.nightlyPriceIdr - basePriceIdr) * BigInt(nights);
+    }
+  }
+  return total;
 }
 
 /** True when a stay of `nights` satisfies the unit's minimum (api-spec §5.1). */

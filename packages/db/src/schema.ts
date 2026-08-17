@@ -785,6 +785,7 @@ export type UserProperty = typeof userProperty.$inferSelect;
 export type StaffInvite = typeof staffInvite.$inferSelect;
 export type Property = typeof property.$inferSelect;
 export type Unit = typeof unit.$inferSelect;
+export type UnitPriceOverride = typeof unitPriceOverride.$inferSelect;
 export type ChannelConnection = typeof channelConnection.$inferSelect;
 export type SyncConflict = typeof syncConflict.$inferSelect;
 export type Booking = typeof booking.$inferSelect;

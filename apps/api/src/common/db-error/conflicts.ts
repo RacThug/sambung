@@ -180,3 +180,18 @@ export const inviteAlreadyPending = (): HttpException =>
     'invite_already_pending',
     'An invite for this email is already pending',
   );
+
+/**
+ * A price override overlapping this range already exists on this unit (P0-2).
+ * The two-layer kind (§5.3): PriceOverridesService pre-checks for the friendly
+ * answer, and a racing second create is caught by the `price_override_no_overlap`
+ * exclusion constraint and mapped here (db-error.map.ts) - one factory, so the
+ * loser cannot tell which refused. No detail: naming the clashing row would make
+ * the layers distinguishable (the constraint knows only its own name), and the
+ * dates are already in the request.
+ */
+export const priceOverrideOverlap = (): HttpException =>
+  conflict(
+    'price_override_overlap',
+    'These dates already have a price override',
+  );
