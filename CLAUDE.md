@@ -241,13 +241,13 @@ Index of what is already settled - if your question is on this list, the answer 
 | # | Decision |
 |---|---|
 | - | Repo is private; docs live in `docs/`; git is GitHub Flow, branch + PR only (2026-06-24) |
-| - | Postgres over MySQL; Drizzle over Prisma; TanStack Router over React Router; single-VPS deploy; Garage over MinIO for dev object storage; dev-fixture credentials may be committed (2026-07-16) |
+| - | Postgres over MySQL; Drizzle over Prisma; TanStack Router over React Router; single-VPS deploy; photos in S3-compatible storage (Garage dev, replacing MinIO / Cloudflare R2 free tier prod, presigned PUT); dev-fixture credentials may be committed (2026-07-16) |
 | - | Composite FKs enforce the `tenant_id` denormalization; the transaction seam is the service, not the repository; one module owns the tenant principal; RLS policies use `nullif(current_setting(...), '')::uuid`; constraint NAME → response is one map, applied by an interceptor (2026-07-16/17) |
 | 0001 | A Unit is one sellable thing, not a room type with a quantity |
 | 0002 | Deleting inventory never destroys the ledger |
 | 0003 | A Visitor is a principal, scoped by the slug they opened |
 | 0004 | A property's public URL is an address, not a view of its state |
-| 0005 | Archived inventory is derived up the hierarchy, not cascaded (amended 2026-08-01: effective-archived is computed server-side) |
+| 0005 | Archived inventory is derived up the hierarchy, not cascaded (rule untouched since; the 2026-08-01 row amends **api-spec §4.6** instead - effective-archived is computed server-side) |
 | 0006 | An archived Property is retired, not just incomplete |
 | 0007 | Design system: one brand, two surfaces |
 | 0008 | A public resolver resolves, it does not judge |
@@ -257,7 +257,7 @@ Index of what is already settled - if your question is on this list, the answer 
 | 0012 | A 409 carries a code, not a sentence |
 | 0013 | The picker advises, the server decides |
 | 0014 | Rate limits are tiered, and a 429 follows the envelope |
-| 0015 | A payment session is one reused row, addressed by its own id (amended 2026-07-23: `PAYMENT_GATEWAY=fake` is an env seam guarded at boot) |
+| 0015 | A payment session is one reused row, addressed by its own id (amended 2026-07-23: `PAYMENT_GATEWAY=fake` is an env seam guarded at boot - that guard re-based on the deployment predicate 2026-07-24) |
 | 0016 | The `.ics` export feed is addressed - and authenticated - by its unit UUID |
 | 0017 | Orphaned photos are swept against the gallery, per tenant |
 | 0018 | The payment webhook reconciles on the owner connection, not under RLS |
