@@ -6,6 +6,7 @@ subsystem it's working on before proposing changes.
 
 | Doc | Read it before… | Covers |
 |-----|-----------------|--------|
+| [`overview.md`](./overview.md) | …anything, if you're new or lost - **start here** | What Sambung is and every feature it has today, in plain language, with one link per topic; plus a your-question → right-doc table |
 | [`prd.md`](./prd.md) | …deciding *what* to build or whether something is in scope | Why the project exists, requirements, acceptance criteria, milestones |
 | [`db-design.md`](./db-design.md) | …writing a migration, query, or anything touching data integrity | Schema, `daterange`/GiST exclusion constraint, integrity rules (SQL-first, teaching edition) |
 | [`architecture.md`](./architecture.md) | …wiring FE↔BE, adding a module, or moving data across the stack | FE/BE split, module layout, data flows, the API boundary |
