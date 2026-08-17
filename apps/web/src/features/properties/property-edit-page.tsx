@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import {
@@ -19,6 +19,7 @@ import { ListError, ListSkeleton } from "@/components/list-state";
 import { PageHeader } from "@/components/page-header";
 import { ChannelsSection } from "./channels-section";
 import { PhotosSection } from "./photos-section";
+import { PricesSection } from "./prices-section";
 import { UnitsSection } from "./units-section";
 import { VerifiedBadge } from "./verified-badge";
 
@@ -99,6 +100,8 @@ export function PropertyEditPage() {
 
       <UnitsSection property={property} />
 
+      <PricesSection property={property} />
+
       <ChannelsSection property={property} />
 
       {/* Owner-only, and hidden rather than disabled (#57): archiving and
@@ -137,6 +140,13 @@ function PublicLink({
   archived: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  // Effect-owned flash timer, cancelled on unmount - the same latent
+  // set-state-after-teardown the channels section's copy button had.
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 2000);
+    return () => clearTimeout(t);
+  }, [copied]);
   const path = `/p/${property.slug}`;
   const url = window.location.origin + path;
 
@@ -164,10 +174,7 @@ function PublicLink({
       <button
         type="button"
         onClick={() => {
-          void navigator.clipboard.writeText(url).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-          });
+          void navigator.clipboard.writeText(url).then(() => setCopied(true));
         }}
         className="rounded-md border border-input px-2 py-0.5 text-xs font-medium text-foreground"
       >
