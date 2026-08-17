@@ -69,6 +69,7 @@ they see the villa, pick dates, and get a price. *(page-spec §3.1)*
 | Quote | min-stay number inside that copy | `minStay` | `availabilityResponseSchema` | `GET /public/units/:id/availability` | BE | [code] |
 | Quote | "Booked: 10 Aug - 12 Aug" labels | `blockedRanges` | `blockedRangeSchema` | `GET /public/units/:id/availability` | FE | [code] |
 | Quote | Book CTA | - | none | - | FE | [code] |
+| Quote | *(REQ-PA-04 draft)* CTA replaced by "online payment not available yet - contact the owner" when the Tenant has no gateway | `onlinePaymentsAvailable` | `publicPropertyResponseSchema` | `GET /public/properties/:slug` | BE (derived: a payment credential exists) | [TBD] |
 
 **Notes on three rows.**
 
@@ -112,7 +113,7 @@ needs its own counterpart document is §10.
 | Empty (no photos) | The gallery renders **nothing** rather than a placeholder frame. |
 | Picker: no dates | "Select dates" line. |
 | Picker: checking | "Checking…" with `aria-live="polite"`, shown while the debounce is catching up *or* the query is fetching. |
-| Picker: available | Green line + nights + total + Book CTA. |
+| Picker: available | Green line + nights + total + Book CTA. *(REQ-PA-04 draft: when `onlinePaymentsAvailable` is false, the quote still renders - availability stays honest - but the CTA is the contact-the-owner message; ADR-0039 decision 4.)* |
 | Picker: blocked | "Not available", one line per `reason`, then the clipped booked nights. **All reasons are listed**, not ranked - this page has no precedence rule (unlike checkout, which does). |
 | Picker: quote error | Inline message + the app's only other **Retry** button (`quote.refetch()`). The rest of the page stays usable. |
 

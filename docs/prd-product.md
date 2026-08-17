@@ -26,15 +26,17 @@ Sandbox → production requires a registered merchant: legal entity or at minimu
 
 *Decision needed:* PT Perorangan (cheap, fast, solo-friendly) vs. staying informal and delaying payments. Recommendation: PT Perorangan - it also unblocks future OTA/aggregator contracts.
 
-### 2. Date-based pricing
+### 2. Date-based pricing (REQ-PR-02/03) - **SHIPPED** (PR #206, migration 0017)
 Units currently carry a single flat `basePriceIdr`. No Bali property runs a flat rate: Aug/Dec–Jan peaks, Nyepi, Galungan, weekend uplifts. Without per-date pricing, a real owner either loses money or refuses to onboard.
 
 Minimum viable: a `unit_price_overrides` table (date range → nightly price) layered over the base price, editable from the calendar. Explicitly defer: rate plans, occupancy-based pricing, LOS rules - that's Channex-phase work.
 
+*Shipped as [`docs/spec/date-based-pricing.md`](spec/date-based-pricing.md): the range-list panel lives on the property workbench; calendar-visual editing was deferred by name with owner sign-off.*
+
 ### 3. Live-OTA iCal validation
 The iCal path is tested against a fake fetcher. Before onboarding anyone, run one real property (yours or a friendly owner's) with live Airbnb + Booking.com feeds for 2+ weeks. Expect quirks the fake won't show: feed URL rotation, DTSTART/DTEND timezone edge cases, OTA-side refresh lag, silent 404s. The sync-conflict module will earn its keep here.
 
-Set expectations in-product: show "last synced from Airbnb: X min ago" per channel, and state plainly that iCal cannot prevent all double-bookings - honesty here is a trust feature, and review research shows overbooking anxiety is the #1 emotional issue in this market.
+Set expectations in-product (REQ-AV-04, the "honesty UX"): show "last synced from Airbnb: X min ago" per channel, and state plainly that iCal cannot prevent all double-bookings - honesty here is a trust feature, and review research shows overbooking anxiety is the #1 emotional issue in this market.
 
 ### 4. Production-grade operations
 A portfolio VPS and a "someone else's revenue depends on this" VPS are different machines:
@@ -42,8 +44,14 @@ A portfolio VPS and a "someone else's revenue depends on this" VPS are different
 - Error tracking (Sentry or similar) and uptime monitoring with alerting to your phone
 - A minimal status page or at least a stated support channel
 
-### 5. Legal & trust pages
+### 5. Legal & trust pages (REQ-TR-01)
 Terms of service, privacy policy, refund/cancellation policy (guest-facing, per property), and a real support contact. Required by Midtrans production review anyway.
+
+### 6. Per-tenant payment credentials (REQ-PA-04, [ADR-0039](adr/0039-payment-credentials-are-tenant-scoped.md)) - **IN PROGRESS**
+The code half of item 1 (activation is the business half): each owner pastes their **own** Midtrans keys, encrypted at rest with an app-held key; guest money settles straight into the owner's merchant account and Sambung is never in the money path. The webhook resolves the tenant first and verifies the signature second; "no gateway yet" is a supported state - the funnel shows availability and disables online checkout honestly. Buildable in full against sandbox keys, so it runs in parallel with the merchant-review lead time.
+
+> REQ IDs (`REQ-PR-02/03`, `REQ-PA-04`, `REQ-AV-04`, `REQ-TR-01`) are recovered from the gated PRD
+> draft this file superseded - recorded here so references to them resolve somewhere real.
 
 ---
 
