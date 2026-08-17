@@ -14,14 +14,19 @@ verified: true
 > `packages/shared/src/{property, unit, photo, channel, settings, conflict, money}.ts`.
 >
 > The largest page in the app: five independent sections over eleven endpoints.
+>
+> **AMENDMENT IN DRAFT (date-based pricing, PRD-product P0-2):** the rows and sections marked
+> `[TBD]` below add a per-Unit **Prices** panel and are NOT built yet. They become `[code]` in the
+> same PR that builds them; until then `docs:doctor` is deliberately red on this file (check 6),
+> which is the loud reminder the amendment is unfinished.
 
 ---
 
 ## 1. Purpose
 
 Everything that makes one Property's public page complete and its calendars synced - details, photos,
-Units, and per-Unit Channels - plus the two owner-only verbs that retire or destroy it.
-*(page-spec §4.5)*
+Units, per-Unit Channels, and per-Unit Prices - plus the two owner-only verbs that retire or destroy it.
+*(page-spec §4.5; Prices added by the P0-2 amendment)*
 
 ---
 
@@ -74,6 +79,11 @@ Units, and per-Unit Channels - plus the two owner-only verbs that retire or dest
 | Units | edit row inputs | `name`, `basePriceIdr`, `maxGuests`, `minStay` | `updateUnitRequestSchema` | `PATCH /units/:id` | raw | [code] |
 | Units | duplicate-name error on the field | `code` | `conflictBodySchema` | `POST /properties/:propertyId/units` | BE slug → FE prose | [code] |
 | Units | delete-guard error + count | `code`, `count` | `conflictBodySchema` | `DELETE /units/:id` | BE slug + data → FE prose | [code] |
+| Prices | override rows: "First night - Last night, Rp N / night" | `from`, `to`, `nightlyPriceIdr` | **NEW** `priceOverrideResponseSchema` | **NEW** `GET /units/:unitId/price-overrides` | raw (FE renders `to - 1` as "Last night" via `lastNightOf`) | [TBD] |
+| Prices | base-price line ("all other nights: Rp N") | `basePriceIdr` | `unitResponseSchema` | `GET /properties/:propertyId/units` | raw | [TBD] |
+| Prices | add form: first night, last night, nightly price | `from`, `to`, `nightlyPriceIdr` | **NEW** `createPriceOverrideRequestSchema` | **NEW** `POST /units/:unitId/price-overrides` | raw | [TBD] |
+| Prices | overlap error on the dates fields | `code` | `conflictBodySchema` | **NEW** `POST /units/:unitId/price-overrides` | BE slug → FE prose | [TBD] |
+| Prices | remove verb per row | - | - | **NEW** `DELETE /price-overrides/:id` | - | [TBD] |
 | Channels | export `.ics` URL | `unit.id` | `unitResponseSchema` | `GET /public/units/:id/calendar.ics` | FE | [code] |
 | Channels | channel label | `channel` | `channelSchema` | `GET /units/:unitId/channels` | FE | [code] |
 | Channels | status pill | `lastStatus` | `syncStatusSchema` | `GET /units/:unitId/channels` | FE | [code] |
@@ -101,6 +111,7 @@ Units, and per-Unit Channels - plus the two owner-only verbs that retire or dest
 | `GET /properties/:propertyId/units` | on mount, **twice** (Units and Channels sections use the same key, so Query dedupes) | section only | yes - `["properties", id, "units"]` |
 | `GET /settings` | when the photo section mounts | no - only "Add photos" waits | yes - `["settings"]`, shared with `/app/settings`, `staleTime` 5 min |
 | `GET /units/:unitId/channels` | once **per Unit** | section only | per-unit key |
+| **NEW** `GET /units/:unitId/price-overrides` | when a Unit's Prices panel is expanded (collapsed by default - most Units, most days, have no override; also keeps the mount fan-out from growing, §10) | panel only | per-unit key `["units", unitId, "price-overrides"]` |
 | `PATCH /properties/:id` | Save details | mutation | n/a |
 | `POST /properties/:id/photos/presign` | per file | mutation | n/a |
 | `PATCH /properties/:id/photos` | after each upload, and on reorder / remove | mutation | n/a |
@@ -126,6 +137,9 @@ Follows [`_list-pattern.md`](./_list-pattern.md). Deltas:
 - **Each of the five sections has its own loading and empty treatment**, and Units, Channels and the
   per-Unit connection lists all use an inline sentence rather than a card (D4) and have no error branch
   at all (D5).
+- *(P0-2 draft)* **The Prices panel is collapsed per Unit and fetches on expand** - most Units, most
+  days, have no override, and the mount fan-out is already the app's highest (§10). An archived
+  Property makes it read-only exactly like the Units section; the override list stays visible.
 - **Archive changes the page's shape, not just a badge**: the incomplete banner is replaced by the
   retirement notice, the Units add-row disappears, per-Unit edit and archive controls disappear, and new
   Channel connections are refused - while the export `.ics` link stays live, because the feed is
@@ -144,6 +158,8 @@ Follows [`_list-pattern.md`](./_list-pattern.md). Deltas:
 | Add / edit a Unit | `POST` / `PATCH` | button → "Saving…"; Enter submits | invalidate `["properties"]` prefix so `publishable` moves in the same paint; add-row clears and refocuses | 409 → **on the name field**; 400 → fields; other → row-spanning line | no | **no** for add - the name unique is what catches a double submit |
 | Archive / unarchive a Unit | `POST /units/:id/archive`\|`/unarchive` | button → "Archiving…" | invalidate `["properties"]` | inline line | no | yes |
 | Delete a Unit | `window.confirm` → `DELETE /units/:id` | button → "Deleting…" | invalidate `["properties"]` | 409 → the guard's count as prose; other → generic | no | yes |
+| Add a price override *(draft)* | **NEW** `POST /units/:unitId/price-overrides` | button → "Saving…" | invalidate `["units", unitId, "price-overrides"]` only - quotes are computed server-side, so no other key holds a stale price | 409 → `price_override_overlap` on the dates fields; 400 → fields | no | **no** - the exclusion constraint is what catches a double submit |
+| Remove a price override *(draft)* | **NEW** `DELETE /price-overrides/:id` | row buttons disable | invalidate the same key | 404 swallowed (already gone = done); other → inline | no | yes |
 | Connect a channel | `POST /units/:unitId/channels` | button → "Connecting…" | invalidate the connection list, clear the form | 409 → on the channel field; 400 → fields | no | **no** - the `(unit, channel)` unique is what catches it |
 | Sync now (one feed) | `POST /channels/:id/sync` | button → "Syncing…" | invalidate connections + `["bookings"]` + `["sync-conflicts"]`, then the summary line | inline "Sync failed" | no | yes |
 | Disconnect | `window.confirm` → `DELETE /channels/:id` | button → "Disconnecting…" | invalidate connections, show kept-count | inline line | no | yes |
@@ -173,6 +189,11 @@ Four `window.confirm` calls here - every one of the app's uses except booking-ca
 | Archive is idempotent and reversible | BE | `archivedAt` | - |
 | Disconnect keeps imported bookings | BE | `importedBookingsKept` | - |
 | A retired Property's public URL is offline but reserved | FE (display) / BE (404) | `slug`, `archivedAt` | `leak: true` |
+| A night's price = the override covering it, else the base *(draft)* | BE - inside `quote()`, the one price/interval authority | `totalPriceIdr` | - |
+| Overrides on one Unit never overlap *(draft)* | BE - exclusion constraint `price_override_no_overlap`; the form's 409 is UX (invariant #5) | `from`, `to` | - |
+| A booking's price is a snapshot; a later override never re-prices it *(draft)* | BE - already true (`total_price_idr` written at booking, ADR-0015 snapshots the payment) | `totalPriceIdr` | - |
+| Owner walk-ins price through the same overrides *(draft)* | BE - `sweepQuoteOrThrow` calls the same `quote()` (ADR-0011) | `totalPriceIdr` | - |
+| Override ranges are half-open on the wire, "First/Last night" in the UI *(draft)* | FE (shared helper `lastNightOf` - not a leak) | `to` | - |
 
 **Five leaks**, still the most of any page - which is what makes this the workbench: it is where the owner's
 mental model of "what state is this thing in" is rendered, and almost every one of those states is
@@ -200,6 +221,21 @@ the public property page now calls it too.
 longer computes effective-archived at all. No migration was needed - both `archived_at` columns already
 existed and the read already joined `property`.
 
+**DRAFT (P0-2 amendment)** - every **NEW** in §3 resolves here:
+
+| Change | Table / package | Migration | Why |
+|---|---|---|---|
+| `unit_price_override` (id, `tenant_id`, `unit_id`, `from date`, `to date`, `nightly_price_idr bigint`) | `packages/db` | `0017_unit_price_override.sql` | The dated price layer over `base_price_idr` (PRD-product P0-2) |
+| composite FK `(unit_id, tenant_id) → unit (id, tenant_id)` | `packages/db` | same | A cross-tenant override unrepresentable, the #40 pattern |
+| exclusion constraint `price_override_no_overlap` (`unit_id WITH =`, `daterange(from, to) WITH &&`) - hand-written SQL | `packages/db` | same | One authority for "no two prices for one night", the `booking_no_overlap` pattern; the app pre-check is UX only |
+| CHECKs: `from < to`, `price_override_nightly_range` (`between 1 and 1000000000`) - the cap hand-copied from `unit_base_price_max`, pinned the same way; the floor is 1, not 0, because a zero override has no placeholder role (`isSellable` reads only the base) | `packages/db` | same | Keeps the #47 overflow argument: a 366-night stay sums to ≤ 366 × 1e9, far under `MAX_SAFE_INTEGER` |
+| RLS policy with the `app_property_visible()` term (via the Unit's Property) - hand-written SQL | `packages/db` | same | Tenant isolation (invariant #2) + the Staff property axis (ADR-0032) |
+| `priceOverrideResponseSchema` | `packages/shared` | n/a | The wire shape §3 cites |
+| `createPriceOverrideRequestSchema` (`strictObject`, ADR-0031; `from < to` refine) | `packages/shared` | n/a | The one inbound body |
+| `price_override_overlap` added to the closed `conflictCodeSchema` + `describeConflict` copy | `packages/shared` + web | n/a | ADR-0012: the 409 carries a code; the web owns the words |
+| `quoteTotalIdr(basePriceIdr, nights)` → prices a night list: override covering the night, else base | `packages/shared` | n/a | The seam its own comment reserved: "a future seasonal model changes one function". Both #47's read and #48's write flow through it unchanged |
+| `AvailabilityRepository.fetchUnitPricing` also fetches overrides clipped to the window, inside the same `db.run` | `apps/api` | n/a | `quote()` stays the single authority; no second price read path |
+
 ---
 
 ## 9. Out of scope
@@ -210,6 +246,12 @@ existed and the read already joined `property`.
 - **The gallery cap itself.** `/app/settings` owns the number; this page reads it.
 - **The iCal import pipeline.** Boss fight #3 runs on a cron (ADR-0025); "Sync now" only forces it.
 - **Creating a Property.** `/app/properties`.
+- **Rate plans, occupancy-based pricing, LOS rules, recurring weekend rules.** PRD-product P0-2 defers
+  them by name (Channex-phase work). A weekend uplift is expressible today as explicit ranges.
+- **Editing an override in place.** MVP is add + remove; a change is remove-then-add. Revisit if owners
+  actually ask.
+- **Calendar-visual price editing and per-night prices in the guest picker.** The range list is the MVP;
+  the funnel keeps showing the server's total, which is already override-correct by construction.
 
 ---
 
@@ -231,3 +273,13 @@ existed and the read already joined `property`.
   control.** Four shipped features with no spec line. This file records them. **Owner:** RacThug.
 - [ ] **`lastSyncedAt` is fetched and never shown.** The status pill says "Synced" without saying when,
   which is the one thing an owner debugging a stale calendar wants. **Owner:** RacThug.
+- [x] ~~**The public page's headline still reads `basePriceIdr` as "from Rp N / night".**~~
+  **Closed (owner, 2026-08-17): keep the base as the headline** and document "base = your everyday
+  price" in the Prices panel's helper copy; a computed "from" (min upcoming nightly) is polish, revisit
+  if an owner models low-season discounts.
+- [x] ~~**Can Staff manage prices?**~~ **Closed (owner, 2026-08-17): yes** - pricing an assigned Unit
+  is operating it, exactly like the `basePriceIdr` edit Staff already have; the ADR-0032 verb line
+  reserves tenant-shape verbs, not rates. No `@Roles` guard on the three routes.
+- [x] ~~**REQ-PR-02/03 mapping.**~~ **Closed (owner, 2026-08-17):** nothing else hid behind REQ-PR-03;
+  this amendment IS the whole requirement (dated overrides over base, funnel totals correct by
+  construction). The EARS spec ids in `docs/spec/` reference PRD-product P0-2 directly.
