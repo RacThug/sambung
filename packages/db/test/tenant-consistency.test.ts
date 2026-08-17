@@ -11,6 +11,7 @@ import {
   staffInviteProperty,
   tenant,
   unit,
+  unitPriceOverride,
   userProperty,
 } from "../src/schema";
 import { expectDbError, testSlug } from "./helpers";
@@ -174,6 +175,20 @@ describe("tenant-consistency composite FKs", () => {
       }),
       "23503",
       "staff_invite_property_property_tenant_fk",
+    );
+  });
+
+  it("rejects a price override whose tenant_id differs from its unit's tenant", async () => {
+    await expectDbError(
+      db.insert(unitPriceOverride).values({
+        tenantId: tenantB, // wrong on purpose: unitA belongs to tenant A
+        unitId: unitA,
+        fromDate: "2027-07-01",
+        toDate: "2027-08-01",
+        nightlyPriceIdr: 1_000_000n,
+      }),
+      "23503",
+      "price_override_unit_tenant_fk",
     );
   });
 

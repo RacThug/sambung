@@ -15,6 +15,7 @@ import {
   syncConflict,
   tenant,
   unit,
+  unitPriceOverride,
   userProperty,
 } from '../src/schema';
 import { expectDbError } from './helpers';
@@ -134,7 +135,17 @@ describe('RLS policies', () => {
     await db
       .insert(userProperty)
       .values({ appUserId: u.id, propertyId: p.id, tenantId: t.id });
-    return { tenantId: t.id, user: u.id, prop: p.id, unit: un.id, cc: cc.id, booking: b.id, payment: pay.id, event: pe.id };
+    const [po] = await db
+      .insert(unitPriceOverride)
+      .values({
+        tenantId: t.id,
+        unitId: un.id,
+        fromDate: '2027-07-01',
+        toDate: '2027-08-01',
+        nightlyPriceIdr: 750_000n,
+      })
+      .returning({ id: unitPriceOverride.id });
+    return { tenantId: t.id, user: u.id, prop: p.id, unit: un.id, cc: cc.id, booking: b.id, payment: pay.id, event: pe.id, override: po.id };
   }
 
   beforeAll(async () => {
@@ -152,6 +163,7 @@ describe('RLS policies', () => {
     ids.payment_event = { a: a.event, b: b.event };
     ids.user_property = { a: a.prop, b: b.prop };
     ids.membership = { a: a.user, b: b.user };
+    ids.unit_price_override = { a: a.override, b: b.override };
   });
 
   afterAll(async () => {
@@ -183,6 +195,12 @@ describe('RLS policies', () => {
     // this table (#154). Both are in the list: the isolation must hold for the
     // seat AND for the account the seat points at.
     { name: 'membership', table: membership, col: membership.appUserId },
+    // 0017: tenant term + the property EXISTS term, the channel_connection shape.
+    {
+      name: 'unit_price_override',
+      table: unitPriceOverride,
+      col: unitPriceOverride.id,
+    },
   ];
 
   // One per policy: as tenant A, B's row must be invisible.
@@ -319,7 +337,7 @@ describe('RLS policies', () => {
    */
   describe('scope to assigned properties (staff)', () => {
     let staff: string;
-    let assigned: { property: string; unit: string; booking: string; payment: string; cc: string; conflict: string };
+    let assigned: { property: string; unit: string; booking: string; payment: string; cc: string; conflict: string; override: string };
     let unassigned: typeof assigned;
 
     /** One property and everything hanging off it, inside tenant A. */
@@ -372,6 +390,16 @@ describe('RLS policies', () => {
           checkOut: '2027-03-04',
         })
         .returning({ id: syncConflict.id });
+      const [po] = await db
+        .insert(unitPriceOverride)
+        .values({
+          tenantId: tenantA,
+          unitId: un.id,
+          fromDate: '2027-03-01',
+          toDate: '2027-04-01',
+          nightlyPriceIdr: 800_000n,
+        })
+        .returning({ id: unitPriceOverride.id });
       return {
         property: p.id,
         unit: un.id,
@@ -379,6 +407,7 @@ describe('RLS policies', () => {
         payment: pay.id,
         cc: cc.id,
         conflict: sc.id,
+        override: po.id,
       };
     }
 
@@ -423,6 +452,12 @@ describe('RLS policies', () => {
         key: 'conflict',
       },
       { name: 'payment', col: payment.id, table: payment, key: 'payment' },
+      {
+        name: 'unit_price_override',
+        col: unitPriceOverride.id,
+        table: unitPriceOverride,
+        key: 'override',
+      },
     ] as const;
 
     for (const { name, col, table, key } of scoped) {

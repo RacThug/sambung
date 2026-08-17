@@ -458,6 +458,69 @@ export const unit = pgTable(
   ],
 );
 
+// ---- Pricing -------------------------------------------------------------------
+// A dated price layered over unit.base_price_idr (PRD-product P0-2): a night in
+// [from_date, to_date) costs nightly_price_idr, every other night the base. The
+// quote() chokepoint is the ONLY reader - both the public availability read and
+// the booking writes price through it, so an override changes every surface at
+// once or none (the read-can't-disagree-with-write spine).
+//
+// Overrides on one unit never overlap: the `price_override_no_overlap` GiST
+// exclusion constraint (hand-written in migration 0017, the booking_no_overlap
+// pattern) is the authority, so "which override covers this night" always has
+// exactly one answer. NO partial predicate, unlike booking's: an override has no
+// status axis - a retired price is deleted, not flipped.
+//
+// CONFIG, not ledger: deleting a unit cascades its overrides away (ADR-0002
+// protects booking history; a price window has none - the booking snapshotted
+// its total_price_idr at creation, so no cascade can rewrite what was sold).
+export const unitPriceOverride = pgTable(
+  "unit_price_override",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    unitId: uuid("unit_id")
+      .notNull()
+      .references(() => unit.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    // denormalized (db-design §4.5) - kept consistent by price_override_unit_tenant_fk
+    tenantId: uuid("tenant_id")
+      .notNull()
+      .references(() => tenant.id, { onDelete: "cascade", onUpdate: "cascade" }),
+    // Half-open [from_date, to_date) like every range in the system (db-design
+    // §4.2). Named after the wire's from/to rather than check_in/check_out - a
+    // price window is not a stay. Two date columns, not a daterange column: the
+    // schema's only daterange stays inline in the exclusion constraint (the
+    // ADR-0027 precedent).
+    fromDate: date("from_date").notNull(),
+    toDate: date("to_date").notNull(),
+    // integer rupiah, never float (invariant #6)
+    nightlyPriceIdr: bigint("nightly_price_idr", { mode: "bigint" }).notNull(),
+    createdAt: timestamptz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    // unit_price_override.tenant_id must equal its unit's tenant_id - a
+    // cross-tenant override is unrepresentable, not an app-code obligation
+    // (db-design §4.5, the #40 pattern).
+    foreignKey({
+      name: "price_override_unit_tenant_fk",
+      columns: [t.unitId, t.tenantId],
+      foreignColumns: [unit.id, unit.tenantId],
+    }).onDelete("cascade"),
+    check("price_override_range_nonempty", sql`${t.toDate} > ${t.fromDate}`),
+    // Floor is 1, not 0: a zero BASE price is a deliberate placeholder that gates
+    // `publishable`, but `isSellable` reads only the base, so a zero OVERRIDE
+    // would just make sellable nights silently free. Ceiling mirrors
+    // MAX_NIGHTLY_RATE_IDR in @sambung/shared (hand-copied - SQL can't import
+    // the constant; pinned like unit_base_price_max), keeping the #47 overflow
+    // argument: every night of a stay, overridden or not, is bounded by the one
+    // constant, so a 366-night quote can never overflow toRupiah. Rejected twice
+    // over (#45): zod at the API, this CHECK behind a bypass.
+    check(
+      "price_override_nightly_range",
+      sql`${t.nightlyPriceIdr} between 1 and 1000000000`,
+    ),
+  ],
+);
+
 // ---- Channels ------------------------------------------------------------------
 // Archive (ADR-0005, #84) does NOT touch these rows - it is inventory-only. Two
 // M4 constraints ride on that: (1) the iCal EXPORT feed must stay archive-blind
