@@ -29,6 +29,7 @@ export * from "./og";
 export * from "./payment";
 export * from "./payment-inbox";
 export * from "./photo";
+export * from "./price-override";
 export * from "./property";
 export * from "./public-property";
 export * from "./settings";

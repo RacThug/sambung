@@ -17,6 +17,7 @@ describe("conflictCodeSchema", () => {
       "email_taken",
       "invite_already_pending",
       "invite_not_acceptable",
+      "price_override_overlap",
       "property_has_bookings",
       "unit_has_bookings",
       "unit_name_taken",
@@ -84,6 +85,15 @@ describe("conflictBodySchema", () => {
         reason: "eaten",
       }).success,
     ).toBe(false);
+  });
+
+  it("accepts the price-override overlap as a slug-only body", () => {
+    // No detail on purpose: both refusing layers (app pre-check, exclusion
+    // constraint) must stay indistinguishable (§5.3), and the constraint path
+    // knows nothing beyond the constraint's name.
+    expect(
+      conflictBodySchema.parse({ code: "price_override_overlap" }),
+    ).toEqual({ code: "price_override_overlap" });
   });
 
   it("rejects a count-bearing code with the count missing", () => {

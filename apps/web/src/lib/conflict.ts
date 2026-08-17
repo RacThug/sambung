@@ -66,6 +66,11 @@ export function describeConflict(body: ConflictBody): string {
     // Field-level (sits under the email input), no terminal period.
     case "invite_already_pending":
       return "An invite for this email is already pending";
+    // Field-level (sits under the date inputs), no terminal period. The clashing
+    // range is not named - the API sends no detail (both refusing layers must
+    // stay indistinguishable, §5.3) and the list is right there on screen.
+    case "price_override_overlap":
+      return "These dates already have a price override";
     default:
       return assertNever(body);
   }

@@ -69,6 +69,13 @@ export const conflictCodeSchema = z.enum([
   // this email, arbitrated by the `staff_invite_live_email_uniq` partial index.
   // No detail - the email is already in the request.
   "invite_already_pending",
+  // creating a price override (P0-2): the range overlaps an existing override on
+  // this Unit. Reached by TWO layers - an app pre-check and the
+  // `price_override_no_overlap` exclusion constraint that backstops a race - so
+  // both throw the same factory (§5.3). No detail: naming the clashing row would
+  // make the layers distinguishable (the constraint path knows only the
+  // constraint's name), and the dates are already in the request.
+  "price_override_overlap",
 ]);
 export type ConflictCode = z.infer<typeof conflictCodeSchema>;
 
@@ -137,6 +144,10 @@ const inviteAlreadyPendingBodySchema = z.object({
   code: z.literal("invite_already_pending"),
 });
 
+const priceOverrideOverlapBodySchema = z.object({
+  code: z.literal("price_override_overlap"),
+});
+
 export const conflictBodySchema = z.discriminatedUnion("code", [
   emailTakenBodySchema,
   unitNameTakenBodySchema,
@@ -148,6 +159,7 @@ export const conflictBodySchema = z.discriminatedUnion("code", [
   channelAlreadyConnectedBodySchema,
   inviteNotAcceptableBodySchema,
   inviteAlreadyPendingBodySchema,
+  priceOverrideOverlapBodySchema,
 ]);
 export type ConflictBody = z.infer<typeof conflictBodySchema>;
 
