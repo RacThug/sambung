@@ -133,6 +133,9 @@ the detail page (ADR-0011's universal free-the-dates verb).
 | Rule | Computed in | Field | Leak |
 |---|---|---|---|
 | Only Occupying bookings draw a bar | BE (filtered) / FE (the ask) | `status` | - |
+| The fleet line ranks erroring above stale above fresh - one sentence, ordered by the owner's next errand, not by severity | FE | `erroring`, `stale`, `oldestSyncedAt` | `leak: true` |
+| The age travels WITH the bad news, and is withheld entirely when the server sends none (UX-03a / FL-03) | FE (phrasing) / BE (whether an age exists at all) | `oldestSyncedAt` | `leak: true` |
+| A failed health read says so, rather than rendering as silence | FE | - | `leak: true` |
 | Effective-archived = the Unit's flag OR its Property's | BE | `archived` | - |
 | An archived-and-empty Unit is dropped from the grid | FE | `archived`, bookings | `leak: true` |
 | An archived Unit's day cells do not invite a create | FE | `archived` | - |

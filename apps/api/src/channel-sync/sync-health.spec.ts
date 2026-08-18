@@ -317,6 +317,40 @@ describe('Sync freshness (REQ-AV-04)', () => {
       });
     });
 
+    it('refuses an unauthenticated caller', async () => {
+      // Tenant scope is derived from the token; without one there is no tenant to
+      // scope to, and the honest answer is 401 rather than an empty fleet that
+      // would read as "you have no feeds".
+      await request(server()).get('/api/channels/health').expect(401);
+    });
+
+    it('withholds the age when part of the fleet has never synced, even mid-failure', async () => {
+      const owner = await registerTenant('health-partial');
+      const unit = await createUnit(
+        owner.accessToken,
+        (await createProperty(owner.accessToken)).id,
+      );
+
+      // One feed HAS a good pull to report...
+      const synced = await connectFeed(owner.accessToken, unit.id, 'airbnb');
+      await age(synced.id, 40);
+      // ...and one has never managed one.
+      fake.nextResult = { ok: false, error: 'Feed is unreachable' };
+      await connectFeed(owner.accessToken, unit.id, 'vrbo');
+
+      const health = await getHealth(owner.accessToken);
+      // FL-03 wins over UX-03a here, deliberately: an age DOES exist, but it
+      // describes half the fleet, and "checked 40 minutes ago" would be a claim
+      // about a calendar that is partly unknown. Reporting less is the honest
+      // move - the counts still say what is wrong.
+      expect(health).toMatchObject({
+        feeds: 2,
+        erroring: 1,
+        neverSynced: 1,
+        oldestSyncedAt: null,
+      });
+    });
+
     it('reads stored state only - it never pulls an OTA', async () => {
       const owner = await registerTenant('health-cheap');
       const unit = await createUnit(

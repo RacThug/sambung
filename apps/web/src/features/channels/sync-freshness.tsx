@@ -61,24 +61,34 @@ export function SyncFreshness() {
  * by severity: an erroring feed needs its URL looked at, and a stale one means the
  * pull itself has stopped.
  */
-function freshnessSentence(h: SyncHealthResponse): string {
-  if (h.feeds === 0) return "No OTA calendar connected yet.";
+function freshnessSentence(health: SyncHealthResponse): string {
+  if (health.feeds === 0) return "No OTA calendar connected yet.";
 
-  const feeds = `${h.feeds} OTA calendar${h.feeds === 1 ? "" : "s"}`;
+  const feeds = `${health.feeds} OTA calendar${health.feeds === 1 ? "" : "s"}`;
+  // One age, computed once, against ONE instant. Two `new Date()` calls in one
+  // sentence is two answers to "when is now" - harmless here, and the habit that
+  // makes a rendered timestamp disagree with itself elsewhere.
+  //
   // The age travels with the bad news, never instead of it. Saying only "could
   // not be reached" repeats at fleet level the exact mistake FR-05 names at feed
-  // level: a red line that hides HOW FAR BEHIND understates the damage, and "for
-  // ten minutes" and "for three days" are not the same emergency.
+  // level: a line that hides HOW FAR BEHIND understates the damage, and "for ten
+  // minutes" and "for three days" are not the same emergency. When the server
+  // withholds the age - any feed has never synced, so no whole-fleet claim exists
+  // (FL-03) - the sentence says less rather than guessing.
   const age =
-    h.oldestSyncedAt === null ? null : formatAge(h.oldestSyncedAt, new Date());
+    health.oldestSyncedAt === null
+      ? null
+      : formatAge(health.oldestSyncedAt, new Date());
 
-  if (h.erroring > 0) {
+  if (health.erroring > 0) {
     const since = age === null ? "" : `; last good check ${age}`;
-    return `${h.erroring} of ${feeds} could not be reached${since}.`;
+    return `${health.erroring} of ${feeds} could not be reached${since}.`;
   }
-  if (h.stale > 0) {
-    const when = age === null ? "not been checked recently" : `last checked ${age}`;
-    return `${h.stale} of ${feeds} ${when} - ${STALE_HINT}.`;
+  if (health.stale > 0) {
+    const plural = health.stale === 1 ? "has" : "have";
+    const when =
+      age === null ? `${plural} not been checked recently` : `last checked ${age}`;
+    return `${health.stale} of ${feeds} ${when} - ${STALE_HINT}.`;
   }
   // Unreachable against today's server, and kept because the CONTRACT says it is
   // possible: `oldestSyncedAt` is nullable, and TypeScript is right to make us
@@ -87,8 +97,8 @@ function freshnessSentence(h: SyncHealthResponse): string {
   // with an erroring feed, and the branch above claims it first. A future route
   // that creates a connection WITHOUT probing would land here, and this sentence
   // is what it should say. It is deliberately not claimed as tested (spec §3).
-  if (h.oldestSyncedAt === null) {
+  if (age === null) {
     return `${feeds} connected, not checked yet.`;
   }
-  return `${feeds} checked ${formatAge(h.oldestSyncedAt, new Date())}.`;
+  return `${feeds} checked ${age}.`;
 }

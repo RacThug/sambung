@@ -175,6 +175,7 @@ Four `window.confirm` calls here - every one of the app's uses except booking-ca
 | Rule | Computed in | Field | Leak |
 |---|---|---|---|
 | Verified = a licence is on file | BE | `verified` | - |
+| A feed that has never synced shows no age and no stale mark - unstarted is not late | FE | `lastSyncedAt`, `stale` | `leak: true` |
 | The same rule, previewed live from the unsaved input | FE | `licenseNo` | `leak: true` |
 | Publishable = ≥1 photo and ≥1 priced, active Unit | BE | `publishable` | - |
 | Effective-archived = the Unit's flag OR its Property's | BE | `archived` | - |

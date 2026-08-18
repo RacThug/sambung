@@ -159,6 +159,11 @@ export class ChannelsRepository {
         .select({
           feeds: sql<number>`count(*)::int`,
           erroring: sql<number>`(count(*) filter (where ${channelConnection.lastStatus} = 'error'))::int`,
+          // `null < timestamp` is NULL, never true, so a never-synced feed is not
+          // counted stale here - the same rule `isStale` states outright in TS
+          // (sync-freshness.ts). Written once in each language because one is a
+          // comparison and the other is SQL's three-valued logic; the mixed-fleet
+          // test is what keeps the pair honest.
           stale: sql<number>`(count(*) filter (where ${channelConnection.lastSyncedAt} < ${staleBefore}))::int`,
           neverSynced: sql<number>`(count(*) filter (where ${channelConnection.lastSyncedAt} is null))::int`,
           // `.mapWith` borrows the column's own driver mapping: without it an
