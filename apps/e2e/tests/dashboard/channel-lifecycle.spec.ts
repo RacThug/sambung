@@ -21,6 +21,9 @@ import { futureIso, uniqueName } from "../../lib/helpers";
  *      reason is shown. Deterministic with no network fixture and no clock: the
  *      URL is a private-LAN address, which the SSRF guard refuses BEFORE opening
  *      a socket (ADR-0016). See the connect step for why that is the same branch.
+ *   1b. The honesty UX around that feed (REQ-AV-04): a never-synced feed shows no
+ *      age, the standing iCal note is on the page, and the CALENDAR says the fleet
+ *      is unhealthy without anyone clicking Sync now.
  *   2. The export `.ics` is valid RFC-5545 for the Unit's confirmed bookings and
  *      carries NO PII - proven load-bearing by first booking a walk-in that DOES
  *      carry a name/phone/email/price, then asserting none of it reaches the feed
@@ -157,6 +160,27 @@ test.describe("owner dashboard: channel connection lifecycle", () => {
     // would become "Feed is unreachable", and this line goes red (the badge alone
     // would not - it would just get slow again).
     await expect(page.getByText(icalRefusalReason)).toBeVisible();
+
+    // === Scenario 1b: the honesty UX around that feed (REQ-AV-04).
+    // A feed that never synced shows NO age - "never checked" is not "checked,
+    // long ago", and collapsing them would send the owner on the wrong errand.
+    await expect(page.getByText(/Last synced/)).toHaveCount(0);
+    // The standing truth about iCal is on the page, permanently, leading with the
+    // leg we do not control.
+    await expect(
+      page.getByText(/OTAs re-read your calendar/).first(),
+    ).toBeVisible();
+
+    // And the calendar - where availability is actually read - says the fleet is
+    // unhealthy without anyone clicking Sync now, and points at where to fix it.
+    await page.goto("/app/calendar");
+    await expect(
+      page.getByText(/1 of 1 OTA calendar could not be reached/),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Check channels" }),
+    ).toBeVisible();
+    await page.goto(propertyUrl);
 
     // === Scenario 2: the export `.ics` is valid RFC-5545 and PII-free (SYNC-2).
     // Public feed - no auth (the unguessable unit id is the capability, ADR-0016),

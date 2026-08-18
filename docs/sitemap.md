@@ -203,6 +203,7 @@ Grouped by module. Machine/edge routes (no page) are last. `api #n` points into 
 | `DELETE /channels/:id` | Disconnect (keeps imported bookings; reports how many). | authed · scoped | api #30 |
 | `POST /channels/:id/sync` | Sync now, one feed. | authed · scoped | api #31 · ADR-0025 |
 | `POST /channels/sync` | Sync now, every feed the caller can see. | authed · scoped | api #40 · ADR-0025 |
+| `GET /channels/health` | Fleet sync freshness: counts + the OLDEST successful pull. | authed · scoped | REQ-AV-04 · ADR-0040 |
 | `GET /sync-conflicts` | The Sync-conflict inbox list. | authed · scoped | api #32 · ADR-0027 |
 | `POST /sync-conflicts/:id/dismiss` | Dismiss a conflict (the Owner's judgement). | authed · scoped | api #33 · ADR-0027 |
 
@@ -246,7 +247,7 @@ Each page → the endpoints it calls → the feature module behind it → the bo
 | `/register` | `POST /auth/register` | `auth/register-page.tsx` | - |
 | `/invite/$token` | `GET /auth/invites/token/:token` · `POST /auth/invites/accept` | `auth/accept-invite-page.tsx` | ADR-0033 · ADR-0034 |
 | `/app` (shell) | `POST /auth/refresh` · `POST /auth/logout` · `POST /auth/session` | `dashboard/{app-shell, workspace-switcher}`, `lib/auth` | ADR-0034 |
-| `/app/calendar` | `GET /properties` · `GET /units` · `GET /bookings` · `POST /bookings` · `POST /channels/sync` | `calendar/*`, `calendar/manual-booking-dialog` | ADR-0010 · ADR-0011 · ADR-0025 |
+| `/app/calendar` | `GET /properties` · `GET /units` · `GET /bookings` · `POST /bookings` · `POST /channels/sync` · `GET /channels/health` | `calendar/*`, `calendar/manual-booking-dialog` | ADR-0010 · ADR-0011 · ADR-0025 |
 | `/app/reservations` | `GET /properties` · `GET /units` · `GET /bookings` · `GET /bookings/export.csv` | `reservations/*` | ADR-0010 |
 | `/app/inbox` | `GET /sync-conflicts` · `POST /sync-conflicts/:id/dismiss` · `GET /payments/lapsed` · `POST /payments/:id/handle` | `dashboard/inbox-page`, `channels/*`, `payments/*` | ADR-0027 · ADR-0022 |
 | `/app/properties` | `GET /properties` · `POST /properties` | `properties/properties-page.tsx` | ADR-0002 |

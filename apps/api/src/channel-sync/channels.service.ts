@@ -3,11 +3,13 @@ import {
   channelConnectionResponseSchema,
   syncAllResponseSchema,
   syncConnectionResponseSchema,
+  syncHealthResponseSchema,
   type ChannelConnectionResponse,
   type CreateChannelConnectionRequest,
   type DisconnectChannelResponse,
   type SyncAllResponse,
   type SyncConnectionResponse,
+  type SyncHealthResponse,
 } from '@sambung/shared';
 import type { ChannelConnection } from '@sambung/db';
 import { channelAlreadyConnected } from '../common/db-error/conflicts';
@@ -15,6 +17,7 @@ import { TenantDbService } from '../db/tenant-db.service';
 import { ChannelsRepository } from './channels.repository';
 import { ICAL_FETCHER, type IcalFetcher } from './ical-fetcher';
 import { IcalImportService } from './ical-import.service';
+import { isStale, staleCutoff } from './sync-freshness';
 
 /**
  * The channel-connection lifecycle (api-spec §7.1/7.2/7.4, #55) - the OWNER side
@@ -73,7 +76,7 @@ export class ChannelsService {
     });
     // A connection that has never imported cannot have conflicted - no query needed,
     // and the row id didn't exist to be referenced a moment ago.
-    return this.toResponse(row, 0);
+    return this.toResponse(row, 0, new Date());
   }
 
   /** List a unit's connections (api-spec §7.2). 404 for an unknown/foreign unit.
@@ -85,9 +88,13 @@ export class ChannelsService {
       throw new NotFoundException('Unit not found');
     }
     const rows = await this.repo.findByUnit(unitId);
+    // ONE instant for the whole list: rows judged a few milliseconds apart could
+    // otherwise straddle the cutoff, and two feeds stamped identically would
+    // disagree about being stale in the same response.
+    const now = new Date();
     const openConflicts = await this.repo.countOpenConflictsByUnit(unitId);
     return rows.map((row) =>
-      this.toResponse(row, openConflicts.get(row.id) ?? 0),
+      this.toResponse(row, openConflicts.get(row.id) ?? 0, now),
     );
   }
 
@@ -185,9 +192,35 @@ export class ChannelsService {
     return syncAllResponseSchema.parse(total);
   }
 
+  /**
+   * How current is the whole calendar? (api-spec §7.7, REQ-AV-04.) The read behind
+   * the calendar's ambient freshness line - the page where availability is
+   * actually read is the page that must disclose how current it is.
+   *
+   * `oldestSyncedAt` is suppressed to null when ANY visible feed has never synced:
+   * a "checked 4 minutes ago" line would then be a claim about only part of the
+   * fleet, which is the exact flattery this feature exists to remove (ADR-0040).
+   * `feeds` and `neverSynced` give the UI what it needs to say which case it is.
+   */
+  async syncHealth(): Promise<SyncHealthResponse> {
+    const now = new Date();
+    const health = await this.repo.syncHealth(staleCutoff(now));
+    return syncHealthResponseSchema.parse({
+      feeds: health.feeds,
+      erroring: health.erroring,
+      stale: health.stale,
+      neverSynced: health.neverSynced,
+      oldestSyncedAt:
+        health.neverSynced > 0 || health.oldestSyncedAt === null
+          ? null
+          : health.oldestSyncedAt.toISOString(),
+    });
+  }
+
   private toResponse(
     row: ChannelConnection,
     openConflicts: number,
+    now: Date,
   ): ChannelConnectionResponse {
     const { createdAt, lastSyncedAt, ...columns } = row;
     // Parsed on the way out so the payload cannot silently widen, and so a corrupt
@@ -195,6 +228,7 @@ export class ChannelsService {
     return channelConnectionResponseSchema.parse({
       ...columns,
       lastSyncedAt: lastSyncedAt ? lastSyncedAt.toISOString() : null,
+      stale: isStale(lastSyncedAt, now),
       openConflicts,
       createdAt: createdAt.toISOString(),
     });

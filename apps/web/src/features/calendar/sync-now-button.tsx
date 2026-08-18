@@ -3,6 +3,7 @@ import { RefreshCw } from "lucide-react";
 import type { SyncAllResponse } from "@sambung/shared";
 import { Button } from "@/components/ui/button";
 import { api } from "../../lib/api-client";
+import { SYNC_HEALTH_KEY } from "../channels/use-sync-health";
 
 /**
  * "Sync now" for every feed the owner can see - the calendar's primary action
@@ -26,6 +27,10 @@ export function SyncNowButton() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["bookings"] }),
         queryClient.invalidateQueries({ queryKey: ["sync-conflicts"] }),
+        // The freshness line right above this button just moved (REQ-AV-04); a
+        // sweep that leaves "checked 4 hours ago" on screen is the exact failure
+        // the line exists to prevent.
+        queryClient.invalidateQueries({ queryKey: SYNC_HEALTH_KEY }),
       ]);
     },
   });

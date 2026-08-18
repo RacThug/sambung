@@ -12,6 +12,8 @@ import {
   ManualBookingDialog,
   type CreateSeed,
 } from "./manual-booking-dialog";
+import { IcalLimitsNote } from "../channels/ical-limits-note";
+import { SyncFreshness } from "../channels/sync-freshness";
 import { SourceLegend } from "./source-legend";
 import { SyncNowButton } from "./sync-now-button";
 import { useCalendarData } from "./use-calendar";
@@ -92,6 +94,13 @@ export function CalendarPage() {
   return (
     <section>
       <PageHeader title="Calendar" action={<SyncNowButton />} />
+      {/* How current this calendar is, stated before anyone asks (REQ-AV-04).
+          The page that shows availability is the page that has to disclose how
+          fresh it is - anything else is a promise we cannot keep. */}
+      <div className="mb-4 rounded-md border border-border bg-card p-3">
+        <SyncFreshness />
+        <IcalLimitsNote className="mt-1.5" />
+      </div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="text-lg font-semibold text-foreground">

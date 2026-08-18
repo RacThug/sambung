@@ -24,6 +24,11 @@ import {
 } from '@sambung/shared';
 import { AppModule } from '../app.module';
 import { DbService } from '../db/db.service';
+import {
+  IMPORT_SWEEP_CRON,
+  IMPORT_SWEEP_INTERVAL_MINUTES,
+  SYNC_STALE_AFTER_MINUTES,
+} from './channel-sync.constants';
 import { FakeIcalFetcher } from './fake-ical-fetcher';
 import { ICAL_FETCHER } from './ical-fetcher';
 
@@ -568,5 +573,22 @@ describe('Channel sync (#55)', () => {
     for (const channel of channelSchema.options) {
       expect(sources.has(channel)).toBe(true);
     }
+  });
+
+  // The cadence and the promise about it are two statements about one number
+  // (REQ-AV-04, spec FR-03). Written as separate literals they drift the first
+  // time one is tuned - a 15-minute sweep still warning at 90 minutes would let a
+  // dead sweeper hide for six ticks instead of three. This pins the derivation.
+  it('pins the sweep cadence and the staleness promise to their VALUES', () => {
+    // Literals, deliberately. Asserting `cron === \`*/${interval} * * * *\`` only
+    // restates the definition: change the interval to 5 and both the cron and the
+    // 90-minute promise move, silently, green. These three numbers are a product
+    // decision (ADR-0040) - moving one should fail here and make someone say why.
+    expect(IMPORT_SWEEP_INTERVAL_MINUTES).toBe(30);
+    expect(IMPORT_SWEEP_CRON).toBe('*/30 * * * *');
+    expect(SYNC_STALE_AFTER_MINUTES).toBe(90);
+    // ...and the ratio itself, so a hand-edited threshold that no longer means
+    // "three missed sweeps" is a failure rather than a drifting comment.
+    expect(SYNC_STALE_AFTER_MINUTES).toBe(3 * IMPORT_SWEEP_INTERVAL_MINUTES);
   });
 });

@@ -15,6 +15,7 @@ import {
   type PropertyResponse,
   type PublicPropertyResponse,
   type PublicUnit,
+  type SyncHealthResponse,
   type TenantSettingsResponse,
   type UnitResponse,
 } from "@sambung/shared";
@@ -181,8 +182,30 @@ export function channelConnectionResponse(
     lastSyncedAt: "2026-07-19T00:00:00.000Z",
     lastStatus: "ok",
     lastError: null,
+    stale: false,
     openConflicts: 0,
     createdAt: "2026-07-19T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/** Minutes ago as the wire spells an instant - the fixture for anything that
+ * renders an AGE, which a hard-coded date would silently turn into "412 days
+ * ago" the week after it was written. */
+export const minutesAgo = (minutes: number): string =>
+  new Date(Date.now() - minutes * 60_000).toISOString();
+
+/** One SyncHealthResponse factory (REQ-AV-04). Default: one healthy feed, checked
+ * minutes ago - the boring case a test overrides one field of. */
+export function syncHealthResponse(
+  overrides: Partial<SyncHealthResponse> = {},
+): SyncHealthResponse {
+  return {
+    feeds: 1,
+    erroring: 0,
+    stale: 0,
+    neverSynced: 0,
+    oldestSyncedAt: minutesAgo(12),
     ...overrides,
   };
 }

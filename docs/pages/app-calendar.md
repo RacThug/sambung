@@ -40,6 +40,9 @@ one row per Unit, every Occupying booking a bar coloured by source. *(page-spec 
 | Region | UI element | Field | Schema | Endpoint | Computed in | Source |
 |---|---|---|---|---|---|---|
 | Header | page title | - | none | - | FE | [code] |
+| Header | freshness line ("2 OTA calendars checked 12 minutes ago") | `feeds`, `oldestSyncedAt` | `syncHealthResponseSchema` | `GET /channels/health` | BE data -> FE sentence (age phrased in the browser, REQ-AV-04) | [code] |
+| Header | unhealthy-fleet warning + "Check channels" link | `erroring`, `stale`, `neverSynced` | `syncHealthResponseSchema` | `GET /channels/health` | BE judges, FE phrases (ADR-0040) | [code] |
+| Header | iCal limits note | - | none | - | FE (one shared component with the workbench) | [code] |
 | Header | Sync-now result summary | `feeds`, `imported`, `cancelled`, `conflicts`, `errored` | `syncAllResponseSchema` | `POST /channels/sync` | BE → FE sentence | [code] |
 | Toolbar | window label ("March 2027") | `?from`, `?to` | `calendarSearchSchema` | - | FE | [code] |
 | Toolbar | prev / Today / next | - | none | - | FE | [code] |
@@ -79,6 +82,7 @@ shows neither; the detail page does.
 | `GET /properties` | on mount | **body only** | yes - `["properties"]`, shared with reservations, properties list, and the Team section |
 | `GET /units` | on mount | **body only** | yes - `["units"]`, shared with reservations |
 | `GET /bookings?from&to[&propertyId]&status×2` | on mount and on every window / property change | **body only** | no - keyed by window + filter; `keepPreviousData` so paging a month never flashes empty |
+| `GET /channels/health` | on mount, then every 60s and on window focus | no - the header paints without it | yes - `["channels","health"]`, invalidated by both sync verbs |
 | `POST /channels/sync` | "Sync now" | mutation | n/a |
 | `POST /bookings` | dialog submit | mutation | n/a |
 
@@ -129,6 +133,9 @@ the detail page (ADR-0011's universal free-the-dates verb).
 | Rule | Computed in | Field | Leak |
 |---|---|---|---|
 | Only Occupying bookings draw a bar | BE (filtered) / FE (the ask) | `status` | - |
+| The fleet line ranks erroring above stale above fresh - one sentence, ordered by the owner's next errand, not by severity | FE | `erroring`, `stale`, `oldestSyncedAt` | `leak: true` |
+| The age travels WITH the bad news, and is withheld entirely when the server sends none (UX-03a / FL-03) | FE (phrasing) / BE (whether an age exists at all) | `oldestSyncedAt` | `leak: true` |
+| A failed health read says so, rather than rendering as silence | FE | - | `leak: true` |
 | Effective-archived = the Unit's flag OR its Property's | BE | `archived` | - |
 | An archived-and-empty Unit is dropped from the grid | FE | `archived`, bookings | `leak: true` |
 | An archived Unit's day cells do not invite a create | FE | `archived` | - |
@@ -163,8 +170,10 @@ the read already performed - a `packages/shared` + `apps/api` change with **no m
 - **Cancelling.** The detail page (page-spec §4.3); the calendar only links to it.
 - **Every status.** This view shows Occupying bookings as bars; the Reservations list shows every status
   as rows (ADR-0010).
-- **Per-Channel health.** The Property workbench's Channels section; only the tenant-wide "Sync now"
-  lives here.
+- **Per-Channel health.** The Property workbench's Channels section. This page carries the tenant-wide
+  "Sync now" and, since REQ-AV-04, the tenant-wide FRESHNESS - one line for the whole fleet, reported as
+  its stalest feed (ADR-0040). Which feed is stale is still the workbench's answer, and the warning
+  links there.
 - **Conflict resolution.** `/app/inbox`.
 
 ---

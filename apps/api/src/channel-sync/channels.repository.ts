@@ -20,6 +20,17 @@ export interface ExportableBooking {
   checkOut: string;
 }
 
+/** The fleet's sync health as ONE aggregate row (api-spec §7.7). Named for the
+ * same reason `ExportableBooking` is: five fields that always travel together are
+ * a type, and an anonymous shape repeated in a signature is that type in hiding. */
+export interface SyncHealthRow {
+  feeds: number;
+  erroring: number;
+  stale: number;
+  neverSynced: number;
+  oldestSyncedAt: Date | null;
+}
+
 /**
  * Dumb repository: Drizzle queries only, via the tenant-scoped (RLS) client. The
  * tenant is ambient (TenantContext, #76) and every query ALSO filters by
@@ -122,6 +133,50 @@ export class ChannelsRepository {
         .where(eq(channelConnection.tenantId, tenantId))
         .orderBy(asc(channelConnection.createdAt), asc(channelConnection.id)),
     );
+  }
+
+  /**
+   * The whole fleet's sync health in ONE aggregate (api-spec §7.7, REQ-AV-04).
+   *
+   * One query, no fan-out, no outbound fetch: this read reports what the last
+   * sweep left behind, it never causes a sweep. A GET that made the server pull
+   * three OTAs would be a denial-of-service handle aimed at our own IP, and the
+   * calendar polls this every minute.
+   *
+   * `staleBefore` arrives as a bound parameter rather than being recomputed in SQL
+   * with `now()`, so the fleet aggregate and the per-row `isStale` cannot disagree
+   * about where the line is - one rule, one clock (sync-freshness.ts).
+   *
+   * Scoped like `findAllVisible`: RLS answers "which feeds" on both axes at once
+   * (tenant, and for staff their assigned properties - ADR-0032), with the explicit
+   * tenant_id as the second layer. With no GUC set, RLS shows nothing and every
+   * count is 0 - fail closed, never a cross-tenant total.
+   */
+  async syncHealth(staleBefore: Date): Promise<SyncHealthRow> {
+    const tenantId = this.tenant.tenantId;
+    const [row] = await this.db.run((tx) =>
+      tx
+        .select({
+          feeds: sql<number>`count(*)::int`,
+          erroring: sql<number>`(count(*) filter (where ${channelConnection.lastStatus} = 'error'))::int`,
+          // `null < timestamp` is NULL, never true, so a never-synced feed is not
+          // counted stale here - the same rule `isStale` states outright in TS
+          // (sync-freshness.ts). Written once in each language because one is a
+          // comparison and the other is SQL's three-valued logic; the mixed-fleet
+          // test is what keeps the pair honest.
+          stale: sql<number>`(count(*) filter (where ${channelConnection.lastSyncedAt} < ${staleBefore}))::int`,
+          neverSynced: sql<number>`(count(*) filter (where ${channelConnection.lastSyncedAt} is null))::int`,
+          // `.mapWith` borrows the column's own driver mapping: without it an
+          // aggregate over a timestamp arrives as the raw string pg sent, and a
+          // `sql<Date>` annotation would be a type assertion the runtime ignores.
+          oldestSyncedAt: sql`min(${channelConnection.lastSyncedAt})`.mapWith(
+            channelConnection.lastSyncedAt,
+          ),
+        })
+        .from(channelConnection)
+        .where(eq(channelConnection.tenantId, tenantId)),
+    );
+    return row;
   }
 
   async findById(id: string): Promise<ChannelConnection | null> {

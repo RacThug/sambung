@@ -84,6 +84,8 @@ Units, per-Unit Channels, and per-Unit Prices - plus the two owner-only verbs th
 | Channels | export `.ics` URL | `unit.id` | `unitResponseSchema` | `GET /public/units/:id/calendar.ics` | FE | [code] |
 | Channels | channel label | `channel` | `channelSchema` | `GET /units/:unitId/channels` | FE | [code] |
 | Channels | status pill | `lastStatus` | `syncStatusSchema` | `GET /units/:unitId/channels` | FE | [code] |
+| Channels | "Last synced 12 minutes ago" + stale warning | `lastSyncedAt`, `stale` | `channelConnectionResponseSchema` | `GET /units/:unitId/channels` | BE judges `stale`, FE phrases the age (REQ-AV-04, ADR-0040) | [code] |
+| Channels | iCal limits note | - | none | - | FE (one shared component with the calendar) | [code] |
 | Channels | `lastError` line | `lastError` | `channelConnectionResponseSchema` | `GET /units/:unitId/channels` | raw | [code] |
 | Channels | conflict-count badge → inbox | `openConflicts` | `channelConnectionResponseSchema` | `GET /units/:unitId/channels` | BE | [code] |
 | Channels | feed URL | `importIcalUrl` | `channelConnectionResponseSchema` | `GET /units/:unitId/channels` | raw | [code] |
@@ -95,7 +97,8 @@ Units, per-Unit Channels, and per-Unit Prices - plus the two owner-only verbs th
 | Archive | zone title + copy | `archivedAt` | `propertyResponseSchema` | `GET /properties/:id` | FE | [code] |
 | Danger | delete-guard error + count | `code`, `count` | `conflictBodySchema` | `DELETE /properties/:id` | BE slug + data → FE prose | [code] |
 
-`lastSyncedAt` and `createdAt` are on `channelConnectionResponseSchema` and are **not rendered**;
+`createdAt` is on `channelConnectionResponseSchema` and is **not rendered** (`lastSyncedAt` was, until
+REQ-AV-04 made its absence the defect: a status pill says whether a feed synced, never when);
 `galleryCeiling` is fetched with the cap and read only by `/app/settings`.
 
 ---
@@ -113,7 +116,7 @@ Units, per-Unit Channels, and per-Unit Prices - plus the two owner-only verbs th
 | `POST /properties/:id/photos/presign` | per file | mutation | n/a |
 | `PATCH /properties/:id/photos` | after each upload, and on reorder / remove | mutation | n/a |
 | `POST /properties/:propertyId/units` · `PATCH /units/:id` · `DELETE /units/:id` · `POST /units/:id/archive`·`/unarchive` | per row | mutations | n/a |
-| `POST /units/:unitId/channels` · `DELETE /channels/:id` · `POST /channels/:id/sync` | per connection | mutations | n/a |
+| `POST /units/:unitId/channels` · `DELETE /channels/:id` · `POST /channels/:id/sync` | per connection | mutations | n/a - "Sync now" also invalidates `["channels","health"]`, which the calendar observes |
 | `POST /properties/:id/archive`·`/unarchive` · `DELETE /properties/:id` | owner-only zones | mutations | n/a |
 
 **One blocking read**, but the request *count* is the highest in the app: a Property with 8 Units issues
@@ -172,6 +175,7 @@ Four `window.confirm` calls here - every one of the app's uses except booking-ca
 | Rule | Computed in | Field | Leak |
 |---|---|---|---|
 | Verified = a licence is on file | BE | `verified` | - |
+| A feed that has never synced shows no age and no stale mark - unstarted is not late | FE | `lastSyncedAt`, `stale` | `leak: true` |
 | The same rule, previewed live from the unsaved input | FE | `licenseNo` | `leak: true` |
 | Publishable = ≥1 photo and ≥1 priced, active Unit | BE | `publishable` | - |
 | Effective-archived = the Unit's flag OR its Property's | BE | `archived` | - |
