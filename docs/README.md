@@ -25,6 +25,8 @@ subsystem it's working on before proposing changes.
 - **`db-design.md`** and **`architecture.md`** answer *how* — the engineering contract the builder owns.
 - The standing engineering rules (invariants, boss fights, guardrails) live in [`../CLAUDE.md`](../CLAUDE.md),
   which links back into these docs by section.
+- **`decision-log.md`** answers *why it is this way* - every decision, chronological, newest last.
+  **`history.md`** answers *what already exists* - what was built, in order, including what was deferred by name.
 
 ## Conventions
 

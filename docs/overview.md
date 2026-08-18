@@ -103,7 +103,7 @@ pages remain in P0 - all business or ops work rather than code).
 | "Which routes and endpoints exist?" | [`sitemap.md`](./sitemap.md) (the code-verified map) → [`api-spec.md`](./api-spec.md) for shapes |
 | "How is it built, and why that way?" | [`architecture.md`](./architecture.md) · [`db-design.md`](./db-design.md) (teaching editions) |
 | "What does this word mean here?" | [`../CONTEXT.md`](../CONTEXT.md) (the glossary) |
-| "Why was decision X made?" | The ADR that owns it - **follow a link to it, don't browse the folder**. ADRs are deep-dive decision records, one question each; the chronological index is the decision log in [`../CLAUDE.md`](../CLAUDE.md) |
+| "Why was decision X made?" | The ADR that owns it - **follow a link to it, don't browse the folder**. ADRs are deep-dive decision records, one question each; the chronological record is [`decision-log.md`](./decision-log.md), indexed one line each in [`../CLAUDE.md`](../CLAUDE.md) |
 | "How do I run / test / demo it?" | The root [`README`](../README.md) + the Commands block in [`../CLAUDE.md`](../CLAUDE.md) |
 
 **About the ADRs**, since they are the folder that overwhelms: you almost never read them
