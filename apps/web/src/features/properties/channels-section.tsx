@@ -16,7 +16,10 @@ import {
 import { api, ApiError } from "../../lib/api-client";
 import { conflictOf, describeConflict } from "../../lib/conflict";
 import { issuesToFieldErrors } from "../../lib/forms";
+import { formatAge } from "../../lib/relative-time";
 import { useCopiedFlash } from "../../lib/use-copied-flash";
+import { IcalLimitsNote } from "../channels/ical-limits-note";
+import { SYNC_HEALTH_KEY } from "../channels/use-sync-health";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ListSkeleton } from "@/components/list-state";
@@ -49,6 +52,10 @@ export function ChannelsSection({ property }: { property: PropertyResponse }) {
         Keep OTA calendars in sync. Paste each unit's export link into Airbnb,
         Booking.com or Vrbo so they stop selling nights booked here.
       </p>
+      {/* The same note the calendar carries, from the same component (REQ-AV-04):
+          one wording, so the two surfaces cannot drift into contradicting each
+          other about what iCal guarantees. */}
+      <IcalLimitsNote className="mt-2" />
 
       {unitsQuery.isError ? (
         <p className="mt-4 text-sm text-muted-foreground">
@@ -180,6 +187,31 @@ const STATUS_STYLES: Record<SyncStatus, { label: string; className: string }> = 
   error: { label: "Sync error", className: "bg-destructive/10 text-destructive" },
 };
 
+/**
+ * When this feed last pulled successfully (REQ-AV-04, spec UX-04). The status
+ * pill says WHETHER; this says WHEN, which is the half that was missing - a green
+ * "Synced" pill stays green forever after the sweeper stops.
+ *
+ * `stale` is the server's judgement, not a comparison made here: the threshold is
+ * a fact about the server's sweep cadence, and the clock that stamped the
+ * timestamp is the only clock entitled to measure it.
+ */
+function LastSynced({ conn }: { conn: ChannelConnectionResponse }) {
+  if (conn.lastSyncedAt === null) {
+    // Deliberately not "stale": never checked and long-since checked are
+    // different problems, and only one of them means "go look at the URL".
+    return null;
+  }
+  return (
+    <span
+      className={`text-xs ${conn.stale ? "font-medium text-destructive" : "text-muted-foreground"}`}
+    >
+      Last synced {formatAge(conn.lastSyncedAt, new Date())}
+      {conn.stale && " - syncing may have stopped"}
+    </span>
+  );
+}
+
 function ConnectionRow({
   conn,
   unitId,
@@ -213,6 +245,9 @@ function ConnectionRow({
         }),
         queryClient.invalidateQueries({ queryKey: ["bookings"] }),
         queryClient.invalidateQueries({ queryKey: ["sync-conflicts"] }),
+        // The calendar's freshness line reads the fleet, and this pull just moved
+        // one of its feeds (REQ-AV-04).
+        queryClient.invalidateQueries({ queryKey: SYNC_HEALTH_KEY }),
       ]);
     },
   });
@@ -288,6 +323,9 @@ function ConnectionRow({
           </Button>
           </div>
         )}
+      </div>
+      <div className="mt-1">
+        <LastSynced conn={conn} />
       </div>
       <p className="mt-1 break-all text-xs text-muted-foreground">
         {conn.importIcalUrl}

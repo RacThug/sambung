@@ -24,6 +24,11 @@ import {
 } from '@sambung/shared';
 import { AppModule } from '../app.module';
 import { DbService } from '../db/db.service';
+import {
+  IMPORT_SWEEP_CRON,
+  IMPORT_SWEEP_INTERVAL_MINUTES,
+  SYNC_STALE_AFTER_MINUTES,
+} from './channel-sync.constants';
 import { FakeIcalFetcher } from './fake-ical-fetcher';
 import { ICAL_FETCHER } from './ical-fetcher';
 
@@ -568,5 +573,16 @@ describe('Channel sync (#55)', () => {
     for (const channel of channelSchema.options) {
       expect(sources.has(channel)).toBe(true);
     }
+  });
+
+  // The cadence and the promise about it are two statements about one number
+  // (REQ-AV-04, spec FR-03). Written as separate literals they drift the first
+  // time one is tuned - a 15-minute sweep still warning at 90 minutes would let a
+  // dead sweeper hide for six ticks instead of three. This pins the derivation.
+  it('derives the cron and the staleness threshold from one interval', () => {
+    expect(IMPORT_SWEEP_CRON).toBe(
+      `*/${IMPORT_SWEEP_INTERVAL_MINUTES} * * * *`,
+    );
+    expect(SYNC_STALE_AFTER_MINUTES).toBe(3 * IMPORT_SWEEP_INTERVAL_MINUTES);
   });
 });

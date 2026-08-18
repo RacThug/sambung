@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { setSession, clearSession } from "../../lib/auth";
 import {
   authResponse,
   json,
+  minutesAgo,
   propertyResponse,
   renderAt,
   stubFetch,
+  syncHealthResponse,
   unitResponse,
 } from "../../test-utils";
 
@@ -206,6 +208,86 @@ describe("unified calendar page", () => {
     expect(bar.closest("a")).toHaveAttribute(
       "href",
       "/app/bookings/cccccccc-0000-0000-0000-000000000001",
+    );
+  });
+});
+
+/**
+ * Ambient sync freshness (REQ-AV-04, spec §3). The calendar is where availability
+ * is READ, so it is where how-current-is-this has to be answered - before anyone
+ * clicks anything, and in the owner's face when the answer is bad.
+ */
+describe("calendar - sync freshness (REQ-AV-04)", () => {
+  const withHealth = (health: unknown, extra: Record<string, unknown> = {}) =>
+    stubFetch({
+      "GET /api/properties": () => json([propertyResponse()]),
+      "GET /api/units": () => json([unitResponse()]),
+      [BOOKINGS_KEY]: () => json([bookingRow()]),
+      "GET /api/channels/health": () => json(health),
+      ...extra,
+    });
+
+  it("states how current the calendar is without anyone clicking Sync now", async () => {
+    withHealth(syncHealthResponse({ feeds: 2, oldestSyncedAt: minutesAgo(12) }));
+    renderAt(CAL_URL);
+
+    expect(
+      await screen.findByText(/2 OTA calendars checked 12 minutes ago/),
+    ).toBeInTheDocument();
+    // And the standing truth about iCal sits beside it, on this page too.
+    expect(screen.getByText(/OTAs re-read your calendar/)).toBeInTheDocument();
+  });
+
+  it("warns and points at Channels when a feed has gone quiet", async () => {
+    withHealth(
+      syncHealthResponse({ feeds: 3, stale: 1, oldestSyncedAt: minutesAgo(400) }),
+    );
+    renderAt(CAL_URL);
+
+    expect(
+      await screen.findByText(/1 of 3 OTA calendars has not been checked recently/),
+    ).toBeInTheDocument();
+    // A warning the owner has to go looking for is not a warning.
+    expect(screen.getByRole("link", { name: "Check channels" })).toBeInTheDocument();
+  });
+
+  it("leads with an unreachable feed over a merely old one", async () => {
+    withHealth(syncHealthResponse({ feeds: 2, erroring: 1, stale: 1 }));
+    renderAt(CAL_URL);
+
+    // Erroring first: its next action is "go look at the URL", which is a
+    // different errand from "the sweep may have stopped".
+    expect(
+      await screen.findByText(/1 of 2 OTA calendars could not be reached/),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing is connected rather than implying a successful sync", async () => {
+    withHealth(
+      syncHealthResponse({ feeds: 0, oldestSyncedAt: null }),
+    );
+    renderAt(CAL_URL);
+
+    expect(
+      await screen.findByText("No OTA calendar connected yet."),
+    ).toBeInTheDocument();
+  });
+
+  it("re-reads freshness after a sweep, so the line cannot outlive its own claim", async () => {
+    const calls = withHealth(syncHealthResponse(), {
+      "POST /api/channels/sync": () =>
+        json({ feeds: 1, errored: 0, imported: 0, cancelled: 0, conflicts: 0 }),
+    });
+    renderAt(CAL_URL);
+    await screen.findByText(/1 OTA calendar checked/);
+
+    const before = calls.filter((c) => c === "GET /api/channels/health").length;
+    fireEvent.click(screen.getByRole("button", { name: /Sync now/ }));
+
+    await waitFor(() =>
+      expect(
+        calls.filter((c) => c === "GET /api/channels/health").length,
+      ).toBeGreaterThan(before),
     );
   });
 });

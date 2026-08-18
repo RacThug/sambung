@@ -93,6 +93,17 @@ export const channelConnectionResponseSchema = z.object({
   lastSyncedAt: z.string().nullable(), // ISO-8601 UTC or null
   lastStatus: syncStatusSchema,
   lastError: z.string().nullable(),
+  /**
+   * Is `lastSyncedAt` too old to trust? (REQ-AV-04.) Derived server-side on every
+   * read, never stored - and deliberately NOT computable here, because the
+   * threshold is a fact about the server's sweep cadence and the comparison must
+   * happen on the clock that stamped the timestamp. The browser phrases the age;
+   * the server judges it.
+   *
+   * Independent of `lastStatus`: a feed can be `error` AND three days behind, and
+   * both belong on screen. A `never`-synced feed is not stale - it is unstarted.
+   */
+  stale: z.boolean(),
   openConflicts: z.number().int().nonnegative(),
   createdAt: z.string(), // ISO-8601 UTC
 });
@@ -166,3 +177,29 @@ export const syncAllResponseSchema = z.object({
   conflicts: z.number().int().nonnegative(),
 });
 export type SyncAllResponse = z.infer<typeof syncAllResponseSchema>;
+
+/**
+ * The 200 for `GET /channels/health` (api-spec §7.7, REQ-AV-04) - how current the
+ * whole calendar is, in one cheap read, for the page where availability is
+ * actually looked at.
+ *
+ * `oldestSyncedAt` is the OLDEST successful pull among the visible feeds, not the
+ * newest. A calendar is only as current as its stalest feed: three feeds where the
+ * freshest synced two minutes ago and one has been silent six hours is not a
+ * two-minute-old calendar, and reporting the newest would be a flattering lie
+ * (ADR-0040). It is null when ANY visible feed has never synced - there is no
+ * complete freshness claim to make - and `feeds` + `neverSynced` are what let the
+ * UI tell "nothing connected" apart from "connected, never pulled".
+ *
+ * The counts are reported rather than a single verdict because the owner's next
+ * action differs per shape: `erroring` sends them to the feed's URL, `stale`
+ * suggests the sweep itself has stopped, `neverSynced` just means wait.
+ */
+export const syncHealthResponseSchema = z.object({
+  feeds: z.number().int().nonnegative(),
+  erroring: z.number().int().nonnegative(),
+  stale: z.number().int().nonnegative(),
+  neverSynced: z.number().int().nonnegative(),
+  oldestSyncedAt: z.string().nullable(), // ISO-8601 UTC or null
+});
+export type SyncHealthResponse = z.infer<typeof syncHealthResponseSchema>;

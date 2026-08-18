@@ -16,6 +16,7 @@ import {
   type DisconnectChannelResponse,
   type SyncAllResponse,
   type SyncConnectionResponse,
+  type SyncHealthResponse,
 } from '@sambung/shared';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { NoBody } from '../common/decorators/no-body.decorator';
@@ -56,6 +57,15 @@ export class UnitChannelsController {
 @UseGuards(JwtAuthGuard)
 export class ChannelsController {
   constructor(private readonly channels: ChannelsService) {}
+
+  // How current is the whole calendar (api-spec §7.7, REQ-AV-04) - the read behind
+  // the calendar's ambient freshness line. A literal segment with no `:id` GET to
+  // collide with. Cheap on purpose: one aggregate, no outbound fetch, because the
+  // calendar polls it while the tab is open.
+  @Get('health')
+  health(): Promise<SyncHealthResponse> {
+    return this.channels.syncHealth();
+  }
 
   // 200 (not 204): disconnect RETURNS how many imported bookings were kept, so the
   // owner can clean up deliberately (api-spec §7.4). Unknown / foreign id → 404.

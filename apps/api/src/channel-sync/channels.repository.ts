@@ -124,6 +124,51 @@ export class ChannelsRepository {
     );
   }
 
+  /**
+   * The whole fleet's sync health in ONE aggregate (api-spec §7.7, REQ-AV-04).
+   *
+   * One query, no fan-out, no outbound fetch: this read reports what the last
+   * sweep left behind, it never causes a sweep. A GET that made the server pull
+   * three OTAs would be a denial-of-service handle aimed at our own IP, and the
+   * calendar polls this every minute.
+   *
+   * `staleBefore` arrives as a bound parameter rather than being recomputed in SQL
+   * with `now()`, so the fleet aggregate and the per-row `isStale` cannot disagree
+   * about where the line is - one rule, one clock (sync-freshness.ts).
+   *
+   * Scoped like `findAllVisible`: RLS answers "which feeds" on both axes at once
+   * (tenant, and for staff their assigned properties - ADR-0032), with the explicit
+   * tenant_id as the second layer. With no GUC set, RLS shows nothing and every
+   * count is 0 - fail closed, never a cross-tenant total.
+   */
+  async syncHealth(staleBefore: Date): Promise<{
+    feeds: number;
+    erroring: number;
+    stale: number;
+    neverSynced: number;
+    oldestSyncedAt: Date | null;
+  }> {
+    const tenantId = this.tenant.tenantId;
+    const [row] = await this.db.run((tx) =>
+      tx
+        .select({
+          feeds: sql<number>`count(*)::int`,
+          erroring: sql<number>`(count(*) filter (where ${channelConnection.lastStatus} = 'error'))::int`,
+          stale: sql<number>`(count(*) filter (where ${channelConnection.lastSyncedAt} < ${staleBefore}))::int`,
+          neverSynced: sql<number>`(count(*) filter (where ${channelConnection.lastSyncedAt} is null))::int`,
+          // `.mapWith` borrows the column's own driver mapping: without it an
+          // aggregate over a timestamp arrives as the raw string pg sent, and a
+          // `sql<Date>` annotation would be a type assertion the runtime ignores.
+          oldestSyncedAt: sql`min(${channelConnection.lastSyncedAt})`.mapWith(
+            channelConnection.lastSyncedAt,
+          ),
+        })
+        .from(channelConnection)
+        .where(eq(channelConnection.tenantId, tenantId)),
+    );
+    return row;
+  }
+
   async findById(id: string): Promise<ChannelConnection | null> {
     const tenantId = this.tenant.tenantId;
     const rows = await this.db.run((tx) =>

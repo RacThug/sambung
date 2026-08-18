@@ -6,6 +6,7 @@ import {
   authResponse,
   channelConnectionResponse,
   json,
+  minutesAgo,
   propertyResponse,
   renderAt,
   stubFetch,
@@ -264,5 +265,106 @@ describe("channels section (§4.5, #55)", () => {
     expect(
       screen.queryByRole("button", { name: "Connect" }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Honesty sync UX (REQ-AV-04, spec §3). The feed's health was already on screen;
+ * what was missing is WHEN it last worked, and what iCal cannot promise at all.
+ */
+describe("channels section - sync honesty (REQ-AV-04)", () => {
+  it("says when the feed last synced, not only that it did", async () => {
+    stubEditPage({}, [
+      channelConnectionResponse({ lastSyncedAt: minutesAgo(12), stale: false }),
+    ]);
+    renderAt(editUrl);
+
+    expect(await screen.findByText(/Last synced 12 minutes ago/)).toBeInTheDocument();
+    expect(screen.getByText("Synced")).toBeInTheDocument();
+  });
+
+  it("marks a stale feed and names the likely cause", async () => {
+    stubEditPage({}, [
+      channelConnectionResponse({ lastSyncedAt: minutesAgo(5 * 60), stale: true }),
+    ]);
+    renderAt(editUrl);
+
+    // The pill still reads "Synced" - which is exactly the lie this line closes.
+    const line = await screen.findByText(/Last synced 5 hours ago/);
+    expect(line.textContent).toMatch(/syncing may have stopped/);
+  });
+
+  it("does not age a feed that has never synced", async () => {
+    stubEditPage({}, [
+      channelConnectionResponse({
+        lastSyncedAt: null,
+        lastStatus: "never",
+        stale: false,
+      }),
+    ]);
+    renderAt(editUrl);
+
+    expect(await screen.findByText("Not synced yet")).toBeInTheDocument();
+    // "Never checked" is not "checked, long ago" - no age, no stale warning.
+    expect(screen.queryByText(/Last synced/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/may have stopped/)).not.toBeInTheDocument();
+  });
+
+  it("explains the OTA's lag BEFORE its own, and names the manual refresh", async () => {
+    stubEditPage({}, [channelConnectionResponse()]);
+    renderAt(editUrl);
+
+    // The lead is emphasised in its own span, so climb to the paragraph: the
+    // ORDER of the two legs is the requirement, and it only exists in the whole.
+    const lead = await screen.findByText(/OTAs re-read your calendar/);
+    const text = lead.closest("p")?.textContent ?? "";
+    // The dangerous leg is the outbound one (3 hours, Airbnb's schedule), not our
+    // 30-minute pull - so it has to be read first, not buried after reassurance.
+    expect(text.indexOf("3 hours")).toBeLessThan(text.indexOf("30 minutes"));
+    expect(text).toMatch(/cannot prevent every double booking/i);
+    expect(text).toMatch(/Refresh/);
+  });
+
+  it("re-reads the feed's age after a per-feed sync", async () => {
+    const conn = channelConnectionResponse({
+      lastSyncedAt: minutesAgo(200),
+      stale: true,
+    });
+    let synced = false;
+    stubFetch({
+      [`GET /api/properties/${propertyId}`]: () => json(propertyResponse()),
+      [`GET /api/properties/${propertyId}/units`]: () => json([unitResponse()]),
+      // The list answers differently once the pull has landed - which is the only
+      // way an age on screen can be shown to have MOVED rather than been re-rendered.
+      [`GET /api/units/${unitId}/channels`]: () =>
+        json([
+          synced
+            ? channelConnectionResponse({ lastSyncedAt: minutesAgo(0), stale: false })
+            : conn,
+        ]),
+      [`POST /api/channels/${conn.id}/sync`]: () => {
+        synced = true;
+        return json({
+          lastStatus: "ok",
+          lastSyncedAt: minutesAgo(0),
+          lastError: null,
+          imported: 1,
+          cancelled: 0,
+          conflicts: 0,
+        });
+      },
+    });
+    renderAt(editUrl);
+
+    expect(await screen.findByText(/Last synced 3 hours ago/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Sync now" }));
+
+    // The stale warning clears because the row was re-read, not because the button
+    // was clicked. (The fleet-freshness key is invalidated by the same handler;
+    // the calendar suite is where an observer exists to prove that it refetches.)
+    expect(await screen.findByText(/Last synced just now/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByText(/may have stopped/)).not.toBeInTheDocument(),
+    );
   });
 });
