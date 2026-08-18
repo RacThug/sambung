@@ -17,6 +17,7 @@ subsystem it's working on before proposing changes.
 | [`design-system.md`](./design-system.md) | …building or styling any UI | Brand (palette, type, wordmark), semantic tokens, the two-surface component doctrine (ADR-0007) |
 | [`demo.md`](./demo.md) | …showing the product to somebody | The five-minute scripted walkthrough (PRD §8 / G5): prerequisites, four acts with exact URLs and labels, encores, what is deliberately out of scope |
 | [`r2-cutover.md`](./r2-cutover.md) | …pointing production photo storage at Cloudflare R2 (or Garage on the VPS) | The dashboard steps, the `storage:doctor` probe that verifies them, and what R2 does *not* document (ADR-0029) |
+| [`research/`](./research/) | …deciding a number that depends on how a third party behaves | Dated findings against outside sources, each claim labelled primary or secondary, ending in what it means for us and what would change the answer. Facts about other people's systems go stale - re-check the date before trusting one |
 | [`og-verification.md`](./og-verification.md) | …proving a `/p/:slug` link previews as a real card | Running the real Caddy config locally, the `og:doctor` probe and its baseline, the free quick-tunnel recipe for the manual crawler pass (ADR-0035) |
 
 ## How these relate

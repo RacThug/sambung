@@ -5,8 +5,9 @@
 feed*), api-spec §7.7 (new read) + §7.2 amendment, page specs
 [`../pages/app-calendar.md`](../pages/app-calendar.md) /
 [`../pages/app-properties-propertyId.md`](../pages/app-properties-propertyId.md) (REQ-AV-04
-amendments), shared contract `packages/shared/src/channel.ts`. **No migration** - every fact here is
-derived from columns `channel_connection` already has.
+amendments), shared contract `packages/shared/src/channel.ts`, evidence
+[`../research/ical-sync-cadence.md`](../research/ical-sync-cadence.md). **No migration** - every fact
+here is derived from columns `channel_connection` already has.
 
 > **Format** as [`date-based-pricing.md`](./date-based-pricing.md): one testable sentence per row; the
 > **Verified by** test is what makes it falsifiable - a row whose named test does not prove it is a
@@ -30,7 +31,8 @@ or silence about a dead one.
 |---|---|---|
 | FR-01 | The system shall mark a connection `stale` WHEN its last successful pull is older than the staleness threshold, judged on the server clock at read time. | api `channel-sync/sync-health.spec.ts` (a connection stamped just either side of the threshold) |
 | FR-02 | The system shall DERIVE `stale` and never store it - no column, no migration - exactly as effective-archived is derived (api-spec §4.6, ADR-0005 amendment). | `pnpm --filter @sambung/db db:generate` reports no changes on this branch |
-| FR-03 | The system shall express the sweep interval as ONE number from which both the cron expression and the staleness threshold are computed (threshold = 3 sweeps), so the schedule and the promise about it cannot drift apart. | api `channel-sync.spec.ts` (pins `IMPORT_SWEEP_CRON === '*/30 * * * *'` and `STALE_AFTER_MINUTES === 3 × IMPORT_SWEEP_INTERVAL_MINUTES`) |
+| FR-03 | The system shall express the sweep interval as ONE number from which both the cron expression and the staleness threshold are computed (threshold = 3 sweeps = 90 min), so the schedule and the promise about it cannot drift apart. | api `channel-sync.spec.ts` (pins `IMPORT_SWEEP_CRON === '*/30 * * * *'` and `STALE_AFTER_MINUTES === 3 × IMPORT_SWEEP_INTERVAL_MINUTES`) |
+| FR-07 | The threshold shall be sized as a LIVENESS alarm on our own sweeper, not as an availability-risk knob: an unfetchable feed already goes `error`, so an `ok` feed whose age grows means the sweep stopped. Three missed sweeps is the alarm point - one skipped tick is designed behaviour (the re-entrancy guard), two is noise. | research §5; FR-03's constant pin is what holds the ratio |
 | FR-04 | IF a connection has never synced (`lastSyncedAt` null), THEN it shall report `stale: false` - "never checked" and "checked, long ago" are different facts with different next actions (wait, vs. re-check the URL). | api `sync-health.spec.ts` (a fresh connection is `never`, not stale) |
 | FR-05 | The system shall judge staleness independently of `lastStatus`: a feed that has been erroring since its last good pull three days ago is BOTH erroring and stale, and shall report both. A red pill that hides the age understates the damage. | api `sync-health.spec.ts` (status `error` + old timestamp → `stale: true`) |
 | FR-06 | `GET /units/:unitId/channels` shall carry `stale` on every connection (§7.2 amendment); adding a response field is lenient by ADR-0031 and breaks no existing consumer. | api `channel-sync.spec.ts` (shape) + `sync-health.spec.ts` |
@@ -54,7 +56,9 @@ or silence about a dead one.
 | UX-02 | The browser shall PHRASE the age ("checked 12 minutes ago") from `oldestSyncedAt`; the server shall JUDGE whether that age is a problem. Phrasing tolerates a skewed clock; a judgement does not. | web `lib/relative-time.test.ts` (a pure `(iso, now)` function - no fake timers) + FR-01 |
 | UX-03 | WHILE any visible feed is stale or erroring, the calendar shall say so in a warning tone and point at Channels - a red pill on a settings page the owner never opens is not a warning. | web `calendar-page.test.tsx` (stale fleet, erroring fleet) |
 | UX-04 | Each connection row shall show the age of its own last good sync beside the status pill, and shall mark a stale one - this reverses the page-spec line recording `lastSyncedAt` as not rendered. | web `channels-section.test.tsx` |
-| UX-05 | Both surfaces shall carry the same plain-language iCal note from ONE component: sync is a pull every 30 minutes, an OTA can therefore sell a night in the window between pulls, and the export link must be pasted back into each OTA to close the loop. Two surfaces telling the same truth in two wordings is how a product starts contradicting itself. | web `channels-section.test.tsx` + `calendar-page.test.tsx` (both assert the shared component's text) |
+| UX-05 | Both surfaces shall carry the same plain-language iCal note from ONE component. Two surfaces telling the same truth in two wordings is how a product starts contradicting itself. | web `channels-section.test.tsx` + `calendar-page.test.tsx` (both assert the shared component's text) |
+| UX-05a | The note shall lead with the OUTBOUND leg - a direct booking can take up to about three hours to close on Airbnb, because Airbnb decides when it reads the calendar (its documented cadence) - and only then mention Sambung's own 30-minute inbound pull. Leading with our 30 minutes describes the half that is already safe and understates the exposure by an order of magnitude (research §4). | web `channels-section.test.tsx` (the note names the outbound lag before the inbound one) |
+| UX-05b | The note shall name the one lever the owner actually has: the OTA's own manual *Refresh* on its calendar-sync page, for when a night must be blocked now rather than within the hour. | web `channels-section.test.tsx` |
 | UX-06 | The note shall be permanent copy, not a dismissible tooltip or a one-time banner: it is a standing property of iCal, not an onboarding step. | the component renders unconditionally - there is no dismiss state to test |
 | UX-07 | The freshness read shall refetch on an interval and on window focus, and shall be invalidated by BOTH sync verbs (`POST /channels/sync`, `POST /channels/:id/sync`). A freshness indicator that is itself stale is the exact bug it exists to prevent. | web `calendar-page.test.tsx` (a sweep re-reads health) + `channels-section.test.tsx` |
 | UX-08 | This slice shall add NO i18n keys: the dashboard is English, the funnel speaks three languages (ADR-0024). | existing web `funnel-i18n.test.tsx` unchanged; no `useTranslation` in the touched dashboard files |
@@ -75,4 +79,12 @@ payments-not-configured; adding sync anxiety to a booking page spends trust rath
 email or WhatsApp alerting when a feed goes stale or errors (P1 - it needs a notification channel that
 does not exist yet, and this slice is what makes such an alert *derivable*) · auto-retry or backoff for
 an erroring feed · a per-pull history or audit log · a per-tenant configurable sweep interval ·
-shortening the 30-minute interval itself · Channex / real-time ARI (P2) · localising dashboard copy.
+shortening the 30-minute interval itself (already at the fast end of the category, and Airbnb documents
+a rate limit against being asked more often - research §2) · Channex / real-time ARI (P2) · localising
+dashboard copy.
+
+**And one deferral worth its own paragraph: the OPERATOR alarm.** 90 minutes is right for the owner and
+far too slow for RacThug, who is the only person who can restart a dead sweeper - and who can detect one
+in ~35 minutes, since a stopped sweep ages every feed at once. That tighter, fleet-wide liveness alarm
+belongs to **P0-4 (monitoring + alerting)**, not here. This slice is what makes it derivable: after it,
+"is the sweeper alive?" is one authenticated GET away. Two audiences, two thresholds (research §5).
