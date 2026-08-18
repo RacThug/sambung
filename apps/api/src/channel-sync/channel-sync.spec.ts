@@ -579,10 +579,16 @@ describe('Channel sync (#55)', () => {
   // (REQ-AV-04, spec FR-03). Written as separate literals they drift the first
   // time one is tuned - a 15-minute sweep still warning at 90 minutes would let a
   // dead sweeper hide for six ticks instead of three. This pins the derivation.
-  it('derives the cron and the staleness threshold from one interval', () => {
-    expect(IMPORT_SWEEP_CRON).toBe(
-      `*/${IMPORT_SWEEP_INTERVAL_MINUTES} * * * *`,
-    );
+  it('pins the sweep cadence and the staleness promise to their VALUES', () => {
+    // Literals, deliberately. Asserting `cron === \`*/${interval} * * * *\`` only
+    // restates the definition: change the interval to 5 and both the cron and the
+    // 90-minute promise move, silently, green. These three numbers are a product
+    // decision (ADR-0040) - moving one should fail here and make someone say why.
+    expect(IMPORT_SWEEP_INTERVAL_MINUTES).toBe(30);
+    expect(IMPORT_SWEEP_CRON).toBe('*/30 * * * *');
+    expect(SYNC_STALE_AFTER_MINUTES).toBe(90);
+    // ...and the ratio itself, so a hand-edited threshold that no longer means
+    // "three missed sweeps" is a failure rather than a drifting comment.
     expect(SYNC_STALE_AFTER_MINUTES).toBe(3 * IMPORT_SWEEP_INTERVAL_MINUTES);
   });
 });

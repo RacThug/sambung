@@ -278,6 +278,45 @@ describe('Sync freshness (REQ-AV-04)', () => {
       expect(health.oldestSyncedAt).toBeNull();
     });
 
+    it('counts a genuinely mixed fleet, and counts one feed on both axes', async () => {
+      const owner = await registerTenant('health-mixed');
+      const unit = await createUnit(
+        owner.accessToken,
+        (await createProperty(owner.accessToken)).id,
+      );
+
+      // Fresh: pulled minutes ago.
+      const fresh = await connectFeed(owner.accessToken, unit.id, 'airbnb');
+      await age(fresh.id, 5);
+
+      // Erroring AND stale - the fleet-level analogue of FR-05. It last worked
+      // three days ago and has been failing since, so it must be counted in BOTH
+      // columns; counting it once would understate one of the two problems.
+      const broken = await connectFeed(
+        owner.accessToken,
+        unit.id,
+        'booking_com',
+      );
+      await age(broken.id, 3 * 24 * 60);
+      await dbs.db
+        .update(channelConnection)
+        .set({ lastStatus: 'error', lastError: 'Feed is unreachable' })
+        .where(eq(channelConnection.id, broken.id));
+
+      // Never synced: its smoke fetch failed on connect.
+      fake.nextResult = { ok: false, error: 'Feed is unreachable' };
+      await connectFeed(owner.accessToken, unit.id, 'vrbo');
+
+      const health = await getHealth(owner.accessToken);
+      expect(health).toEqual({
+        feeds: 3,
+        erroring: 2, // the stale one AND the never-synced one
+        stale: 1, // the same feed the erroring count already includes
+        neverSynced: 1,
+        oldestSyncedAt: null, // withheld while any feed has never synced
+      });
+    });
+
     it('reads stored state only - it never pulls an OTA', async () => {
       const owner = await registerTenant('health-cheap');
       const unit = await createUnit(

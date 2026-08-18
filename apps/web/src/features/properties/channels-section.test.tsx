@@ -279,8 +279,12 @@ describe("channels section - sync honesty (REQ-AV-04)", () => {
     ]);
     renderAt(editUrl);
 
-    expect(await screen.findByText(/Last synced 12 minutes ago/)).toBeInTheDocument();
-    expect(screen.getByText("Synced")).toBeInTheDocument();
+    const age = await screen.findByText(/Last synced 12 minutes ago/);
+    const pill = screen.getByText("Synced");
+    // BESIDE the pill, not stranded under the row: "Synced" and "12 minutes ago"
+    // answer one question together, and it was the split that let a green pill
+    // imply a freshness it never claimed.
+    expect(age.parentElement).toBe(pill.parentElement);
   });
 
   it("marks a stale feed and names the likely cause", async () => {

@@ -19,6 +19,7 @@ import { issuesToFieldErrors } from "../../lib/forms";
 import { formatAge } from "../../lib/relative-time";
 import { useCopiedFlash } from "../../lib/use-copied-flash";
 import { IcalLimitsNote } from "../channels/ical-limits-note";
+import { STALE_HINT } from "../channels/stale-hint";
 import { SYNC_HEALTH_KEY } from "../channels/use-sync-health";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -207,7 +208,7 @@ function LastSynced({ conn }: { conn: ChannelConnectionResponse }) {
       className={`text-xs ${conn.stale ? "font-medium text-destructive" : "text-muted-foreground"}`}
     >
       Last synced {formatAge(conn.lastSyncedAt, new Date())}
-      {conn.stale && " - syncing may have stopped"}
+      {conn.stale && ` - ${STALE_HINT}`}
     </span>
   );
 }
@@ -291,6 +292,10 @@ function ConnectionRow({
               {conn.openConflicts === 1 ? "" : "s"}
             </Link>
           )}
+          {/* Beside the pill, not under the row: "Synced" and "12 minutes ago"
+              answer one question together, and splitting them is what let a green
+              pill imply freshness it never claimed. */}
+          <LastSynced conn={conn} />
         </div>
         {!readOnly && (
           <div className="flex items-center gap-1">
@@ -323,9 +328,6 @@ function ConnectionRow({
           </Button>
           </div>
         )}
-      </div>
-      <div className="mt-1">
-        <LastSynced conn={conn} />
       </div>
       <p className="mt-1 break-all text-xs text-muted-foreground">
         {conn.importIcalUrl}

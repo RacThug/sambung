@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { SyncHealthResponse } from "@sambung/shared";
 import { formatAge } from "../../lib/relative-time";
+import { STALE_HINT } from "./stale-hint";
 import { useSyncHealth } from "./use-sync-health";
 
 /**
@@ -19,11 +20,21 @@ import { useSyncHealth } from "./use-sync-health";
 export function SyncFreshness() {
   const { data, isError } = useSyncHealth();
 
-  // Silent while unknown. A freshness widget that renders "unknown" on every page
-  // load teaches the owner to ignore it before it ever has something to say.
-  if (isError || !data) return null;
+  // A failed health read must NOT render as silence. Silence here reads exactly
+  // like a healthy calendar, which is the false comfort this whole feature exists
+  // to remove - "we could not tell you" and "everything is fine" are different
+  // answers, and only one of them is true. First load (no data, no error) stays
+  // quiet: that is a moment, not a state.
+  if (isError) {
+    return (
+      <p role="status" aria-live="polite" className="text-sm text-destructive">
+        Can’t tell how current this calendar is right now - the sync check
+        didn’t answer.
+      </p>
+    );
+  }
+  if (!data) return null;
 
-  const message = describe(data);
   const warning = data.erroring > 0 || data.stale > 0;
 
   return (
@@ -32,8 +43,11 @@ export function SyncFreshness() {
       aria-live="polite"
       className={`text-sm ${warning ? "text-destructive" : "text-muted-foreground"}`}
     >
-      {message}{" "}
+      {freshnessSentence(data)}{" "}
       {warning && (
+        // Channels are configured per Property, so the property LIST is the
+        // nearest real destination - there is no channels route to send them to
+        // (sitemap §3). The label names the errand, the link starts it.
         <Link to="/app/properties" className="font-medium underline">
           Check channels
         </Link>
@@ -44,19 +58,35 @@ export function SyncFreshness() {
 
 /**
  * One sentence for the whole fleet. Ordered by what the owner should do next, not
- * by severity: an erroring feed needs its URL looked at, a stale one means the
- * pull itself has stopped, and "never synced" only means wait.
+ * by severity: an erroring feed needs its URL looked at, and a stale one means the
+ * pull itself has stopped.
  */
-function describe(h: SyncHealthResponse): string {
+function freshnessSentence(h: SyncHealthResponse): string {
   if (h.feeds === 0) return "No OTA calendar connected yet.";
 
   const feeds = `${h.feeds} OTA calendar${h.feeds === 1 ? "" : "s"}`;
+  // The age travels with the bad news, never instead of it. Saying only "could
+  // not be reached" repeats at fleet level the exact mistake FR-05 names at feed
+  // level: a red line that hides HOW FAR BEHIND understates the damage, and "for
+  // ten minutes" and "for three days" are not the same emergency.
+  const age =
+    h.oldestSyncedAt === null ? null : formatAge(h.oldestSyncedAt, new Date());
+
   if (h.erroring > 0) {
-    return `${h.erroring} of ${feeds} could not be reached.`;
+    const since = age === null ? "" : `; last good check ${age}`;
+    return `${h.erroring} of ${feeds} could not be reached${since}.`;
   }
   if (h.stale > 0) {
-    return `${h.stale} of ${feeds} ${h.stale === 1 ? "has" : "have"} not been checked recently - syncing may have stopped.`;
+    const when = age === null ? "not been checked recently" : `last checked ${age}`;
+    return `${h.stale} of ${feeds} ${when} - ${STALE_HINT}.`;
   }
+  // Unreachable against today's server, and kept because the CONTRACT says it is
+  // possible: `oldestSyncedAt` is nullable, and TypeScript is right to make us
+  // answer for that. The reason it cannot happen now is narrow - `connect` stamps
+  // `error` whenever the probe fails, so a null `last_synced_at` always travels
+  // with an erroring feed, and the branch above claims it first. A future route
+  // that creates a connection WITHOUT probing would land here, and this sentence
+  // is what it should say. It is deliberately not claimed as tested (spec §3).
   if (h.oldestSyncedAt === null) {
     return `${feeds} connected, not checked yet.`;
   }

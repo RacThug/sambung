@@ -20,6 +20,17 @@ export interface ExportableBooking {
   checkOut: string;
 }
 
+/** The fleet's sync health as ONE aggregate row (api-spec §7.7). Named for the
+ * same reason `ExportableBooking` is: five fields that always travel together are
+ * a type, and an anonymous shape repeated in a signature is that type in hiding. */
+export interface SyncHealthRow {
+  feeds: number;
+  erroring: number;
+  stale: number;
+  neverSynced: number;
+  oldestSyncedAt: Date | null;
+}
+
 /**
  * Dumb repository: Drizzle queries only, via the tenant-scoped (RLS) client. The
  * tenant is ambient (TenantContext, #76) and every query ALSO filters by
@@ -141,13 +152,7 @@ export class ChannelsRepository {
    * tenant_id as the second layer. With no GUC set, RLS shows nothing and every
    * count is 0 - fail closed, never a cross-tenant total.
    */
-  async syncHealth(staleBefore: Date): Promise<{
-    feeds: number;
-    erroring: number;
-    stale: number;
-    neverSynced: number;
-    oldestSyncedAt: Date | null;
-  }> {
+  async syncHealth(staleBefore: Date): Promise<SyncHealthRow> {
     const tenantId = this.tenant.tenantId;
     const [row] = await this.db.run((tx) =>
       tx

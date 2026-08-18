@@ -234,8 +234,32 @@ describe("calendar - sync freshness (REQ-AV-04)", () => {
     expect(
       await screen.findByText(/2 OTA calendars checked 12 minutes ago/),
     ).toBeInTheDocument();
-    // And the standing truth about iCal sits beside it, on this page too.
-    expect(screen.getByText(/OTAs re-read your calendar/)).toBeInTheDocument();
+
+    // And the standing truth about iCal sits beside it, on this page too - the
+    // SAME component, so this page makes the same promise in the same order:
+    // the OTA's lag first, ours second, the manual Refresh named (UX-05a/05b).
+    const lead = screen.getByText(/OTAs re-read your calendar/);
+    const note = lead.closest("p")?.textContent ?? "";
+    expect(note.indexOf("3 hours")).toBeLessThan(note.indexOf("30 minutes"));
+    expect(note).toMatch(/cannot prevent every double booking/i);
+    expect(note).toMatch(/Refresh/);
+  });
+
+  it("says it cannot tell, rather than looking healthy, when the check fails", async () => {
+    stubFetch({
+      "GET /api/properties": () => json([propertyResponse()]),
+      "GET /api/units": () => json([unitResponse()]),
+      [BOOKINGS_KEY]: () => json([bookingRow()]),
+      "GET /api/channels/health": () =>
+        json({ statusCode: 500, error: "Internal Server Error" }, 500),
+    });
+    renderAt(CAL_URL);
+
+    // Silence here would read exactly like a healthy calendar - the precise false
+    // comfort this feature exists to remove.
+    expect(
+      await screen.findByText(/Can’t tell how current this calendar is/),
+    ).toBeInTheDocument();
   });
 
   it("warns and points at Channels when a feed has gone quiet", async () => {
@@ -244,21 +268,36 @@ describe("calendar - sync freshness (REQ-AV-04)", () => {
     );
     renderAt(CAL_URL);
 
+    // The age rides along with the warning: "for 10 minutes" and "for 7 hours"
+    // are not the same emergency, and a warning that hides which one understates
+    // the damage (the FR-05 rule, applied to the fleet).
     expect(
-      await screen.findByText(/1 of 3 OTA calendars has not been checked recently/),
+      await screen.findByText(
+        /1 of 3 OTA calendars last checked 6 hours ago - syncing may have stopped/,
+      ),
     ).toBeInTheDocument();
     // A warning the owner has to go looking for is not a warning.
     expect(screen.getByRole("link", { name: "Check channels" })).toBeInTheDocument();
   });
 
-  it("leads with an unreachable feed over a merely old one", async () => {
-    withHealth(syncHealthResponse({ feeds: 2, erroring: 1, stale: 1 }));
+  it("leads with an unreachable feed over a merely old one, and dates it", async () => {
+    withHealth(
+      syncHealthResponse({
+        feeds: 2,
+        erroring: 1,
+        stale: 1,
+        oldestSyncedAt: minutesAgo(3 * 24 * 60),
+      }),
+    );
     renderAt(CAL_URL);
 
     // Erroring first: its next action is "go look at the URL", which is a
-    // different errand from "the sweep may have stopped".
+    // different errand from "the sweep may have stopped". But the age comes with
+    // it - three days unreachable is a different sentence from three minutes.
     expect(
-      await screen.findByText(/1 of 2 OTA calendars could not be reached/),
+      await screen.findByText(
+        /1 of 2 OTA calendars could not be reached; last good check 3 days ago/,
+      ),
     ).toBeInTheDocument();
   });
 

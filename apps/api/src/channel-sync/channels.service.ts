@@ -76,7 +76,7 @@ export class ChannelsService {
     });
     // A connection that has never imported cannot have conflicted - no query needed,
     // and the row id didn't exist to be referenced a moment ago.
-    return this.toResponse(row, 0);
+    return this.toResponse(row, 0, new Date());
   }
 
   /** List a unit's connections (api-spec §7.2). 404 for an unknown/foreign unit.
@@ -88,9 +88,13 @@ export class ChannelsService {
       throw new NotFoundException('Unit not found');
     }
     const rows = await this.repo.findByUnit(unitId);
+    // ONE instant for the whole list: rows judged a few milliseconds apart could
+    // otherwise straddle the cutoff, and two feeds stamped identically would
+    // disagree about being stale in the same response.
+    const now = new Date();
     const openConflicts = await this.repo.countOpenConflictsByUnit(unitId);
     return rows.map((row) =>
-      this.toResponse(row, openConflicts.get(row.id) ?? 0),
+      this.toResponse(row, openConflicts.get(row.id) ?? 0, now),
     );
   }
 
@@ -216,6 +220,7 @@ export class ChannelsService {
   private toResponse(
     row: ChannelConnection,
     openConflicts: number,
+    now: Date,
   ): ChannelConnectionResponse {
     const { createdAt, lastSyncedAt, ...columns } = row;
     // Parsed on the way out so the payload cannot silently widen, and so a corrupt
@@ -223,7 +228,7 @@ export class ChannelsService {
     return channelConnectionResponseSchema.parse({
       ...columns,
       lastSyncedAt: lastSyncedAt ? lastSyncedAt.toISOString() : null,
-      stale: isStale(lastSyncedAt, new Date()),
+      stale: isStale(lastSyncedAt, now),
       openConflicts,
       createdAt: createdAt.toISOString(),
     });

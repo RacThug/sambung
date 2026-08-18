@@ -24,6 +24,10 @@ export function useSyncHealth() {
     queryKey: SYNC_HEALTH_KEY,
     queryFn: () => api.get<SyncHealthResponse>("/channels/health"),
     refetchInterval: 60_000,
+    // Stated, not inherited. It is TanStack's default too, but this one is load
+    // bearing - a tab left open all afternoon is exactly when the sweeper dies -
+    // and a default someone tunes globally later would silently take it away.
+    refetchOnWindowFocus: true,
     staleTime: 0,
   });
 }
