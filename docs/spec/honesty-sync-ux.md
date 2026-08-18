@@ -1,6 +1,6 @@
 # EARS spec - Honesty sync UX (PRD-product P0-3, REQ-AV-04)
 
-**Status:** proposed (awaiting owner sign-off, 2026-08-18) · **Traces to:**
+**Status:** agreed (owner, 2026-08-18) · built in the same PR · **Traces to:**
 [`../prd-product.md`](../prd-product.md) P0-3, ADR-0040 (proposed - *a fleet's freshness is its stalest
 feed*), api-spec §7.7 (new read) + §7.2 amendment, page specs
 [`../pages/app-calendar.md`](../pages/app-calendar.md) /
@@ -60,7 +60,7 @@ or silence about a dead one.
 | UX-05a | The note shall lead with the OUTBOUND leg - a direct booking can take up to about three hours to close on Airbnb, because Airbnb decides when it reads the calendar (its documented cadence) - and only then mention Sambung's own 30-minute inbound pull. Leading with our 30 minutes describes the half that is already safe and understates the exposure by an order of magnitude (research §4). | web `channels-section.test.tsx` (the note names the outbound lag before the inbound one) |
 | UX-05b | The note shall name the one lever the owner actually has: the OTA's own manual *Refresh* on its calendar-sync page, for when a night must be blocked now rather than within the hour. | web `channels-section.test.tsx` |
 | UX-06 | The note shall be permanent copy, not a dismissible tooltip or a one-time banner: it is a standing property of iCal, not an onboarding step. | the component renders unconditionally - there is no dismiss state to test |
-| UX-07 | The freshness read shall refetch on an interval and on window focus, and shall be invalidated by BOTH sync verbs (`POST /channels/sync`, `POST /channels/:id/sync`). A freshness indicator that is itself stale is the exact bug it exists to prevent. | web `calendar-page.test.tsx` (a sweep re-reads health) + `channels-section.test.tsx` |
+| UX-07 | The freshness read shall refetch on an interval and on window focus, and shall be invalidated by BOTH sync verbs (`POST /channels/sync`, `POST /channels/:id/sync`). A freshness indicator that is itself stale is the exact bug it exists to prevent. | web `calendar-page.test.tsx` (a sweep re-reads `/channels/health` - the calendar is the only surface with an observer on that key, so it is the only place a refetch is observable). The per-feed button invalidates the SAME exported key in the same handler; what `channels-section.test.tsx` proves there is the visible consequence - after a sync the row's age is re-read and the stale warning clears |
 | UX-08 | This slice shall add NO i18n keys: the dashboard is English, the funnel speaks three languages (ADR-0024). | existing web `funnel-i18n.test.tsx` unchanged; no `useTranslation` in the touched dashboard files |
 | UX-09 | The owner shall see the whole honest picture end to end: connect a feed, read its age, watch a sweep move it. | e2e `dashboard/channel-lifecycle.spec.ts` (extended) |
 

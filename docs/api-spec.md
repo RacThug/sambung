@@ -352,6 +352,8 @@ Body: `{ channel: "airbnb" | "booking_com" | "vrbo", importIcalUrl }` (https URL
 ### 7.2 `GET /units/:id/channels` → 200 (auth) - **Built** (#55)
 Connections with `lastSyncedAt, lastStatus: never|ok|error, lastError?` (FR-SYNC-3 - failures surface, never silent) and **`openConflicts`** - **Built** (#38): how many imported VEVENTs this connection currently cannot land because they overlap an existing booking (§7.5). Its own count rather than an `error` status, because the feed is *healthy*: it downloaded, parsed, and mostly imported - only what clashed is stuck, and that needs a human, not a retry. One grouped count for the whole unit, never a query per row.
 
+Each connection also carries **`stale`** - **Built** (REQ-AV-04): its last good pull is older than three sweep intervals (90 min). **Derived** per read, never stored (the effective-archived rule, §4.6), and judged on the API's clock - the same clock that stamps `last_synced_at` - because a browser comparing two timestamps would be comparing two *clocks*, and a laptop 20 minutes out would warn about a healthy feed or stay silent about a dead one. Independent of `lastStatus`: an erroring feed also reports how far behind it is, and a `never`-synced feed is unstarted rather than stale. Threshold: three sweeps, because one skipped tick is designed behaviour (the re-entrancy guard) and two is noise - see [`spec/honesty-sync-ux.md`](spec/honesty-sync-ux.md) FR-07.
+
 ### 7.3 `POST /channels/:id/sync` → 200 (auth) - **Built** (#56, ADR-0025)
 "Sync now": force this connection's import off the 30-min cron, **immediately**. Runs **synchronously** and returns the connection's post-sync health + a summary - `SyncConnectionResponse = { lastStatus: never|ok|error, lastSyncedAt, lastError, imported, cancelled, conflicts }` (`conflicts` = VEVENTs refused as double-sells and filed in the inbox, #38) - not `202 { queued: true }`: there is no job queue on a single VPS (Redis/BullMQ = a heavy dep), so the honest contract is the result, not a promise ([ADR-0025](adr/0025-a-healthy-feed-reconciles-a-doubtful-one-does-nothing.md)). Unknown/foreign id → 404 (resolved under the owner's RLS scope first, existence hidden). Same reconcile core as the cron (architecture flow B): fetch **outside** the txn → parse → one txn with a **savepoint per VEVENT** (an overlap `23P01` skips that event, never crashes the cycle - the #38 seam) → upsert by `externalUid` → absent-UID cancellation **only on a healthy feed with ≥ 1 event** (`imported`/`cancelled` count what this pull did; both 0 on an unhealthy feed). A VEVENT's dates are resolved in the **property's** time zone (§4.3 `timeZone`, #145, [ADR-0028](adr/0028-property-local-is-a-column-not-an-assumption.md)): only a UTC-stamped `DATE-TIME` is converted - `VALUE=DATE`, floating, and `TZID` values are already property-local and are taken verbatim. A `TZID` naming some *other* zone is taken verbatim too and logged, never guessed at.
 
@@ -385,6 +387,26 @@ An imported VEVENT the `booking_no_overlap` exclusion constraint refused - a rea
 
 ### 7.6 `GET /public/units/:id/calendar.ics` → 200 - export feed (FR-SYNC-2) - **Built** (#55, ADR-0016)
 `Content-Type: text/calendar`. One all-day `VEVENT` per **confirmed occupying booking** (direct + imported + manual; `status = 'confirmed'`, so a transient hold is excluded): `UID` = booking id, `DTSTART`/`DTEND` = half-open dates (DTEND exclusive - matches iCal semantics natively), `SUMMARY` = `"Unavailable (Sambung)"` - **no guest names, no prices** (this URL is pasted into OTAs; the serializer's input type has no PII field, so this is a type guarantee, not a convention). No auth: the tenant is resolved from the unit id via `PublicScope.enterFromUnitId` and the read runs under RLS (invariant #2 held structurally). Deliberately **archive-blind** - an archived Unit with bookings keeps serving its calendar, or the subscribed OTA would see free nights and double-book (ADR-0016). Unknown unit → 404. Unguessable unit UUID is the v1 access control; a per-unit feed token is the noted hardening step if the repo goes public-demo.
+
+### 7.7 `GET /channels/health` → 200 (auth) - **Built** (REQ-AV-04, ADR-0040)
+
+How current the whole calendar is, for the page where availability is actually read:
+`SyncHealthResponse = { feeds, erroring, stale, neverSynced, oldestSyncedAt }`.
+
+`oldestSyncedAt` is the **oldest** successful pull among the visible feeds, not the newest - a calendar
+is only as current as its stalest feed, and the freshest feed's timestamp would be a flattering answer
+to the question actually being asked
+([ADR-0040](adr/0040-a-fleets-freshness-is-its-stalest-feed.md)). It is **null** whenever any visible
+feed has never synced, because no complete freshness claim exists to make; `feeds` + `neverSynced` are
+what let the client tell "nothing connected" from "connected, never pulled". Counts rather than one
+verdict, because the owner's next action differs per shape: `erroring` sends them to the feed's URL,
+`stale` suggests the sweep itself has stopped, `neverSynced` only means wait.
+
+**One aggregate query, no fan-out, no outbound fetch.** It reports what the last sweep left behind and
+never causes a sweep - the calendar polls it while a tab is open, and a GET that pulled three OTAs
+would be a denial-of-service handle aimed at our own IP. Scope is RLS's answer as in §7.3a: for staff,
+their assigned Properties only (ADR-0032). With no tenant GUC set it answers `feeds: 0` - fail closed,
+never a cross-tenant total.
 
 ---
 

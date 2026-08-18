@@ -73,6 +73,13 @@ Under all of it: a double-booking is **impossible at the database level** - not 
   (never mass-cancel real stays), and an OTA booking that clashes with an existing one is refused by
   the same double-booking constraint and filed in the inbox for the owner to resolve - the machine
   never picks which guest loses.
+- **Honesty about the lag** ([ADR-0040](adr/0040-a-fleets-freshness-is-its-stalest-feed.md)): the
+  calendar states how current it is before anyone asks - "2 OTA calendars checked 12 minutes ago" -
+  reported as the *stalest* feed, because a calendar is only as fresh as its slowest channel. A feed
+  that stops being pulled is marked stale rather than staying quietly green, and both screens carry
+  the same plain note: OTAs re-read your calendar on their own schedule (Airbnb documents about every
+  3 hours), so iCal cannot prevent every double booking - use the OTA's own Refresh when a date must
+  close immediately.
 
 ### Money
 

@@ -282,6 +282,7 @@ Index of what is already settled - if your question is on this list, the answer 
 | 0037 | The dashboard is a sidebar shell, and width follows the page's job |
 | 0038 | A page spec is checked against the code; its judgements are not |
 | 0039 | A payment credential belongs to the Tenant, and its secret is unreadable by privilege (**Proposed** - confirms with Midtrans production activation) |
+| 0040 | A fleet's freshness is its stalest feed, and staleness is judged on the server's clock |
 | - | No-ADR rows worth knowing: iCal conflict policy (2026-07-16), a calendar date vs a moment (2026-07-24), one CORS policy for the shared dev bucket (2026-07-24), date-based pricing / `quote()` is the one price authority (2026-08-17) |
 
 ---
@@ -290,11 +291,14 @@ Index of what is already settled - if your question is on this list, the answer 
 
 - **Stage**: **M0-M5 ALL COMPLETE. PRODUCT PHASE in progress.** All five boss fights are closed; the
   whole app - demo included - runs on the local Garage + Postgres compose stack with no paid account.
-  - Shipped in the product phase: **P0-2** date-based pricing (migration 0017) and **P0-6** per-tenant
-    payment credentials (migration 0018) - see the last two decision-log rows.
+  - Shipped in the product phase: **P0-2** date-based pricing (migration 0017), **P0-6** per-tenant
+    payment credentials (migration 0018), and **P0-3's in-product half** - the honesty sync UX
+    (REQ-AV-04, ADR-0040, no migration) - see the last three decision-log rows.
   - **Remaining P0, none of it blocked by code**: P0-1 Midtrans production activation (business: PT
     Perorangan + NIB + merchant review - the long pole to a first paying customer, and what confirms
-    ADR-0039), P0-3 live-OTA iCal pilot (needs a real property), P0-4 backups + monitoring (prod-ops),
+    ADR-0039), P0-3's live-OTA pilot (needs a real property; the in-product half shipped, and the
+    freshness read is the instrument the pilot debugs with), P0-4 backups + monitoring (prod-ops -
+    and it now owns the OPERATOR's ~35-minute sweeper alarm, which ADR-0040 deferred to it by name),
     P0-5 legal pages.
   - **Owner-only leftovers from M5**: #60 AC #4 (three manual crawler checks - a documented 10-minute
     pass, see [`docs/og-verification.md`](docs/og-verification.md)) and #68's four live R2 steps
@@ -314,6 +318,8 @@ Index of what is already settled - if your question is on this list, the answer 
   - [`docs/sitemap.md`](docs/sitemap.md) - the route map, guard-enforced against the router (ADR-0036).
   - [`docs/design-system.md`](docs/design-system.md) - "the gracious host": stone + terracotta, Plus
     Jakarta Sans + Fraunces, two-surface component doctrine (ADR-0007).
+  - [`docs/research/`](docs/research/) - dated findings about how third parties actually behave, each
+    claim labelled primary or secondary. Read before re-tuning a number that depends on an OTA.
   - [`docs/decision-log.md`](docs/decision-log.md) - every decision, chronological. Append here.
   - [`docs/history.md`](docs/history.md) - what was built and in what order. Check it before assuming
     something is missing: it may have shipped, or been deliberately deferred by name.
