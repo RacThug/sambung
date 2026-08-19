@@ -42,9 +42,14 @@ export type CredentialVerifyStatus = z.infer<
  * replacing a key is the same verb. Owner-only (EARS CR-05).
  *
  * `serverKey` is deliberately shape-agnostic: the key format is Midtrans's to
- * change (`SB-Mid-server-…` today), so the boundary checks only that something
- * real was pasted - trimmed, bounded for sanity, never pattern-matched. A wrong
- * key is caught by verify-on-save, not by a regex that rots.
+ * change, so the boundary checks only that something real was pasted - trimmed,
+ * bounded for sanity, never pattern-matched. A wrong key is caught by
+ * verify-on-save, not by a regex that rots.
+ *
+ * It rotted on schedule. Midtrans's docs still say a Sandbox key carries an
+ * `SB-` prefix; a Sandbox dashboard observed 2026-08-19 issues `Mid-server-…`,
+ * same as Production. A prefix check would have refused a valid key. See
+ * `docs/research/midtrans-key-format.md`.
  */
 export const savePaymentCredentialRequestSchema = strictObject({
   serverKey: z.string().trim().min(8).max(256),
