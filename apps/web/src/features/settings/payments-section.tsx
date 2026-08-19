@@ -153,7 +153,7 @@ function CredentialForm({ configured }: { configured: boolean }) {
         label={configured ? "Replace server key" : "Server key"}
         type="password"
         autoComplete="off"
-        placeholder="SB-Mid-server-…"
+        placeholder="Mid-server-…"
         value={form.serverKey}
         onChange={(e) =>
           setForm((f) => ({ ...f, serverKey: e.target.value }))
