@@ -45,7 +45,9 @@ A portfolio VPS and a "someone else's revenue depends on this" VPS are different
 - A minimal status page or at least a stated support channel
 
 ### 5. Legal & trust pages (REQ-TR-01)
-Terms of service, privacy policy, refund/cancellation policy (guest-facing, per property), and a real support contact. Required by Midtrans production review anyway.
+Terms of service, privacy policy, refund/cancellation policy (guest-facing, per property), and a real support contact. ~~Required by Midtrans production review anyway.~~
+
+*Correction (2026-08-29, [`research/legal-requirements-id.md`](research/legal-requirements-id.md) §1): **that last sentence is not supported by Midtrans's own documentation** - it asks for a publicly reachable business link showing goods and prices, and names no legal page. The real obligations are UU PDP Pasal 21 (a disclosure Sambung makes nowhere) and PP 80/2019 (an electronic contract the consumer can keep), plus the plain fact that a guest is asked to pay against no stated terms. So P0-5 does **not** unblock P0-1; they are independent. Specified in [`spec/legal-pages.md`](spec/legal-pages.md): static platform pages + a per-property cancellation policy, ID authoritative. The same research also finds Midtrans documents only **KTP + NPWP** for a perorangan account (NIB appears only for a badan usaha), which may make item 1's entity question cheaper than assumed - worth one email before acting on it.*
 
 ### 6. Per-tenant payment credentials (REQ-PA-04, [ADR-0039](adr/0039-payment-credentials-are-tenant-scoped.md)) - **SHIPPED** (PR #209, migration 0018)
 The code half of item 1 (activation is the business half): each owner pastes their **own** Midtrans keys, encrypted at rest with an app-held key; guest money settles straight into the owner's merchant account and Sambung is never in the money path. The webhook resolves the tenant first and verifies the signature second; "no gateway yet" is a supported state - the funnel shows availability and disables online checkout honestly. Buildable in full against sandbox keys, so it runs in parallel with the merchant-review lead time.
